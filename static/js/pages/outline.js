@@ -505,7 +505,7 @@ registerPage("outline", async (view, { segs }) => {
         ui.el("div", { class: "flex items-center gap-2" },
           ui.icon("psychology", "text-[24px] text-secondary"),
           ui.el("div", {},
-            ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary" }, "墨语 AI 剧构推演"),
+            ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary" }, "墨语MoYu AI 剧构推演"),
             ui.el("p", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "基于当前大纲张力与上下文生成剧情走向建议"))),
         runBtn),
       list);

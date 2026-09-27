@@ -16,7 +16,7 @@ def _instance_running() -> bool:
 
 if __name__ == "__main__":
     if _instance_running():
-        # 已有墨语实例在运行：直接打开页面，避免端口冲突报错
+        # 已有墨语MoYu实例在运行：直接打开页面，避免端口冲突报错
         webbrowser.open(URL)
     else:
         import uvicorn

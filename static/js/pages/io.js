@@ -247,7 +247,7 @@ registerPage("io", async (view) => {
           style: `background:linear-gradient(135deg, ${work.cover_color || "#1B2A38"}, #1B2A38)`,
         }, (work.title || "书")[0]),
         ui.el("span", { class: "font-headline-md text-headline-md text-primary font-semibold" }, work.title),
-        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant tracking-widest uppercase" }, "墨语·本地工坊导出"),
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant tracking-widest uppercase" }, "墨语MoYu 工坊导出"),
         work.intro && ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant max-w-xs line-clamp-3" }, work.intro)),
       ui.el("div", { class: "p-space-sm bg-surface-container-lowest rounded-xl shadow-sm flex flex-col gap-1.5" },
         ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold flex items-center justify-between" },

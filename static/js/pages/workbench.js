@@ -674,7 +674,7 @@ registerPage("workbench", async (view, { segs, params }) => {
       ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
         ui.el("div", { class: "flex items-center gap-1 text-primary" },
           ui.icon("auto_awesome", "text-[16px]"),
-          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "墨语修撰使")),
+          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "墨语MoYu 修撰使")),
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "任务"),
         taskSeg.wrap,
         ui.el("div", { class: "flex items-center gap-space-sm" },

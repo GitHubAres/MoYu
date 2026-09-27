@@ -12,7 +12,7 @@ from .paths import STATIC_DIR
 
 def create_app(open_browser: bool = False) -> FastAPI:
     init_db()
-    app = FastAPI(title="墨语·本地版")
+    app = FastAPI(title="墨语MoYu · 本地版")
 
     from .api import router as api_router
     app.include_router(api_router, prefix="/api")
