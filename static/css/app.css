@@ -1,0 +1,74 @@
+/* 墨语·本地版 自定义样式（Tailwind 之外的补充） */
+
+html, body { margin: 0; padding: 0; }
+body { overscroll-behavior: none; }
+
+/* 细滚动条（替换设计稿的隐藏滚动条，保证可用性） */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(116,119,124,.3); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(116,119,124,.55); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* 正文字体回退链 */
+.font-serif-content { font-family: "Noto Serif SC", "Songti SC", "SimSun", serif; }
+
+/* 编辑器 */
+.editor-area {
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  caret-color: #2563EB;
+}
+.editor-area:empty::before {
+  content: attr(data-placeholder);
+  color: #9aa0a6;
+  pointer-events: none;
+}
+
+/* AI 暂存态光晕（设计规范：AI Preview Glow） */
+.ai-glow { box-shadow: 0 0 0 1px rgba(37,99,235,.15), 0 12px 32px rgba(27,42,56,.08); }
+
+/* 差异对比 */
+.diff-add { background: rgba(34,197,94,.14); border-radius: 2px; }
+.diff-del { background: rgba(217,72,59,.16); text-decoration: line-through; border-radius: 2px; }
+
+/* 专注模式 */
+body.focus-mode aside, body.focus-mode header, body.focus-mode .workbench-side { display: none !important; }
+body.focus-mode .pl-64 { padding-left: 0 !important; }
+
+/* 主题 */
+body.theme-dark { background: #101418; color: #e2e5e9; }
+body.theme-dark .bg-surface, body.theme-dark .bg-surface-container-lowest { background: #171c22 !important; }
+body.theme-dark .bg-surface-container-low { background: #1d232b !important; }
+body.theme-dark .text-primary, body.theme-dark .text-on-surface { color: #e2e5e9 !important; }
+body.theme-dark .text-on-surface-variant { color: #9aa4ae !important; }
+/* 深色下侧边栏与顶栏 */
+body.theme-dark aside { background: rgba(23,28,34,.85) !important; }
+body.theme-dark header { background: rgba(16,20,24,.85) !important; }
+body.theme-dark .bg-surface-container { background: #232a33 !important; }
+body.theme-dark .bg-surface-container-high, body.theme-dark .hover\:bg-surface-container-high:hover { background: #2a323c !important; }
+body.theme-dark .border-border-feather { border-color: #2a323c !important; }
+body.theme-dark input, body.theme-dark textarea, body.theme-dark select { color: #e2e5e9; }
+body.theme-paper { background: #f5f0e6; }
+body.theme-paper .bg-surface, body.theme-paper .bg-surface-container-lowest { background: #fbf7ec !important; }
+body.theme-paper .bg-surface-container-low { background: #f0ead9 !important; }
+
+/* 流式生成光标 */
+.streaming-caret::after {
+  content: "▍";
+  color: #2563EB;
+  animation: blink 1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* 骨架屏 */
+.skeleton {
+  background: linear-gradient(90deg, #efedee 25%, #f7f5f6 50%, #efedee 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+  border-radius: 8px;
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* toast */
+.toast-item { transition: opacity .3s, transform .3s; }

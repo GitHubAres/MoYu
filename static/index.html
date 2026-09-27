@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>墨语 · 本地写作工作台</title>
+<link href="/static/vendor/fonts.css" rel="stylesheet"/>
+<link href="/static/css/app.css?v=9" rel="stylesheet"/>
+<script src="/static/vendor/tailwind.js"></script>
+<style type="text/tailwindcss">
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+@theme {
+  --color-surface: #fbf9fa;
+  --color-surface-dim: #dbd9db;
+  --color-surface-bright: #fbf9fa;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f5f3f4;
+  --color-surface-container: #efedee;
+  --color-surface-container-high: #eae7e9;
+  --color-surface-container-highest: #e4e2e3;
+  --color-on-surface: #1b1c1d;
+  --color-on-surface-variant: #44474c;
+  --color-inverse-surface: #303031;
+  --color-inverse-on-surface: #f2f0f1;
+  --color-outline: #74777c;
+  --color-outline-variant: #c4c6cc;
+  --color-surface-tint: #516070;
+  --color-primary: #061523;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #1b2a38;
+  --color-on-primary-container: #8291a2;
+  --color-inverse-primary: #b8c8da;
+  --color-secondary: #0051d5;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #316bf3;
+  --color-on-secondary-container: #fefcff;
+  --color-tertiary: #211002;
+  --color-on-tertiary: #ffffff;
+  --color-tertiary-container: #382411;
+  --color-on-tertiary-container: #a88a70;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --color-primary-fixed: #d4e4f7;
+  --color-primary-fixed-dim: #b8c8da;
+  --color-on-primary-fixed: #0d1d2a;
+  --color-on-primary-fixed-variant: #394857;
+  --color-secondary-fixed: #dbe1ff;
+  --color-secondary-fixed-dim: #b4c5ff;
+  --color-on-secondary-fixed: #00174b;
+  --color-on-secondary-fixed-variant: #003ea8;
+  --color-tertiary-fixed: #ffdcc0;
+  --color-tertiary-fixed-dim: #e2c0a4;
+  --color-on-tertiary-fixed: #2a1706;
+  --color-on-tertiary-fixed-variant: #5a422d;
+  --color-background: #fbf9fa;
+  --color-on-background: #1b1c1d;
+  --color-surface-variant: #e4e2e3;
+  --color-cinnabar-accent: #D9483B;
+  --color-ink-black: #0E1721;
+  --color-paper-pure: #FFFFFF;
+  --color-cool-subtle: #F6F8FA;
+  --color-border-feather: #E5E9EE;
+
+  --font-display: "Noto Serif SC", "Noto Serif", serif;
+  --font-display-mobile: "Noto Serif SC", "Noto Serif", serif;
+  --font-headline-lg: "Noto Serif SC", "Noto Serif", serif;
+  --font-headline-md: "Noto Serif SC", "Noto Serif", serif;
+  --font-headline-sm: "Noto Serif SC", "Noto Serif", serif;
+  --font-body-lg: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body-md: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body-sm: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-label-md: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-label-sm: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  --text-display: 40px; --text-display--line-height: 52px; --text-display--font-weight: 600;
+  --text-display-mobile: 30px; --text-display-mobile--line-height: 40px; --text-display-mobile--font-weight: 600;
+  --text-headline-lg: 28px; --text-headline-lg--line-height: 38px; --text-headline-lg--font-weight: 600;
+  --text-headline-md: 22px; --text-headline-md--line-height: 32px; --text-headline-md--font-weight: 600;
+  --text-headline-sm: 18px; --text-headline-sm--line-height: 26px; --text-headline-sm--font-weight: 600;
+  --text-body-lg: 16px; --text-body-lg--line-height: 28px; --text-body-lg--font-weight: 400;
+  --text-body-md: 14px; --text-body-md--line-height: 24px; --text-body-md--font-weight: 400;
+  --text-body-sm: 13px; --text-body-sm--line-height: 20px; --text-body-sm--font-weight: 400;
+  --text-label-md: 12px; --text-label-md--line-height: 16px; --text-label-md--font-weight: 500;
+  --text-label-sm: 11px; --text-label-sm--line-height: 14px; --text-label-sm--font-weight: 600;
+
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+
+  --spacing-gutter: 1.25rem;
+  --spacing-margin: 1.75rem;
+  --spacing-space-xs: 0.375rem;
+  --spacing-space-sm: 0.625rem;
+  --spacing-space-md: 1rem;
+  --spacing-space-lg: 1.5rem;
+  --spacing-space-xl: 2.25rem;
+}
+</style>
+</head>
+<body class="bg-surface font-body-md text-body-md text-on-surface antialiased">
+
+<aside class="fixed left-0 top-0 h-full w-64 bg-surface-container-low/70 backdrop-blur-2xl z-50 flex flex-col justify-between py-space-lg px-space-md shadow-[0_1px_8px_rgba(0,0,0,0.02)]">
+  <div class="flex flex-col gap-space-lg">
+    <div class="flex items-center gap-space-sm px-space-xs">
+      <div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
+        <span class="material-symbols-outlined text-on-primary-container text-[20px]">ink_pen</span>
+      </div>
+      <div class="flex flex-col">
+        <span class="font-headline-sm text-headline-sm text-primary tracking-tight font-semibold">墨语</span>
+        <span class="font-label-sm text-label-sm text-on-surface-variant tracking-wider uppercase">InkWright · 本地版</span>
+      </div>
+    </div>
+    <nav id="main-nav" class="flex flex-col gap-1">
+      <a data-route="bookshelf" href="#/bookshelf" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">auto_stories</span><span class="font-body-sm text-body-sm">书架作品</span></a>
+      <a data-route="workbench" href="#/workbench" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">edit_note</span><span class="font-body-sm text-body-sm">写作工作台</span></a>
+      <a data-route="outline" href="#/outline" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">account_tree</span><span class="font-body-sm text-body-sm">故事大纲</span></a>
+      <a data-route="entities" href="#/entities" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">menu_book</span><span class="font-body-sm text-body-sm">万象谱</span></a>
+      <a data-route="board" href="#/board" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">view_kanban</span><span class="font-body-sm text-body-sm">伏笔看板</span></a>
+      <a data-route="graph" href="#/graph" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">hub</span><span class="font-body-sm text-body-sm">关系图谱</span></a>
+      <a data-route="timeline" href="#/timeline" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">timeline</span><span class="font-body-sm text-body-sm">剧情时间线</span></a>
+      <a data-route="alchemy" href="#/alchemy" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">science</span><span class="font-body-sm text-body-sm">炼丹炉</span></a>
+      <a data-route="prompts" href="#/prompts" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">neurology</span><span class="font-body-sm text-body-sm">提示词中心</span></a>
+      <a data-route="versions" href="#/versions" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">history</span><span class="font-body-sm text-body-sm">版本快照</span></a>
+      <a data-route="audit" href="#/audit" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">fact_check</span><span class="font-body-sm text-body-sm">一致性检查</span></a>
+    </nav>
+  </div>
+  <div class="flex flex-col gap-space-sm">
+    <div class="flex flex-col gap-1">
+      <a data-route="io" href="#/io" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">drive_file_move</span><span class="font-body-sm text-body-sm">导入导出</span></a>
+      <a data-route="settings" href="#/settings" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">settings</span><span class="font-body-sm text-body-sm">系统设置</span></a>
+    </div>
+    <div class="p-space-xs rounded-xl bg-surface-container/60 flex items-center gap-space-xs">
+      <span class="material-symbols-outlined text-[18px] text-secondary">home_storage</span>
+      <span class="font-label-sm text-label-sm text-on-surface-variant truncate">本地单机 · 数据存于此电脑</span>
+    </div>
+  </div>
+</aside>
+
+<div class="pl-64 min-h-screen bg-surface flex flex-col">
+  <header class="fixed top-0 left-64 right-0 h-16 bg-surface/85 backdrop-blur-xl z-40 flex items-center justify-between px-space-xl shadow-[0_1px_8px_rgba(0,0,0,0.02)]">
+    <div class="flex items-center gap-space-md min-w-0">
+      <div id="topbar-crumb" class="flex items-center gap-space-xs font-body-sm text-body-sm text-on-surface-variant truncate"></div>
+      <div id="save-indicator" class="hidden items-center gap-space-xs px-space-xs py-1 rounded-full bg-surface-container-low text-on-surface-variant">
+        <span class="material-symbols-outlined text-[14px] text-secondary" id="save-icon">cloud_done</span>
+        <span class="font-label-sm text-label-sm" id="save-text">已保存</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-space-lg">
+      <div class="flex items-center gap-space-md">
+        <div class="flex items-baseline gap-1 font-body-sm text-body-sm text-on-surface-variant">
+          <span class="font-label-sm text-label-sm">今日字数</span>
+          <span class="font-headline-sm text-headline-sm text-primary font-semibold" id="stat-today">0</span>
+          <span class="font-label-sm text-label-sm text-on-surface-variant" id="stat-goal">/ 5,000</span>
+        </div>
+        <div class="h-4 w-[1px] bg-outline-variant/40"></div>
+        <div class="flex items-baseline gap-1 font-body-sm text-body-sm text-on-surface-variant">
+          <span class="font-label-sm text-label-sm">全书累计</span>
+          <span class="font-headline-sm text-headline-sm text-on-surface font-medium" id="stat-total">0</span>
+        </div>
+      </div>
+      <div id="topbar-actions" class="flex items-center gap-space-xs"></div>
+    </div>
+  </header>
+  <main id="view" class="relative pt-16 w-full flex-1 px-space-xl py-space-lg bg-surface"></main>
+</div>
+
+<div id="toast-root" class="fixed bottom-6 right-6 z-[100] flex flex-col gap-2"></div>
+<div id="modal-root"></div>
+
+<script src="/static/js/api.js?v=9"></script>
+<script src="/static/js/ui.js?v=9"></script>
+<script src="/static/js/router.js?v=9"></script>
+<script src="/static/js/pages/bookshelf.js?v=9"></script>
+<script src="/static/js/pages/workbench.js?v=9"></script>
+<script src="/static/js/pages/outline.js?v=9"></script>
+<script src="/static/js/pages/entities.js?v=9"></script>
+<script src="/static/js/pages/board.js?v=9"></script>
+<script src="/static/js/pages/prompts.js?v=9"></script>
+<script src="/static/js/pages/versions.js?v=9"></script>
+<script src="/static/js/pages/io.js?v=9"></script>
+<script src="/static/js/pages/settings.js?v=9"></script>
+<script src="/static/js/pages/audit.js?v=9"></script>
+<script src="/static/js/pages/graph.js?v=9"></script>
+<script src="/static/js/pages/timeline.js?v=9"></script>
+<script src="/static/js/pages/alchemy.js?v=9"></script>
+<script src="/static/js/pages/gallery.js?v=9"></script>
+<script src="/static/js/app.js?v=9"></script>
+</body>
+</html>

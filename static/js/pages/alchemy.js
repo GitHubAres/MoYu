@@ -1,0 +1,773 @@
+/* 炼丹炉 · 创作前期工坊：拆书蒸馏 / 资料融汇 / 开炉炼丹 / 丹青阁 */
+registerPage("alchemy", async (view) => {
+  ui.setCrumb("炼丹炉");
+
+  const TABS = [
+    { id: "distill", label: "拆书蒸馏", icon: "menu_book" },
+    { id: "fuse", label: "资料融汇", icon: "merge" },
+    { id: "brew", label: "开炉炼丹", icon: "science" },
+    { id: "gallery", label: "丹青阁", icon: "palette" },
+  ];
+  const CAT_META = {
+    character: { label: "角色", icon: "person" },
+    place: { label: "地点", icon: "location_on" },
+    faction: { label: "势力", icon: "flag" },
+    item: { label: "物品", icon: "diamond" },
+    term: { label: "术语", icon: "book_2" },
+  };
+  const BREW_STEPS = [
+    { id: "framework", label: "题材框架", icon: "architecture", hint: "题材方向 / 核心卖点 / 主线一句话 / 目标读者" },
+    { id: "world", label: "世界观", icon: "public", hint: "地点、势力、术语等设定条目" },
+    { id: "characters", label: "主要人物", icon: "group", hint: "角色卡：身份 / 性格 / 背景 / 目标" },
+    { id: "outline", label: "故事大纲", icon: "account_tree", hint: "卷为顶层、章为子级的大纲树" },
+  ];
+
+  let works = [];
+  let active = "distill";
+
+  /* ---------- 通用工具 ---------- */
+
+  function esc(s) {
+    return String(s ?? "").replace(/[&<>"']/g,
+      (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  function mdInline(s) {
+    return esc(s)
+      .replace(/\*\*([^*]+)\*\*/g, '<strong class="text-primary font-semibold">$1</strong>')
+      .replace(/`([^`]+)`/g, '<code class="px-1 rounded bg-surface-container-high font-label-sm">$1</code>');
+  }
+  /* 简单 Markdown 渲染：标题 / 列表 / 加粗 */
+  function mdRender(md) {
+    const box = ui.el("div", { class: "flex flex-col gap-space-sm font-body-md text-body-md text-on-surface" });
+    let list = null;
+    for (const raw of String(md || "").split("\n")) {
+      const t = raw.trim();
+      if (!t) { list = null; continue; }
+      let m;
+      if ((m = t.match(/^(#{1,4})\s+(.*)/))) {
+        list = null;
+        box.append(ui.el(m[1].length <= 2 ? "h3" : "h4", {
+          class: (m[1].length <= 2
+            ? "font-headline-sm text-headline-sm pt-space-xs"
+            : "font-label-md text-label-md pt-1") + " text-primary font-semibold",
+          html: mdInline(m[2]),
+        }));
+      } else if ((m = t.match(/^(?:[-·•*]|\d+[.、])\s+(.*)/))) {
+        if (!list) {
+          list = ui.el("ul", { class: "list-disc pl-5 flex flex-col gap-1" });
+          box.append(list);
+        }
+        list.append(ui.el("li", { html: mdInline(m[1]) }));
+      } else {
+        list = null;
+        box.append(ui.el("p", { html: mdInline(t) }));
+      }
+    }
+    return box;
+  }
+
+  /* AI 类调用失败处理：未配置时引导去系统设置 */
+  function aiFail(e) {
+    const msg = (e && e.message) || String(e);
+    ui.toast(msg, "err");
+    if (/尚未配置 AI 接口/.test(msg)) {
+      ui.confirm("尚未配置 AI 接口", msg + "\n\n是否现在前往「系统设置」填写 Base URL、API Key 与模型名？", "前往设置")
+        .then((ok) => { if (ok) location.hash = "#/settings"; });
+    }
+  }
+
+  async function loadWorks() {
+    try { works = await api.get("/works"); }
+    catch (e) { ui.toast(e.message, "err"); works = []; }
+  }
+  function workSelect(selectedId) {
+    const sel = ui.el("select", {
+      class: "px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm min-w-[180px]",
+    });
+    if (!works.length) sel.append(ui.el("option", { value: "" }, "（暂无作品）"));
+    for (const w of works) sel.append(ui.el("option", { value: w.id }, w.title));
+    if (selectedId) sel.value = String(selectedId);
+    return sel;
+  }
+  function selectedWorkId(sel) {
+    const v = Number(sel.value);
+    return v > 0 ? v : null;
+  }
+
+  /* 复用导入管线上传文件（.md 自动改名 .txt 以通过校验） */
+  async function uploadForImport(file) {
+    let f = file;
+    if (/\.md$/i.test(file.name)) {
+      f = new File([file], file.name.replace(/\.md$/i, ".txt"), { type: "text/plain" });
+    }
+    const fd = new FormData();
+    fd.append("file", f);
+    const resp = await fetch("/api/import/preview", { method: "POST", body: fd });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.detail || "上传解析失败");
+    return data;
+  }
+  /* 文件选择按钮：透明 input 覆盖在样式化按钮上，点击即弹系统文件框 */
+  function filePickerButton(accept, iconName, label, onFile) {
+    const input = ui.el("input", {
+      type: "file", accept,
+      class: "absolute inset-0 w-full h-full opacity-0 cursor-pointer",
+      "aria-label": label,
+    });
+    input.addEventListener("change", () => {
+      if (input.files && input.files[0]) onFile(input.files[0]);
+      input.value = "";
+    });
+    return ui.el("div", { class: "relative" },
+      ui.el("div", {
+        class: btnGhost + " w-full justify-center py-2 border border-dashed border-outline-variant bg-transparent pointer-events-none",
+      }, ui.icon(iconName, "text-[18px]"), label),
+      input);
+  }
+
+  const cardCls = "bg-surface-container-lowest rounded-xl p-space-lg shadow-[0_4px_20px_rgba(6,21,35,0.03)]";
+  const btnPrimary = "flex items-center justify-center gap-space-xs px-space-md py-space-sm rounded-xl bg-primary text-on-primary hover:bg-primary-container transition-all duration-200 shadow-sm font-label-md text-label-md disabled:opacity-50";
+  const btnGhost = "flex items-center gap-1 px-space-sm py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md transition-colors";
+  const inputCls = "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm";
+
+  function loadingCard(text) {
+    return ui.el("div", { class: cardCls + " flex items-center gap-space-md" },
+      ui.el("span", { class: "material-symbols-outlined text-[24px] text-secondary animate-spin" }, "progress_activity"),
+      ui.el("div", { class: "flex flex-col gap-0.5" },
+        ui.el("span", { class: "font-headline-sm text-headline-sm text-primary" }, text),
+        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "AI 思考中，可能需要等待一两分钟…")));
+  }
+
+  /* 大纲按 parent 标题排成先序序列（含缩进深度） */
+  function orderOutline(nodes) {
+    const titles = new Set(nodes.map((n) => n.title));
+    const out = [];
+    const walk = (n, depth) => {
+      out.push({ node: n, depth });
+      nodes.filter((c) => c.parent === n.title).forEach((c) => walk(c, depth + 1));
+    };
+    nodes.filter((n) => !n.parent || !titles.has(n.parent)).forEach((n) => walk(n, 0));
+    nodes.forEach((n) => { if (!out.some((o) => o.node === n)) out.push({ node: n, depth: 0 }); });
+    return out;
+  }
+
+  /* ---------- 骨架 ---------- */
+  const tabBar = ui.el("div", { class: "flex items-center gap-1 p-1 rounded-xl bg-surface-container-low w-fit" });
+  const content = ui.el("div", { class: "flex flex-col gap-space-lg" });
+
+  view.append(
+    ui.el("div", { class: "flex flex-col gap-space-lg" },
+      ui.el("div", { class: "relative overflow-hidden rounded-xl bg-surface-container-lowest shadow-[0_4px_20px_rgba(6,21,35,0.03)] p-space-lg flex flex-col gap-space-xs" },
+        ui.el("div", { class: "absolute -right-12 -top-12 w-64 h-64 rounded-full bg-tertiary-fixed/40 blur-3xl pointer-events-none" }),
+        ui.el("div", { class: "flex items-center gap-space-xs z-10" },
+          ui.el("span", { class: "inline-flex items-center justify-center w-6 h-6 rounded-full bg-tertiary-container text-on-tertiary-container shadow-sm" },
+            ui.icon("science", "text-[15px]")),
+          ui.el("span", { class: "font-label-sm text-label-sm text-secondary tracking-widest uppercase" }, "ALCHEMY · PRE-WRITING FORGE"),
+          ui.el("span", { class: "text-outline-variant font-body-sm text-body-sm" }, "•"),
+          ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "拆书、融汇、炼丹，一气呵成")),
+        ui.el("h1", { class: "font-headline-lg text-headline-lg text-primary tracking-tight z-10" }, "炼丹炉 · 创作前期工坊"),
+        ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant z-10" },
+          "拆解佳作提炼文风，融汇资料生成设定，四步开炉炼出作品胚子。所有 AI 生成内容均需你确认后才会入库。")),
+      tabBar,
+      content));
+
+  function renderTabs() {
+    tabBar.innerHTML = "";
+    for (const t of TABS) {
+      const on = t.id === active;
+      tabBar.append(ui.el("button", {
+        class: "flex items-center gap-space-xs px-space-md py-space-sm rounded-lg font-label-md text-label-md transition-all duration-200 " +
+          (on ? "bg-primary text-on-primary shadow-sm" : "text-on-surface-variant hover:bg-surface-container-high"),
+        onclick: () => { active = t.id; renderTabs(); renderContent(); },
+      }, ui.icon(t.icon, "text-[18px]"), t.label));
+    }
+  }
+
+  function renderContent() {
+    content.innerHTML = "";
+    if (active === "distill") renderDistill();
+    else if (active === "fuse") renderFuse();
+    else if (active === "brew") renderBrew();
+    else if (window.GalleryTab && window.GalleryTab.render) window.GalleryTab.render(content);
+    else content.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-xl text-on-surface-variant" },
+      ui.icon("palette", "text-[48px] text-outline-variant"),
+      ui.el("p", { class: "font-body-md text-body-md" }, "丹青阁筹备中…")));
+  }
+
+  /* ================= Tab1 拆书蒸馏 ================= */
+
+  const distill = { mode: "file", fileToken: null, fileName: "", report: "", sampleInfo: null, running: false };
+
+  function renderDistill() {
+    const leftBox = ui.el("div", { class: cardCls + " flex flex-col gap-space-sm" });
+    const rightBox = ui.el("div", { class: "flex flex-col gap-space-md" });
+    content.append(ui.el("div", { class: "grid grid-cols-12 gap-space-lg items-start" },
+      ui.el("div", { class: "col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-space-md lg:sticky lg:top-20" }, leftBox),
+      ui.el("div", { class: "col-span-12 lg:col-span-8 xl:col-span-9" }, rightBox)));
+    renderDistillLeft(leftBox, rightBox);
+    renderDistillRight(rightBox);
+  }
+
+  function renderDistillLeft(leftBox, rightBox) {
+    leftBox.innerHTML = "";
+    leftBox.append(ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold tracking-wider" }, "拆解对象"));
+
+    const modeRow = ui.el("div", { class: "flex gap-1 p-1 rounded-lg bg-surface-container-low" });
+    const modes = [["file", "上传 TXT"], ["work", "库内作品"]];
+    for (const [m, label] of modes) {
+      modeRow.append(ui.el("button", {
+        class: "flex-1 px-2 py-1.5 rounded-md font-label-sm text-label-sm transition-colors " +
+          (distill.mode === m ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container-high"),
+        onclick: () => { distill.mode = m; renderDistillLeft(leftBox, rightBox); },
+      }, label));
+    }
+    leftBox.append(modeRow);
+
+    if (distill.mode === "file") {
+      const upBtn = filePickerButton(".txt", "upload_file",
+        distill.fileName ? "重新上传" : "选择 TXT 文件",
+        async (file) => {
+          try {
+            const r = await uploadForImport(file);
+            distill.fileToken = r.file_token;
+            distill.fileName = file.name;
+            ui.toast(`已上传《${file.name}》，共 ${ui.fmtWords(r.total_words)} 字`, "ok");
+          } catch (e) { ui.toast(e.message, "err"); }
+          renderDistillLeft(leftBox, rightBox);
+        });
+      leftBox.append(upBtn,
+        distill.fileName
+          ? ui.el("div", { class: "flex items-center gap-space-xs px-space-sm py-space-xs rounded-lg bg-secondary-fixed/50 text-on-secondary-fixed font-body-sm text-body-sm" },
+              ui.icon("description", "text-[16px]"), ui.el("span", { class: "truncate" }, distill.fileName))
+          : ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "上传整本小说 TXT，将按开头/中段/结尾取样拆解。"));
+    } else {
+      const sel = workSelect();
+      distill.workId = selectedWorkId(sel);
+      sel.addEventListener("change", () => { distill.workId = selectedWorkId(sel); });
+      leftBox.append(ui.el("label", { class: "flex flex-col gap-1 font-label-sm text-label-sm text-on-surface-variant" }, "选择作品", sel),
+        ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "取该作品首尾若干章正文取样拆解。"));
+    }
+
+    const runBtn = ui.el("button", {
+      class: btnPrimary,
+      disabled: distill.running ? "" : null,
+      onclick: async () => {
+        if (distill.running) return;
+        const body = distill.mode === "file" ? { file_token: distill.fileToken } : { work_id: distill.workId };
+        if (distill.mode === "file" && !distill.fileToken) { ui.toast("请先上传 TXT 文件", "err"); return; }
+        if (distill.mode === "work" && !distill.workId) { ui.toast("请选择库内作品", "err"); return; }
+        distill.running = true;
+        rightBox.innerHTML = "";
+        rightBox.append(loadingCard("正在拆解文本样本…"));
+        renderDistillLeft(leftBox, rightBox);
+        try {
+          const r = await api.post("/alchemy/analyze", body);
+          distill.report = r.report;
+          distill.sampleInfo = r.sample_info;
+        } catch (e) {
+          distill.report = "";
+          aiFail(e);
+        } finally {
+          distill.running = false;
+          renderDistillLeft(leftBox, rightBox);
+          renderDistillRight(rightBox);
+        }
+      },
+    }, ui.icon("science", "text-[18px]"), distill.running ? "拆解中…" : "开始拆解");
+    leftBox.append(runBtn);
+  }
+
+  function renderDistillRight(rightBox) {
+    rightBox.innerHTML = "";
+    if (!distill.report) {
+      rightBox.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-xl text-center" },
+        ui.icon("menu_book", "text-[48px] text-outline-variant"),
+        ui.el("p", { class: "font-body-md text-body-md text-on-surface-variant" },
+          "上传一本佳作或选择库内作品，点「开始拆解」生成文风拆解报告")));
+      return;
+    }
+    const info = distill.sampleInfo || {};
+    const infoText = info.source === "work"
+      ? `样本：《${info.name}》 · 共 ${info.chapter_count} 章，取 ${((info.sampled_chapters || []).join("、"))} · 取样约 ${info.sampled_chars} 字`
+      : `样本：《${info.name}》 · 全文约 ${ui.fmtWords(info.total_chars)} 字 · 取样约 ${info.sampled_chars} 字`;
+
+    const saveSel = workSelect();
+    const saveBtn = ui.el("button", {
+      class: btnPrimary,
+      onclick: async () => {
+        const wid = selectedWorkId(saveSel);
+        if (!wid) { ui.toast("请先选择目标作品", "err"); return; }
+        saveBtn.disabled = true;
+        try {
+          await api.post("/alchemy/save-style", { work_id: wid, style_profile: distill.report });
+          ui.toast("已存为该作品的文风档案，生成正文时将自动注入", "ok");
+        } catch (e) { ui.toast(e.message, "err"); }
+        saveBtn.disabled = false;
+      },
+    }, ui.icon("save", "text-[18px]"), "存为文风档案");
+
+    rightBox.append(
+      ui.el("div", { class: cardCls + " flex flex-col gap-space-md" },
+        ui.el("div", { class: "flex items-center gap-space-xs font-label-sm text-label-sm text-on-surface-variant" },
+          ui.icon("biotech", "text-[16px] text-secondary"), infoText),
+        ui.el("div", { class: "border-t border-border-feather" }),
+        mdRender(distill.report)),
+      ui.el("div", { class: cardCls + " flex flex-wrap items-center gap-space-sm" },
+        ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold" }, "存为文风档案到"),
+        saveSel, saveBtn));
+  }
+
+  /* ================= Tab2 资料融汇 ================= */
+
+  const fuse = { fileToken: null, fileName: "", entities: null, outline: null, running: false, importing: false };
+
+  function renderFuse() {
+    const leftBox = ui.el("div", { class: cardCls + " flex flex-col gap-space-sm" });
+    const rightBox = ui.el("div", { class: "flex flex-col gap-space-md" });
+    content.append(ui.el("div", { class: "grid grid-cols-12 gap-space-lg items-start" },
+      ui.el("div", { class: "col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-space-md lg:sticky lg:top-20" }, leftBox),
+      ui.el("div", { class: "col-span-12 lg:col-span-8 xl:col-span-9" }, rightBox)));
+
+    leftBox.append(
+      ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold tracking-wider" }, "上传资料"),
+      ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" },
+        "支持 TXT / MD / DOCX。AI 会将资料中的设定与情节线索提炼为「设定条目 + 大纲节点」预览，确认后入库。"));
+
+    const upBtn = filePickerButton(".txt,.md,.docx", "upload_file",
+      fuse.fileName ? "重新上传" : "选择文件",
+      async (file) => {
+        try {
+          const r = await uploadForImport(file);
+          fuse.fileToken = r.file_token;
+          fuse.fileName = file.name;
+          fuse.entities = null;
+          fuse.outline = null;
+          ui.toast(`已上传《${file.name}》`, "ok");
+        } catch (e) { ui.toast(e.message, "err"); }
+        renderContent();
+      });
+    leftBox.append(upBtn);
+    if (fuse.fileName) {
+      leftBox.append(ui.el("div", { class: "flex items-center gap-space-xs px-space-sm py-space-xs rounded-lg bg-secondary-fixed/50 text-on-secondary-fixed font-body-sm text-body-sm" },
+        ui.icon("description", "text-[16px]"), ui.el("span", { class: "truncate" }, fuse.fileName)));
+    }
+
+    const runBtn = ui.el("button", {
+      class: btnPrimary,
+      disabled: (fuse.running || !fuse.fileToken) ? "" : null,
+      onclick: async () => {
+        if (fuse.running || !fuse.fileToken) return;
+        fuse.running = true;
+        rightBox.innerHTML = "";
+        rightBox.append(loadingCard("正在智能分类资料…"));
+        renderContent();
+        try {
+          const r = await api.post("/alchemy/extract-lore", { file_token: fuse.fileToken });
+          fuse.entities = (r.entities || []).map((e) => ({ ...e, _checked: true }));
+          fuse.outline = (r.outline || []).map((o) => ({ ...o, _checked: true }));
+        } catch (e) {
+          fuse.entities = null;
+          aiFail(e);
+        } finally {
+          fuse.running = false;
+          renderContent();
+        }
+      },
+    }, ui.icon("auto_awesome", "text-[18px]"), fuse.running ? "分类中…" : "智能分类");
+    leftBox.append(runBtn);
+
+    renderFuseRight(rightBox);
+  }
+
+  function renderFuseRight(rightBox) {
+    rightBox.innerHTML = "";
+    if (fuse.running) return;
+    if (!fuse.entities) {
+      rightBox.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-xl text-center" },
+        ui.icon("merge", "text-[48px] text-outline-variant"),
+        ui.el("p", { class: "font-body-md text-body-md text-on-surface-variant" }, "上传资料后点「智能分类」，这里会显示可勾选的预览结果")));
+      return;
+    }
+    if (!fuse.entities.length && !fuse.outline.length) {
+      rightBox.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-xl text-center" },
+        ui.icon("search_off", "text-[48px] text-outline-variant"),
+        ui.el("p", { class: "font-body-md text-body-md text-on-surface-variant" }, "AI 未能从资料中提炼出设定或大纲，可换一份资料重试")));
+      return;
+    }
+
+    /* 设定条目：按分类分组卡 */
+    const byCat = {};
+    for (const e of fuse.entities) (byCat[e.category] = byCat[e.category] || []).push(e);
+    for (const cat of Object.keys(CAT_META)) {
+      const list = byCat[cat];
+      if (!list || !list.length) continue;
+      const meta = CAT_META[cat];
+      rightBox.append(ui.el("div", { class: cardCls + " flex flex-col gap-space-sm" },
+        ui.el("div", { class: "flex items-center gap-space-xs" },
+          ui.icon(meta.icon, "text-[18px] text-secondary"),
+          ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, meta.label),
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `${list.length} 条`)),
+        ...list.map((e) => fuseEntityRow(e))));
+    }
+
+    /* 大纲预览 */
+    if (fuse.outline.length) {
+      const rows = orderOutline(fuse.outline);
+      rightBox.append(ui.el("div", { class: cardCls + " flex flex-col gap-space-sm" },
+        ui.el("div", { class: "flex items-center gap-space-xs" },
+          ui.icon("account_tree", "text-[18px] text-secondary"),
+          ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "大纲节点"),
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `${fuse.outline.length} 个`)),
+        ...rows.map(({ node, depth }) => {
+          const cb = ui.el("input", { type: "checkbox", class: "accent-secondary shrink-0 mt-1" });
+          cb.checked = node._checked;
+          cb.addEventListener("change", () => { node._checked = cb.checked; });
+          const titleIn = ui.el("input", { class: inputCls + " font-semibold", value: node.title });
+          titleIn.addEventListener("input", () => { node.title = titleIn.value; });
+          const synIn = ui.el("textarea", { class: inputCls, rows: "2" }, node.synopsis || "");
+          synIn.value = node.synopsis || "";
+          synIn.addEventListener("input", () => { node.synopsis = synIn.value; });
+          return ui.el("div", {
+            class: "flex items-start gap-space-xs rounded-lg bg-surface-container-low p-space-sm",
+            style: `margin-left:${depth * 20}px`,
+          }, cb,
+            ui.el("div", { class: "flex-1 flex flex-col gap-1 min-w-0" },
+              titleIn, synIn,
+              node.parent ? ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "归属：" + node.parent) : null));
+        })));
+    }
+
+    /* 入库操作 */
+    const targetSel = workSelect();
+    const importBtn = ui.el("button", {
+      class: btnPrimary,
+      disabled: fuse.importing ? "" : null,
+      onclick: async () => {
+        const wid = selectedWorkId(targetSel);
+        if (!wid) { ui.toast("请先选择目标作品", "err"); return; }
+        const entities = fuse.entities.filter((e) => e._checked)
+          .map(({ category, name, content, tags }) => ({ category, name, content, tags }));
+        const outline = fuse.outline.filter((o) => o._checked)
+          .map(({ title, synopsis, parent }) => ({ title, synopsis, parent }));
+        if (!entities.length && !outline.length) { ui.toast("请至少勾选一条内容", "err"); return; }
+        fuse.importing = true;
+        importBtn.disabled = true;
+        try {
+          const r = await api.post("/alchemy/import-lore", { work_id: wid, entities, outline });
+          ui.toast(`入库设定 ${r.created.entities} 条、大纲节点 ${r.created.outline} 个，跳过重复 ${r.skipped} 条`, "ok");
+          fuse.entities = null;
+          fuse.outline = null;
+          renderContent();
+        } catch (e) { ui.toast(e.message, "err"); }
+        fuse.importing = false;
+        importBtn.disabled = false;
+      },
+    }, ui.icon("database", "text-[18px]"), "确认入库");
+    rightBox.append(ui.el("div", { class: cardCls + " flex flex-wrap items-center gap-space-sm" },
+      ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold" }, "确认入库到"),
+      targetSel, importBtn,
+      ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "同名同分类的已有设定会自动跳过")));
+  }
+
+  function fuseEntityRow(e) {
+    const meta = CAT_META[e.category] || CAT_META.term;
+    const cb = ui.el("input", { type: "checkbox", class: "accent-secondary shrink-0 mt-1" });
+    cb.checked = e._checked;
+    cb.addEventListener("change", () => { e._checked = cb.checked; });
+    const nameIn = ui.el("input", { class: inputCls + " font-semibold", value: e.name });
+    nameIn.addEventListener("input", () => { e.name = nameIn.value; });
+    const tagsIn = ui.el("input", { class: inputCls, value: e.tags || "", placeholder: "标签（逗号分隔）" });
+    tagsIn.addEventListener("input", () => { e.tags = tagsIn.value; });
+    const contentIn = ui.el("textarea", { class: inputCls, rows: "2" });
+    contentIn.value = e.content || "";
+    contentIn.addEventListener("input", () => { e.content = contentIn.value; });
+    return ui.el("div", { class: "flex items-start gap-space-xs rounded-lg bg-surface-container-low p-space-sm" },
+      cb,
+      ui.el("div", { class: "flex-1 flex flex-col gap-1 min-w-0" },
+        ui.el("div", { class: "flex gap-space-xs" },
+          ui.el("span", { class: "shrink-0 self-center px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm" }, meta.label),
+          nameIn),
+        contentIn, tagsIn));
+  }
+
+  /* ================= Tab3 开炉炼丹 ================= */
+
+  const brew = { step: 0, data: { framework: null, world: null, characters: null, outline: null }, candidate: null, running: false };
+
+  function brewContext() {
+    const parts = [];
+    const f = brew.data.framework;
+    if (f) {
+      parts.push("【题材框架】书名候选：" + (f.title_suggestions || []).join("、")
+        + "；题材：" + (f.genre || "") + "；核心卖点：" + (f.selling_point || "")
+        + "；主线：" + (f.main_line || "") + "；目标读者：" + (f.audience || ""));
+    }
+    for (const [key, label] of [["world", "世界观"], ["characters", "主要人物"]]) {
+      const ents = ((brew.data[key] || {}).entities) || [];
+      if (ents.length) parts.push(`【${label}】\n` + ents.map((e) => `- ${e.name}：${e.content}`).join("\n"));
+    }
+    const ol = ((brew.data.outline || {}).outline) || [];
+    if (ol.length) {
+      parts.push("【故事大纲】\n" + ol.map((o) => `- ${o.title}${o.synopsis ? "：" + o.synopsis : ""}`).join("\n"));
+    }
+    return parts.join("\n\n");
+  }
+
+  function renderBrew() {
+    content.append(
+      brewStepBar(),
+      brew.step >= BREW_STEPS.length ? brewFinale() : brewStepPanel());
+  }
+
+  function brewStepBar() {
+    const bar = ui.el("div", { class: cardCls + " flex items-center gap-space-xs flex-wrap" });
+    BREW_STEPS.forEach((s, i) => {
+      const done = !!brew.data[s.id];
+      const cur = i === brew.step;
+      bar.append(ui.el("button", {
+          class: "flex items-center gap-space-xs px-space-sm py-2 rounded-lg font-label-md text-label-md transition-colors " +
+            (cur ? "bg-primary text-on-primary shadow-sm"
+              : done ? "bg-secondary-fixed/60 text-on-secondary-fixed"
+                : "text-on-surface-variant hover:bg-surface-container-high"),
+          onclick: () => { brew.step = i; brew.candidate = null; renderContent(); },
+        },
+          ui.icon(done ? "check_circle" : s.icon, "text-[16px]"),
+          `${i + 1}. ${s.label}`));
+      if (i < BREW_STEPS.length - 1) {
+        bar.append(ui.icon("chevron_right", "text-[16px] text-outline-variant"));
+      }
+    });
+    return bar;
+  }
+
+  function brewStepPanel() {
+    const meta = BREW_STEPS[brew.step];
+    const panel = ui.el("div", { class: "flex flex-col gap-space-md" });
+
+    /* 指令输入 + 生成 */
+    const instr = ui.el("textarea", {
+      class: inputCls + " font-body-md text-body-md", rows: "3",
+      placeholder: `给炼丹炉的指令（可选）：例如「想要东方仙侠 + 规则怪谈混搭」「主角要亦正亦邪」…`,
+    });
+    const genBtn = ui.el("button", {
+      class: btnPrimary,
+      disabled: brew.running ? "" : null,
+      onclick: async () => {
+        if (brew.running) return;
+        brew.running = true;
+        renderContent();
+        try {
+          const r = await api.post("/alchemy/brew", {
+            step: meta.id, instruction: instr.value, context: brewContext(),
+          });
+          brew.candidate = r.result;
+        } catch (e) {
+          brew.candidate = null;
+          aiFail(e);
+        } finally {
+          brew.running = false;
+          renderContent();
+        }
+      },
+    }, ui.icon("science", "text-[18px]"),
+      brew.running ? "炼制中…" : (brew.candidate ? "重新生成" : "生成"));
+    panel.append(ui.el("div", { class: cardCls + " flex flex-col gap-space-sm" },
+      ui.el("div", { class: "flex items-center gap-space-xs" },
+        ui.icon(meta.icon, "text-[20px] text-secondary"),
+        ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" },
+          `第 ${brew.step + 1} 步 · ${meta.label}`),
+        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "· " + meta.hint)),
+      instr,
+      ui.el("div", { class: "flex items-center gap-space-sm" },
+        genBtn,
+        brewContext() ? ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" },
+          "已自动携带前序步骤的确认内容作为上下文") : null)));
+
+    /* 候选展示 */
+    if (brew.running) {
+      panel.append(loadingCard(`正在炼制${meta.label}…`));
+      return panel;
+    }
+    if (!brew.candidate) {
+      if (brew.data[meta.id]) {
+        panel.append(ui.el("div", { class: "flex items-center gap-space-xs rounded-lg bg-secondary-fixed/60 px-space-sm py-space-xs text-on-secondary-fixed font-body-sm text-body-sm" },
+          ui.icon("check_circle", "text-[16px] shrink-0"),
+          "本步已确认入炉，可点上方步骤条回顾，或点「生成」重新炼制一炉。"));
+      } else {
+        panel.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-lg text-center" },
+          ui.icon("hourglass_empty", "text-[40px] text-outline-variant"),
+          ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "点「生成」开炉，候选结果可直接编辑后再确认")));
+      }
+      return panel;
+    }
+
+    const editorBox = ui.el("div", { class: "flex flex-col gap-space-md" });
+    renderBrewCandidate(meta.id, brew.candidate, editorBox);
+    panel.append(editorBox);
+
+    const confirmBtn = ui.el("button", {
+      class: btnPrimary,
+      onclick: () => {
+        brew.data[meta.id] = collectBrewCandidate(meta.id);
+        brew.candidate = null;
+        brew.step += 1;
+        ui.toast(`「${meta.label}」已确认入炉`, "ok");
+        renderContent();
+      },
+    }, ui.icon("local_fire_department", "text-[18px]"), "确认入炉");
+    panel.append(ui.el("div", { class: cardCls + " flex items-center justify-end gap-space-sm" },
+      ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant mr-auto" }, "候选内容可直接编辑，确认后进入下一步"),
+      confirmBtn));
+    return panel;
+  }
+
+  /* 候选渲染（就地编辑 DOM，确认时回收） */
+  function renderBrewCandidate(stepId, cand, box) {
+    if (stepId === "framework") {
+      const field = (label, value, textarea) => {
+        const el = textarea
+          ? ui.el("textarea", { class: inputCls, rows: "2" })
+          : ui.el("input", { class: inputCls });
+        el.value = value || "";
+        el.dataset.field = label;
+        return ui.el("label", { class: "flex flex-col gap-1 font-label-sm text-label-sm text-on-surface-variant" }, label, el);
+      };
+      const titlesBox = ui.el("div", { class: "flex flex-col gap-1" });
+      (cand.title_suggestions || []).forEach((t) => {
+        const inp = ui.el("input", { class: inputCls, value: t });
+        inp.dataset.title = "1";
+        titlesBox.append(inp);
+      });
+      box.append(ui.el("div", { class: cardCls + " flex flex-col gap-space-sm", id: "brew-framework" },
+        ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold tracking-wider" }, "题材框架"),
+        ui.el("label", { class: "flex flex-col gap-1 font-label-sm text-label-sm text-on-surface-variant" }, "候选书名", titlesBox),
+        ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-space-sm" },
+          field("题材", cand.genre), field("目标读者", cand.audience)),
+        field("核心卖点", cand.selling_point, true),
+        field("主线一句话", cand.main_line, true)));
+    } else if (stepId === "world" || stepId === "characters") {
+      const ents = cand.entities || [];
+      if (!ents.length) {
+        box.append(ui.el("div", { class: cardCls + " text-center py-space-lg font-body-sm text-body-sm text-on-surface-variant" },
+          "AI 未给出条目，可调整指令后重新生成"));
+        return;
+      }
+      for (const e of ents) {
+        const nameIn = ui.el("input", { class: inputCls + " font-semibold", value: e.name });
+        const contentIn = ui.el("textarea", { class: inputCls, rows: "3" });
+        contentIn.value = e.content || "";
+        const tagsIn = ui.el("input", { class: inputCls, value: e.tags || "", placeholder: "标签（逗号分隔）" });
+        const catSel = ui.el("select", { class: inputCls + " w-auto shrink-0" },
+          ...Object.entries(CAT_META).map(([k, m]) => ui.el("option", { value: k }, m.label)));
+        catSel.value = stepId === "characters" ? "character" : (CAT_META[e.category] ? e.category : "term");
+        box.append(ui.el("div", { class: cardCls + " flex flex-col gap-1 brew-entity" },
+          ui.el("div", { class: "flex gap-space-xs items-center" }, catSel, nameIn),
+          contentIn, tagsIn));
+      }
+    } else if (stepId === "outline") {
+      const rows = orderOutline((cand.outline || []).map((o) => o));
+      if (!rows.length) {
+        box.append(ui.el("div", { class: cardCls + " text-center py-space-lg font-body-sm text-body-sm text-on-surface-variant" },
+          "AI 未给出大纲，可调整指令后重新生成"));
+        return;
+      }
+      const tree = ui.el("div", { class: cardCls + " flex flex-col gap-space-sm", id: "brew-outline" },
+        ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold tracking-wider" }, "卷章大纲"));
+      for (const { node, depth } of rows) {
+        const titleIn = ui.el("input", { class: inputCls + " font-semibold", value: node.title });
+        const synIn = ui.el("textarea", { class: inputCls, rows: "2" });
+        synIn.value = node.synopsis || "";
+        const row = ui.el("div", {
+          class: "brew-outline-node flex flex-col gap-1 rounded-lg bg-surface-container-low p-space-sm",
+          style: `margin-left:${Math.min(depth, 3) * 20}px`,
+        }, titleIn, synIn);
+        row.dataset.parent = node.parent || "";
+        tree.append(row);
+      }
+      box.append(tree);
+    }
+  }
+
+  function collectBrewCandidate(stepId) {
+    if (stepId === "framework") {
+      const root = document.getElementById("brew-framework");
+      const titles = [...root.querySelectorAll("input[data-title]")].map((i) => i.value.trim()).filter(Boolean);
+      const get = (f) => (root.querySelector(`[data-field="${f}"]`) || {}).value || "";
+      return { title_suggestions: titles, genre: get("题材"), audience: get("目标读者"),
+               selling_point: get("核心卖点"), main_line: get("主线一句话") };
+    }
+    if (stepId === "world" || stepId === "characters") {
+      const entities = [...document.querySelectorAll(".brew-entity")].map((card) => {
+        const [sel, nameIn, contentIn, tagsIn] = card.querySelectorAll("select, input, textarea");
+        return { category: sel.value, name: nameIn.value.trim(),
+                 content: contentIn.value.trim(), tags: tagsIn.value.trim() };
+      }).filter((e) => e.name);
+      return { entities };
+    }
+    const outline = [...document.querySelectorAll(".brew-outline-node")].map((row) => {
+      const [titleIn, synIn] = row.querySelectorAll("input, textarea");
+      return { title: titleIn.value.trim(), synopsis: synIn.value.trim(),
+               parent: row.dataset.parent || null };
+    }).filter((o) => o.title);
+    return { outline };
+  }
+
+  /* 成丹 */
+  function brewFinale() {
+    const f = brew.data.framework || {};
+    const modeNew = ui.el("input", { type: "radio", name: "brew-mode", class: "accent-secondary", checked: "" });
+    modeNew.checked = true;
+    const modeExisting = ui.el("input", { type: "radio", name: "brew-mode", class: "accent-secondary" });
+    const titleIn = ui.el("input", { class: inputCls, value: (f.title_suggestions || [])[0] || "", placeholder: "新作品书名" });
+    const targetSel = workSelect();
+
+    const doneBtn = ui.el("button", {
+      class: btnPrimary,
+      onclick: async () => {
+        const isNew = modeNew.checked;
+        if (isNew && !titleIn.value.trim()) { ui.toast("请填写新作品书名", "err"); return; }
+        const wid = selectedWorkId(targetSel);
+        if (!isNew && !wid) { ui.toast("请选择要填充的现有作品", "err"); return; }
+        doneBtn.disabled = true;
+        try {
+          const r = await api.post("/alchemy/complete", {
+            mode: isNew ? "new" : "existing",
+            title: titleIn.value.trim(),
+            work_id: isNew ? undefined : wid,
+            brew: brew.data,
+          });
+          ui.toast(`成丹！入库设定 ${r.created.entities} 条、大纲节点 ${r.created.outline} 个`, "ok");
+          location.hash = `#/outline/${r.work_id}`;
+        } catch (e) {
+          ui.toast(e.message, "err");
+          doneBtn.disabled = false;
+        }
+      },
+    }, ui.icon("auto_awesome", "text-[18px]"), "成丹");
+
+    return ui.el("div", { class: cardCls + " flex flex-col gap-space-md" },
+      ui.el("div", { class: "flex items-center gap-space-xs" },
+        ui.icon("local_fire_department", "text-[20px] text-cinnabar-accent"),
+        ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "成丹出炉"),
+        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "四味药材已备齐，选择落鼎之处")),
+      ui.el("label", { class: "flex items-start gap-space-sm p-space-sm rounded-lg bg-surface-container-low cursor-pointer" },
+        modeNew,
+        ui.el("div", { class: "flex-1 flex flex-col gap-1" },
+          ui.el("span", { class: "font-body-md text-body-md font-semibold text-on-surface" }, "新建作品"),
+          titleIn)),
+      ui.el("label", { class: "flex items-start gap-space-sm p-space-sm rounded-lg bg-surface-container-low cursor-pointer" },
+        modeExisting,
+        ui.el("div", { class: "flex-1 flex flex-col gap-1" },
+          ui.el("span", { class: "font-body-md text-body-md font-semibold text-on-surface" }, "填充到现有作品"),
+          targetSel)),
+      ui.el("div", { class: "flex items-center justify-between gap-space-sm flex-wrap" },
+        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" },
+          "世界观与人物将进入设定库，大纲将挂入大纲树；新建作品自动创建「卷一」"),
+        doneBtn));
+  }
+
+  /* ---------- 启动 ---------- */
+  await loadWorks();
+  renderTabs();
+  renderContent();
+});

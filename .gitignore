@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# 打包产物
+build/
+dist/
+*.spec.bak
+
+# 运行时数据（含用户作品与 API Key，绝不入库）
+data/
+
+# 系统文件
+.DS_Store
+Thumbs.db

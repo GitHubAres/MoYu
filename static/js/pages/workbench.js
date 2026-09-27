@@ -1,0 +1,1019 @@
+/* 写作工作台（对应设计稿 _2）：左目录树 3 列 | 中编辑器 6 列 | 右 AI 侧栏 3 列 */
+registerPage("workbench", async (view, { segs, params }) => {
+  const workId = segs[0] ? Number(segs[0]) : null;
+  if (!workId) return renderWorkPicker(view);
+
+  /* ---------- 状态 ---------- */
+  let work, tree;                 // 作品与目录树
+  let chapter = null;             // 当前章节完整记录（含 content）
+  let prevChapterText = "";       // 上一章末尾 500 字（前情摘要）
+  let dirty = false, saveError = false, saveTimer = null;
+  let prevWords = 0, todayAdded = 0;
+  let selRange = null, selText = "";      // 编辑器内最近一次有效选区
+  let abortCtrl = null, generating = false;
+  let aiTask = "continue", aiLength = "medium", aiCandidates = 1;
+  let taskBtns = {}, lenBtns = {}, candBtns = {};   // 分段按钮组（buildAiPanel 时赋值）
+  let ctxItems = [];                                // 上下文 checkbox 项（renderContext 时填充）
+  const collapsed = new Set();            // 折叠的分卷 id
+  let treeStatsEl = null;                 // 目录树头部"总字数"文本节点（renderTree 时刷新）
+  let dragInfo = null;                    // 拖拽中的章节 { chapterId, volId }
+
+  try {
+    work = await api.get(`/works/${workId}`);
+    tree = await api.get(`/works/${workId}/tree`);
+  } catch (e) {
+    ui.toast(e.message, "err");
+    location.hash = "#/bookshelf";
+    return;
+  }
+
+  /* 作品没有任何章节时自动创建 卷一/第一章 */
+  if (!tree.length) {
+    const v = await api.post("/volumes", { work_id: workId, title: "卷一" });
+    v.chapters = [];
+    tree = [v];
+  }
+  if (!tree.some((v) => v.chapters.length)) {
+    const vol = tree[tree.length - 1];
+    const c = await api.post("/chapters", { volume_id: vol.id, title: "第一章" });
+    vol.chapters.push({ id: c.id, title: c.title, status: "draft", word_count: 0 });
+  }
+
+  /* ---------- 骨架布局 ---------- */
+  const treeBox = ui.el("div", { class: "flex flex-col gap-space-sm" });
+  const titleInput = ui.el("input", {
+    class: "w-full bg-transparent outline-none font-headline-md text-headline-md text-primary font-semibold",
+    placeholder: "章节标题",
+  });
+  const countLine = ui.el("div", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "");
+  const editor = ui.el("div", {
+    class: "editor-area font-serif-content text-[17px] leading-[1.9] text-on-surface min-h-[58vh] outline-none",
+    contenteditable: "true",
+    spellcheck: "false",
+    "data-placeholder": "开始写作…",
+  });
+  const findBar = buildFindBar();
+  const candidatesBox = ui.el("div", { class: "flex flex-col gap-space-sm" });
+  const ctxBox = ui.el("div", { class: "flex flex-col gap-1" });
+  const instrInput = ui.el("textarea", {
+    class: "w-full px-2 py-1.5 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm resize-none",
+    rows: "2", placeholder: "自定义指令（可选），如：加强紧张感",
+  });
+  const genBtn = ui.el("button", {
+    class: "w-full flex items-center justify-center gap-1 py-2 rounded-lg bg-secondary-container text-on-secondary-container font-label-md text-label-md hover:bg-secondary transition-colors",
+    onclick: runGenerate,
+  }, ui.icon("auto_awesome", "text-[18px]"), "生成");
+  const stopBtn = ui.el("button", {
+    class: "hidden w-full flex items-center justify-center gap-1 py-2 rounded-lg bg-error-container text-on-error-container font-label-md text-label-md",
+    onclick: () => abortCtrl && abortCtrl.abort(),
+  }, ui.icon("stop", "text-[18px]"), "停止");
+
+  const leftCol = ui.el("div", {
+    class: "col-span-3 workbench-side flex flex-col gap-space-sm sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto pr-1",
+  }, treeBox);
+  const centerCol = ui.el("div", { class: "col-span-6 flex flex-col gap-space-sm min-w-0" },
+    ui.el("div", { class: "bg-surface-container-lowest rounded-xl px-space-lg py-space-md shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
+      ui.el("div", { class: "flex items-center gap-space-sm" }, titleInput),
+      countLine,
+      findBar.box,
+      ui.el("div", { class: "h-[1px] bg-border-feather my-1" }),
+      editor));
+  const rightCol = ui.el("div", {
+    class: "col-span-3 workbench-side flex flex-col gap-space-sm sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto pr-1",
+  },
+    buildAiPanel());
+  view.append(ui.el("div", { class: "grid grid-cols-12 gap-space-lg items-start" }, leftCol, centerCol, rightCol));
+
+  /* 顶栏：面包屑 + 专注模式 */
+  const focusBtn = ui.el("button", {
+    class: "flex items-center gap-1 px-space-sm py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface transition-all",
+    onclick: toggleFocus,
+  }, ui.icon("center_focus_strong", "text-[18px]"), ui.el("span", { class: "font-label-md text-label-md" }, "专注模式"));
+  ui.setActions(focusBtn);
+
+  /* 保存失败时点击指示器重试 */
+  document.getElementById("save-indicator").onclick = () => { if (saveError) saveContent(); };
+
+  /* ---------- 编辑器事件 ---------- */
+  editor.addEventListener("input", () => {
+    dirty = true;
+    scheduleCounts();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => saveContent(), 2000);
+  });
+  /* 粘贴强制纯文本 */
+  editor.addEventListener("paste", (e) => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData("text/plain");
+    document.execCommand("insertText", false, text);
+  });
+  titleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") titleInput.blur(); });
+  titleInput.addEventListener("blur", renameChapter);
+
+  /* Ctrl+F 查找替换（页面销毁后自清理） */
+  function onKeydown(e) {
+    if (!editor.isConnected) {
+      document.removeEventListener("keydown", onKeydown, true);
+      if (document.body.classList.contains("focus-mode")) toggleFocus();  // 离开页面时退出专注
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+      e.preventDefault();
+      findBar.toggle();
+    }
+    if (e.key === "Escape") {
+      findBar.hide(); hideSelToolbar();
+      if (document.body.classList.contains("focus-mode")) toggleFocus();
+    }
+  }
+  document.addEventListener("keydown", onKeydown, true);
+
+  /* 选区工具条 */
+  const selToolbar = buildSelToolbar();
+  document.body.append(selToolbar);
+  document.addEventListener("selectionchange", onSelectionChange);
+
+  /* ---------- 初始加载章节 ---------- */
+  const wanted = Number(params.get("chapter")) || null;
+  const flat = tree.flatMap((v) => v.chapters);
+  const first = (wanted && flat.find((c) => c.id === wanted)) || flat[0];
+  await openChapter(first.id);
+
+  /* ================= 函数 ================= */
+
+  function editorText() {
+    return editor.innerText.replace(/ /g, " ");
+  }
+
+  function debounce(fn, ms) {
+    let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+  }
+
+  /* ---------- 章节切换 / 保存 ---------- */
+
+  /* 光标位置：以纯文本字符偏移量存取（contenteditable Range → offset） */
+  function caretOffset() {
+    const sel = window.getSelection();
+    if (!sel.rangeCount || !editor.contains(sel.anchorNode)) return null;
+    const r = sel.getRangeAt(0).cloneRange();
+    r.selectNodeContents(editor);
+    r.setEnd(sel.anchorNode, sel.anchorOffset);
+    return r.toString().length;
+  }
+
+  function restoreCaret(offset) {
+    if (!offset) return;
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+    let acc = 0, node;
+    while ((node = walker.nextNode())) {
+      if (acc + node.length >= offset) {
+        const sel = window.getSelection();
+        const r = document.createRange();
+        r.setStart(node, Math.min(offset - acc, node.length));
+        r.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(r);
+        return;
+      }
+      acc += node.length + 0; /* textContent 模式下无额外换行节点 */
+    }
+  }
+
+  async function openChapter(id) {
+    if (chapter && chapter.id === id) return;
+    clearTimeout(saveTimer);
+    if (dirty && chapter) await saveContent();
+    if (abortCtrl) { abortCtrl.abort(); generating = false; syncGenBtns(); }
+    chapter = await api.get(`/chapters/${id}`);
+    editor.textContent = chapter.content || "";
+    titleInput.value = chapter.title;
+    prevWords = chapter.word_count || 0;
+    dirty = false; saveError = false;
+    ui.setSaveIndicator(null);
+    ui.setCrumb("连载作品", `《${work.title}》`, chapter.title);
+    history.replaceState(null, "", `#/workbench/${workId}?chapter=${id}`);
+    hideSelToolbar();
+    selRange = null; selText = "";
+    candidatesBox.innerHTML = "";
+    await loadPrevSummary();
+    renderTree();
+    renderContext();
+    updateCounts();
+    if (chapter.cursor_pos) restoreCaret(chapter.cursor_pos);
+  }
+
+  async function saveContent(source = "auto") {
+    if (!chapter) return;
+    ui.setSaveIndicator("saving");
+    try {
+      const caret = caretOffset();
+      const updated = await api.patch(`/chapters/${chapter.id}`, {
+        content: editorText(), snapshot_source: source,
+        ...(caret !== null ? { cursor_pos: caret } : {}),
+      });
+      const delta = (updated.word_count || 0) - prevWords;
+      if (delta > 0) { todayAdded += delta; }
+      prevWords = updated.word_count || 0;
+      chapter = updated;
+      dirty = false; saveError = false;
+      ui.setSaveIndicator("saved");
+      ui.refreshStats();
+      updateCounts();
+      syncTreeAfterSave(updated);
+    } catch (e) {
+      saveError = true;
+      ui.setSaveIndicator("error");
+      ui.toast("保存失败：" + e.message + "（点击顶部状态可重试）", "err");
+    }
+  }
+
+  let countsTimer = null;
+  function updateCounts() {
+    const wc = (editorText().match(/\S/g) || []).length;
+    countLine.textContent = `本章 ${ui.fmtWords(wc)} 字 · 今日新增 +${ui.fmtWords(todayAdded)} 字`;
+  }
+
+  /* 字数统计节流：击键期间最多每 300ms 重算一次（万字长文 innerText 开销大） */
+  function scheduleCounts() {
+    if (countsTimer) return;
+    countsTimer = setTimeout(() => { countsTimer = null; updateCounts(); }, 300);
+  }
+
+  /* 保存后的目录树最小更新：内容/字数变化在树中不可见，
+     只同步本地数据与"总字数"文本，避免整树重绘；标题/状态变化走 renameChapter 等仍整树重绘 */
+  function syncTreeAfterSave(updated) {
+    const row = tree.flatMap((v) => v.chapters).find((c) => c.id === updated.id);
+    if (!row) return;
+    const visibleChange = row.title !== updated.title || row.status !== updated.status;
+    row.word_count = updated.word_count || 0;
+    if (visibleChange) { row.title = updated.title; row.status = updated.status; renderTree(); return; }
+    if (treeStatsEl && treeStatsEl.isConnected)
+      treeStatsEl.textContent = `总字数 ${ui.fmtWords(totalWords())}`;
+  }
+
+  async function renameChapter() {
+    const t = titleInput.value.trim();
+    if (!chapter || !t || t === chapter.title) { titleInput.value = chapter ? chapter.title : ""; return; }
+    try {
+      chapter = await api.patch(`/chapters/${chapter.id}`, { title: t });
+      ui.setCrumb("连载作品", `《${work.title}》`, chapter.title);
+      renderTree();
+    } catch (e) { ui.toast(e.message, "err"); }
+  }
+
+  /* ---------- 左栏目录树 ---------- */
+
+  function totalWords() {
+    return tree.reduce((s, v) => s + v.chapters.reduce((a, c) => a + (c.word_count || 0), 0), 0);
+  }
+
+  function renderTree() {
+    treeBox.innerHTML = "";
+    treeBox.append(
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-md shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
+        ui.el("div", { class: "flex items-center gap-2" },
+          ui.el("span", { class: "px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm" }, work.status || "连载中"),
+          (treeStatsEl = ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `总字数 ${ui.fmtWords(totalWords())}`))),
+        ui.el("h2", { class: "font-headline-sm text-headline-sm text-primary font-semibold truncate" }, `《${work.title}》`),
+        ui.el("div", { class: "flex gap-2 pt-1" },
+          ui.el("button", {
+            class: "flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors",
+            onclick: () => newChapter(),
+          }, ui.icon("add", "text-[16px]"), "新建章节"),
+          ui.el("button", {
+            class: "flex-1 flex items-center justify-center gap-1 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md transition-colors",
+            onclick: newVolume,
+          }, ui.icon("create_new_folder", "text-[16px]"), "新建分卷"))));
+
+    for (const vol of tree) {
+      const isCollapsed = collapsed.has(vol.id);
+      const chapList = ui.el("div", { class: "flex flex-col gap-0.5 mt-1" });
+      if (!isCollapsed) {
+        for (const c of vol.chapters) chapList.append(chapterRow(vol, c));
+        if (!vol.chapters.length)
+          chapList.append(ui.el("div", { class: "px-space-sm py-1 font-label-sm text-label-sm text-on-surface-variant" }, "暂无章节"));
+      }
+      const volHead = ui.el("div", { class: "group flex items-center gap-1 px-1 py-1 rounded-lg hover:bg-surface-container-low cursor-pointer",
+        "data-vol-head": String(vol.id),
+        onclick: () => { isCollapsed ? collapsed.delete(vol.id) : collapsed.add(vol.id); renderTree(); },
+      },
+        ui.icon(isCollapsed ? "chevron_right" : "expand_more", "text-[18px] text-on-surface-variant"),
+        ui.el("span", { class: "flex-1 font-body-sm text-body-sm text-on-surface font-medium truncate" }, vol.title),
+        iconBtn("add", "本卷新建章节", async (e) => { e.stopPropagation(); await newChapter(vol); }),
+        iconBtn("edit", "重命名分卷", async (e) => {
+          e.stopPropagation();
+          const t = await ui.prompt("重命名分卷", "分卷名", vol.title);
+          if (!t) return;
+          await api.patch(`/volumes/${vol.id}`, { title: t });
+          vol.title = t;
+          renderTree();
+        }),
+        iconBtn("delete", "删除分卷", async (e) => {
+          e.stopPropagation();
+          const ok = await ui.confirm("删除分卷",
+            `将删除分卷「${vol.title}」及其下 ${vol.chapters.length} 个章节与全部版本快照，且不可恢复。确定继续？`, "删除", true);
+          if (!ok) return;
+          await api.del(`/volumes/${vol.id}`);
+          tree = tree.filter((v) => v.id !== vol.id);
+          if (chapter && !tree.some((v) => v.chapters.some((c) => c.id === chapter.id))) {
+            chapter = null;
+            await ensureAnyChapter();
+            await openChapter(tree.flatMap((v) => v.chapters)[0].id);
+          }
+          renderTree();
+        }));
+      /* 卷头 / 卷区域作为跨卷投放目标：松开即移动到该卷末尾 */
+      for (const target of [volHead, chapList]) {
+        target.addEventListener("dragover", (e) => {
+          if (!dragInfo) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          clearDropMarks();
+          volHead.classList.add("bg-secondary-fixed");
+        });
+        target.addEventListener("drop", (e) => {
+          if (!dragInfo) return;
+          e.preventDefault();
+          handleDrop(vol, null, false);
+        });
+      }
+      treeBox.append(ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)]" },
+        volHead,
+        chapList));
+    }
+  }
+
+  function clearDropMarks() {
+    treeBox.querySelectorAll("[data-chap-row]").forEach((n) => { n.style.boxShadow = ""; });
+    treeBox.querySelectorAll("[data-vol-head]").forEach((n) => n.classList.remove("bg-secondary-fixed"));
+  }
+
+  /* 拖拽落点处理：targetChapter 为 null 表示投到 targetVol 末尾 */
+  async function handleDrop(targetVol, targetChapter, before) {
+    const info = dragInfo;
+    if (!info) return;
+    const srcVol = tree.find((v) => v.id === info.volId);
+    const item = srcVol && srcVol.chapters.find((c) => c.id === info.chapterId);
+    if (!item) return;
+    const sameVol = srcVol.id === targetVol.id;
+    const list = targetVol.chapters.filter((c) => c.id !== info.chapterId);
+    let idx = targetChapter ? list.findIndex((c) => c.id === targetChapter.id) : list.length;
+    if (idx < 0) idx = list.length;
+    if (targetChapter && !before) idx += 1;
+    list.splice(idx, 0, item);
+    /* 同卷且顺序未变：直接跳过 */
+    if (sameVol && list.every((c, i) => srcVol.chapters[i] && srcVol.chapters[i].id === c.id)) return;
+    try {
+      if (!sameVol) await api.post(`/chapters/${item.id}/move`, { volume_id: targetVol.id, sort_order: idx + 1 });
+      for (let i = 0; i < list.length; i++)
+        await api.patch(`/chapters/${list[i].id}`, { sort_order: i + 1 });
+      tree = await api.get(`/works/${workId}/tree`);
+      renderTree();
+      ui.toast(sameVol ? "章节顺序已更新" : `已移动到「${targetVol.title}」`, "ok");
+    } catch (e) {
+      ui.toast("拖拽排序失败：" + e.message, "err");
+      try { tree = await api.get(`/works/${workId}/tree`); renderTree(); } catch (_) { /* 忽略 */ }
+    }
+  }
+
+  function chapterRow(vol, c) {
+    const active = chapter && chapter.id === c.id;
+    const row = ui.el("div", {
+      class: `group flex items-center gap-1 pl-7 pr-1 py-1.5 rounded-lg cursor-pointer transition-colors ${
+        active ? "bg-primary-fixed text-on-primary-fixed font-medium" : "hover:bg-surface-container-low text-on-surface-variant"}`,
+      draggable: "true",
+      "data-chap-row": String(c.id),
+      onclick: () => openChapter(c.id),
+    },
+      ui.el("span", { class: "flex-1 font-body-sm text-body-sm truncate" }, c.title),
+      ui.el("span", {
+        class: `px-1.5 py-0.5 rounded-full font-label-sm text-label-sm ${
+          c.status === "done" ? "bg-primary-fixed text-on-primary-fixed" : "bg-surface-container-high text-on-surface-variant"}`,
+      }, c.status === "done" ? "已完成" : "草稿"),
+      iconBtn("edit", "重命名章节", async (e) => {
+        e.stopPropagation();
+        const t = await ui.prompt("重命名章节", "章节名", c.title);
+        if (!t) return;
+        await api.patch(`/chapters/${c.id}`, { title: t });
+        c.title = t;
+        if (active) { chapter.title = t; titleInput.value = t; ui.setCrumb("连载作品", `《${work.title}》`, t); }
+        renderTree();
+      }),
+      iconBtn("delete", "删除章节", async (e) => {
+        e.stopPropagation();
+        const ok = await ui.confirm("删除章节", `将删除章节「${c.title}」及其全部版本快照，且不可恢复。确定继续？`, "删除", true);
+        if (!ok) return;
+        await api.del(`/chapters/${c.id}`);
+        vol.chapters = vol.chapters.filter((x) => x.id !== c.id);
+        if (active) {
+          chapter = null;
+          await ensureAnyChapter();
+          await openChapter(tree.flatMap((v) => v.chapters)[0].id);
+        }
+        renderTree();
+      }));
+    /* HTML5 拖拽排序 */
+    row.addEventListener("dragstart", (e) => {
+      dragInfo = { chapterId: c.id, volId: vol.id };
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", String(c.id));
+      row.classList.add("opacity-40");
+    });
+    row.addEventListener("dragend", () => {
+      dragInfo = null;
+      row.classList.remove("opacity-40");
+      clearDropMarks();
+    });
+    row.addEventListener("dragover", (e) => {
+      if (!dragInfo || dragInfo.chapterId === c.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = "move";
+      const r = row.getBoundingClientRect();
+      clearDropMarks();
+      row.style.boxShadow = e.clientY < r.top + r.height / 2
+        ? "inset 0 2px 0 0 #316bf3" : "inset 0 -2px 0 0 #316bf3";
+    });
+    row.addEventListener("drop", (e) => {
+      if (!dragInfo || dragInfo.chapterId === c.id) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const r = row.getBoundingClientRect();
+      handleDrop(vol, c, e.clientY < r.top + r.height / 2);
+    });
+    return row;
+  }
+
+  /* 删除后保证仍存在至少一卷一章 */
+  async function ensureAnyChapter() {
+    if (!tree.length) {
+      const v = await api.post("/volumes", { work_id: workId, title: "卷一" });
+      v.chapters = [];
+      tree = [v];
+    }
+    if (!tree.some((v) => v.chapters.length)) {
+      const vol = tree[tree.length - 1];
+      const c = await api.post("/chapters", { volume_id: vol.id, title: "第一章" });
+      vol.chapters.push({ id: c.id, title: c.title, status: "draft", word_count: 0 });
+    }
+  }
+
+  async function newVolume() {
+    const t = await ui.prompt("新建分卷", "分卷名", `卷${tree.length + 1}`);
+    if (!t) return;
+    const v = await api.post("/volumes", { work_id: workId, title: t });
+    v.chapters = [];
+    tree.push(v);
+    renderTree();
+  }
+
+  async function newChapter(vol) {
+    vol = vol || tree[tree.length - 1];
+    if (!vol) return;
+    const c = await api.post("/chapters", { volume_id: vol.id, title: `第${vol.chapters.length + 1}章` });
+    vol.chapters.push({ id: c.id, title: c.title, status: c.status, word_count: 0 });
+    collapsed.delete(vol.id);
+    await openChapter(c.id);
+  }
+
+  function iconBtn(name, title, onclick) {
+    return ui.el("button", {
+      class: "hidden group-hover:flex p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high",
+      title, onclick,
+    }, ui.icon(name, "text-[15px]"));
+  }
+
+  /* ---------- 查找替换 ---------- */
+
+  function buildFindBar() {
+    const findInput = ui.el("input", {
+      class: "w-36 px-2 py-1 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm",
+      placeholder: "查找",
+    });
+    const repInput = ui.el("input", {
+      class: "w-36 px-2 py-1 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm",
+      placeholder: "替换为",
+    });
+    const countEl = ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant w-14 text-center" }, "");
+    const box = ui.el("div", {
+      class: "hidden flex-wrap items-center gap-2 py-1 px-2 rounded-lg bg-surface-container-low border border-border-feather",
+    },
+      ui.icon("search", "text-[16px] text-on-surface-variant"), findInput, countEl,
+      smallBtn("下一个", () => jump(findInput.value)),
+      repInput,
+      smallBtn("全部替换", () => replaceAll(findInput.value, repInput.value)),
+      smallBtn("关闭", () => api_hide()));
+    findInput.addEventListener("input", () => showCount(findInput.value));
+    findInput.addEventListener("keydown", (e) => { if (e.key === "Enter") jump(findInput.value); });
+
+    function smallBtn(label, onclick) {
+      return ui.el("button", {
+        class: "px-2 py-1 rounded-md bg-surface-container hover:bg-surface-container-high font-label-sm text-label-sm whitespace-nowrap",
+        onclick,
+      }, label);
+    }
+    function matches(q) {
+      if (!q) return [];
+      const out = [];
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        let i = node.data.indexOf(q);
+        while (i >= 0) { out.push({ node, offset: i }); i = node.data.indexOf(q, i + q.length); }
+      }
+      return out;
+    }
+    function showCount(q) {
+      const n = matches(q).length;
+      countEl.textContent = q ? `${n} 处` : "";
+    }
+    function jump(q) {
+      const ms = matches(q);
+      if (!ms.length) { showCount(q); return; }
+      const sel = window.getSelection();
+      let idx = 0;
+      if (sel.rangeCount && editor.contains(sel.anchorNode)) {
+        const cur = { node: sel.anchorNode, offset: sel.anchorOffset };
+        idx = ms.findIndex((m) =>
+          m.node === cur.node ? m.offset >= cur.offset : m.node.compareDocumentPosition(cur.node) & Node.DOCUMENT_POSITION_PRECEDING);
+        if (idx < 0) idx = 0;
+      }
+      const m = ms[idx];
+      const r = document.createRange();
+      r.setStart(m.node, m.offset);
+      r.setEnd(m.node, m.offset + q.length);
+      sel.removeAllRanges(); sel.addRange(r);
+      countEl.textContent = `${idx + 1} / ${ms.length}`;
+    }
+    function replaceAll(q, rep) {
+      if (!q) return;
+      const text = editorText();
+      const n = text.split(q).length - 1;
+      if (!n) { showCount(q); return; }
+      editor.textContent = text.split(q).join(rep);
+      dirty = true;
+      editor.dispatchEvent(new Event("input"));
+      ui.toast(`已替换 ${n} 处`, "ok");
+      showCount(q);
+    }
+    function api_hide() { box.classList.add("hidden"); box.classList.remove("flex"); }
+    return {
+      box,
+      toggle() {
+        const show = box.classList.contains("hidden");
+        box.classList.toggle("hidden", !show);
+        box.classList.toggle("flex", show);
+        if (show) { findInput.focus(); findInput.select(); }
+      },
+      hide: api_hide,
+    };
+  }
+
+  /* ---------- 选区工具条 ---------- */
+
+  function buildSelToolbar() {
+    const bar = ui.el("div", {
+      class: "hidden fixed z-[80] items-center gap-1 px-2 py-1.5 rounded-xl bg-primary text-on-primary shadow-[0_8px_24px_rgba(6,21,35,0.3)]",
+    });
+    for (const [task, label] of [["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "改写"]]) {
+      bar.append(ui.el("button", {
+        class: "px-2 py-1 rounded-lg hover:bg-primary-container font-label-sm text-label-sm",
+        onclick: () => { aiTask = task; syncTaskBtns(); hideSelToolbar(); runGenerate(); },
+      }, label));
+    }
+    return bar;
+  }
+
+  function hideSelToolbar() {
+    selToolbar.classList.add("hidden");
+    selToolbar.classList.remove("flex");
+  }
+
+  const onSelChange = debounce(() => {
+    if (!editor.isConnected) { document.removeEventListener("selectionchange", onSelectionChange); selToolbar.remove(); return; }
+    const sel = window.getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) { hideSelToolbar(); return; }
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.commonAncestorContainer)) { hideSelToolbar(); return; }
+    const text = range.toString();
+    if (!text.trim()) { hideSelToolbar(); return; }
+    selRange = range.cloneRange();
+    selText = text;
+    const rect = range.getBoundingClientRect();
+    selToolbar.style.left = Math.max(8, rect.left + rect.width / 2 - 120) + "px";
+    selToolbar.style.top = Math.max(8, rect.top - 48) + "px";
+    selToolbar.classList.remove("hidden");
+    selToolbar.classList.add("flex");
+  }, 200);
+  function onSelectionChange() { onSelChange(); }
+
+  /* ---------- 专注模式 ---------- */
+
+  let focusExitBtn = null;
+  function toggleFocus() {
+    const on = document.body.classList.toggle("focus-mode");
+    centerCol.classList.toggle("col-span-6", !on);
+    centerCol.classList.toggle("col-span-12", on);
+    centerCol.classList.toggle("max-w-3xl", on);
+    centerCol.classList.toggle("mx-auto", on);
+    centerCol.classList.toggle("w-full", on);
+    hideSelToolbar();
+    /* 专注模式下顶栏被隐藏，提供浮动退出按钮 */
+    if (on && !focusExitBtn) {
+      focusExitBtn = ui.el("button", {
+        class: "fixed top-4 right-4 z-[70] flex items-center gap-1 px-space-sm py-1.5 rounded-full bg-primary text-on-primary shadow-lg font-label-md text-label-md",
+        onclick: toggleFocus,
+      }, ui.icon("close_fullscreen", "text-[18px]"), "退出专注 (Esc)");
+      document.body.append(focusExitBtn);
+    } else if (!on && focusExitBtn) {
+      focusExitBtn.remove();
+      focusExitBtn = null;
+    }
+  }
+
+  /* ---------- AI 侧栏 ---------- */
+
+  function seg(options, current, onPick) {
+    const wrap = ui.el("div", { class: "flex gap-1 p-0.5 rounded-lg bg-surface-container" });
+    const btns = {};
+    for (const [val, label] of options) {
+      btns[val] = ui.el("button", {
+        class: "flex-1 px-1 py-1 rounded-md font-label-sm text-label-sm transition-colors",
+        onclick: () => { onPick(val); sync(); },
+      }, label);
+      wrap.append(btns[val]);
+    }
+    function sync() {
+      for (const [val, b] of Object.entries(btns)) {
+        const on = String(val) === String(current());
+        b.classList.toggle("bg-surface-container-lowest", on);
+        b.classList.toggle("text-primary", on);
+        b.classList.toggle("font-semibold", on);
+        b.classList.toggle("text-on-surface-variant", !on);
+      }
+    }
+    sync();
+    return { wrap, sync };
+  }
+
+  function buildAiPanel() {
+    const taskSeg = seg([["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "改写"]],
+      () => aiTask, (v) => { aiTask = v; });
+    taskBtns = taskSeg;
+    const lenSeg = seg([["short", "简"], ["medium", "中"], ["long", "长"]], () => aiLength, (v) => { aiLength = v; });
+    lenBtns = lenSeg;
+    const candSeg = seg([[1, "1"], [2, "2"], [3, "3"]], () => aiCandidates, (v) => { aiCandidates = v; });
+    candBtns = candSeg;
+
+    return [
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
+        ui.el("div", { class: "flex items-center gap-1 text-primary" },
+          ui.icon("linked_services", "text-[16px]"),
+          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "已挂载上下文")),
+        ctxBox),
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
+        ui.el("div", { class: "flex items-center gap-1 text-primary" },
+          ui.icon("auto_awesome", "text-[16px]"),
+          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "墨语修撰使")),
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "任务"),
+        taskSeg.wrap,
+        ui.el("div", { class: "flex items-center gap-space-sm" },
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
+        ui.el("div", { class: "flex items-center gap-space-sm" },
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
+        instrInput,
+        genBtn, stopBtn),
+      candidatesBox,
+    ];
+  }
+
+  function syncTaskBtns() { taskBtns.sync && taskBtns.sync(); }
+  function syncGenBtns() {
+    genBtn.classList.toggle("hidden", generating);
+    stopBtn.classList.toggle("hidden", !generating);
+  }
+
+  /* 已挂载上下文：当前章节 + 前情摘要（关联设定暂无数据来源，留 TODO） */
+  async function loadPrevSummary() {
+    prevChapterText = "";
+    const flatIds = tree.flatMap((v) => v.chapters.map((c) => c.id));
+    const idx = flatIds.indexOf(chapter.id);
+    if (idx > 0) {
+      try {
+        const prev = await api.get(`/chapters/${flatIds[idx - 1]}`);
+        prevChapterText = (prev.content || "").slice(-500);
+      } catch (e) { /* 忽略 */ }
+    }
+  }
+
+  function ctxRow(label, checked) {
+    const cb = ui.el("input", { type: "checkbox", class: "accent-[#316bf3]" });
+    cb.checked = checked;
+    return {
+      cb,
+      row: ui.el("label", { class: "flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-surface-container-low cursor-pointer" },
+        cb, ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant truncate" }, label)),
+    };
+  }
+
+  function renderContext() {
+    ctxBox.innerHTML = "";
+    ctxItems = [];
+    const cur = ctxRow(`当前章节（前 3000 字）`, true);
+    cur.getText = () => editorText().slice(0, 3000);
+    ctxItems.push(cur); ctxBox.append(cur.row);
+    if (prevChapterText) {
+      const prev = ctxRow(`前情摘要（上一章末尾 500 字）`, true);
+      prev.getText = () => prevChapterText;
+      ctxItems.push(prev); ctxBox.append(prev.row);
+    }
+    // 关联设定（chapter_entities）：异步加载后追加进上下文列表
+    api.get(`/chapters/${chapter.id}/entities`).then((list) => {
+      for (const e of list) {
+        const brief = (e.content || "").replace(/\s+/g, " ").slice(0, 30);
+        const item = ctxRow(`设定 · ${e.name}${brief ? `（${brief}…）` : ""}`, true);
+        item.getText = () => `设定[${e.name}]：${e.content || ""}`;
+        ctxItems.push(item); ctxBox.append(item.row);
+      }
+    }).catch(() => {});
+  }
+
+  /* ---------- 生成（SSE 流式） ---------- */
+
+  async function runGenerate() {
+    if (generating || !chapter) return;
+    if (dirty) await saveContent();
+    const context = ctxItems.filter((i) => i.cb.checked)
+      .map((i) => i.getText()).filter(Boolean).join("\n\n----\n\n");
+    const payload = {
+      task: aiTask,
+      instruction: instrInput.value.trim(),
+      context,
+      selection: selText,
+      length: aiLength,
+      candidates: aiCandidates,
+      stream: true,
+    };
+    abortCtrl = new AbortController();
+    let resp;
+    try {
+      resp = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: abortCtrl.signal,
+      });
+    } catch (e) {
+      if (e.name !== "AbortError") ui.toast("生成请求失败：" + e.message, "err");
+      return;
+    }
+    if (!resp.ok) {
+      let msg = resp.statusText;
+      try { msg = (await resp.json()).detail || msg; } catch (e) {}
+      if (resp.status === 400 && msg.includes("未配置")) {
+        const go = await ui.confirm("未配置 AI 接口", msg + "。配置后即可使用续写、改写等能力。", "去设置");
+        if (go) location.hash = "#/settings";
+      } else {
+        ui.toast(msg, "err");
+      }
+      return;
+    }
+
+    generating = true;
+    syncGenBtns();
+    let curCard = null, gotDone = false, sawDelta = false;
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const frame = buf.slice(0, idx);
+          buf = buf.slice(idx + 2);
+          if (!frame.startsWith("data:")) continue;
+          let evt;
+          try { evt = JSON.parse(frame.slice(5).trim()); } catch (e) { continue; }
+          if (evt.error) {
+            ui.toast(evt.error, "err");
+            if (curCard) { finishCard(curCard, true); curCard = null; }
+          } else if (evt.start) {
+            if (curCard) finishCard(curCard);   // 上一候选结束
+            curCard = addCandidateCard(evt.candidate);
+          } else if (evt.delta !== undefined && curCard) {
+            sawDelta = true;
+            curCard._text += evt.delta;
+            curCard._body.textContent = curCard._text;
+            curCard.scrollIntoView({ block: "nearest" });
+          } else if (evt.done) {
+            gotDone = true;
+            if (curCard) { finishCard(curCard); curCard = null; }
+          }
+        }
+      }
+    } catch (e) {
+      if (e.name !== "AbortError") ui.toast("生成中断：" + e.message, "err");
+    }
+    /* 停止 / 中断时已生成内容保留；完全没收到内容的空卡视为失败清理掉 */
+    if (curCard) {
+      if (!curCard._text && !gotDone) { curCard.remove(); if (!sawDelta) ui.toast("生成中断：未收到有效内容，请重试", "err"); }
+      else finishCard(curCard);
+    }
+    generating = false;
+    abortCtrl = null;
+    syncGenBtns();
+  }
+
+  /* ---------- 候选卡 ---------- */
+
+  function addCandidateCard(idx) {
+    const body = ui.el("div", {
+      class: "streaming-caret font-serif-content text-body-sm whitespace-pre-wrap leading-relaxed text-on-surface",
+    });
+    const actions = ui.el("div", { class: "hidden flex-wrap gap-1 pt-1" });
+    const taskName = { continue: "续写", expand: "扩写", condense: "缩写", polish: "改写润色" }[aiTask] || aiTask;
+    const card = ui.el("div", {
+      class: "ai-glow bg-surface-container-lowest rounded-xl p-space-sm flex flex-col gap-1",
+    },
+      ui.el("div", { class: "flex items-center gap-2" },
+        ui.el("span", { class: "px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm" }, "AI 生成"),
+        ui.el("span", { class: "flex-1 font-label-sm text-label-sm text-on-surface-variant" }, `候选 ${idx + 1} · ${taskName}`),
+        /* 流式期间卡内也放停止按钮，避免面板滚动后够不到 */
+        ui.el("button", {
+          class: "card-stop flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-label-sm text-label-sm",
+          onclick: () => abortCtrl && abortCtrl.abort(),
+        }, ui.icon("stop", "text-[13px]"), "停止")),
+      body, actions);
+    card._body = body;
+    card._actions = actions;
+    card._text = "";
+    candidatesBox.append(card);
+    card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    return card;
+  }
+
+  function finishCard(card, isError = false) {
+    card._body.classList.remove("streaming-caret");
+    const stop = card.querySelector(".card-stop");
+    if (stop) stop.remove();
+    if (isError && !card._text) { card.remove(); return; }
+    const a = card._actions;
+    a.classList.remove("hidden");
+    a.classList.add("flex");
+    a.innerHTML = "";
+    const btn = (label, icon, onclick, primary = false) => ui.el("button", {
+      class: `flex items-center gap-0.5 px-2 py-1 rounded-md font-label-sm text-label-sm transition-colors ${
+        primary ? "bg-primary text-on-primary" : "bg-surface-container hover:bg-surface-container-high"}`,
+      onclick,
+    }, ui.icon(icon, "text-[14px]"), label);
+
+    a.append(
+      btn("预览差异", "compare", () => toggleDiff(card)),
+      btn("采纳", "check", () => adopt(card), true),
+      btn("复制", "content_copy", async () => {
+        await navigator.clipboard.writeText(card._text);
+        ui.toast("已复制", "ok");
+      }),
+      btn("重试", "refresh", () => runGenerate()),
+      btn("放弃", "close", async () => {
+        const ok = await ui.confirm("放弃候选", "该候选内容将被丢弃，确定继续？", "放弃", true);
+        if (ok) card.remove();
+      }));
+  }
+
+  /* 行级 diff（LCS），返回各行集合 */
+  function lineDiff(a, b) {
+    const A = a.split("\n"), B = b.split("\n");
+    const m = A.length, n = B.length;
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = m - 1; i >= 0; i--)
+      for (let j = n - 1; j >= 0; j--)
+        dp[i][j] = A[i] === B[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    const del = new Set(), add = new Set();
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (A[i] === B[j]) { i++; j++; }
+      else if (dp[i + 1][j] >= dp[i][j + 1]) { del.add(i); i++; }
+      else { add.add(j); j++; }
+    }
+    while (i < m) del.add(i++);
+    while (j < n) add.add(j++);
+    return { A, B, del, add };
+  }
+
+  function renderDiffLines(lines, marks, cls) {
+    const box = ui.el("div", { class: "font-serif-content text-body-sm whitespace-pre-wrap leading-relaxed" });
+    lines.forEach((ln, i) => {
+      const d = ui.el("div", {}, ln || " ");
+      if (marks.has(i)) d.className = cls + " px-1";
+      box.append(d);
+    });
+    return box;
+  }
+
+  function toggleDiff(card) {
+    if (card._diffBox) { card._diffBox.remove(); card._diffBox = null; return; }
+    const original = selText || editorText().slice(-500);
+    const { A, B, del, add } = lineDiff(original, card._text);
+    card._diffBox = ui.el("div", { class: "grid grid-cols-2 gap-2 p-2 rounded-lg bg-surface-container-low" },
+      ui.el("div", { class: "flex flex-col gap-1 min-w-0" },
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, selText ? "原文（选区）" : "原文（正文末尾 500 字）"),
+        renderDiffLines(A, del, "diff-del")),
+      ui.el("div", { class: "flex flex-col gap-1 min-w-0" },
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "AI 文本"),
+        renderDiffLines(B, add, "diff-add")));
+    card.insertBefore(card._diffBox, card._actions);
+  }
+
+  /* 选区 Range 是否仍然有效且内容未变 */
+  function rangeAlive() {
+    try {
+      return selRange && selRange.startContainer.isConnected
+        && editor.contains(selRange.startContainer)
+        && selRange.toString() === selText;
+    } catch (e) { return false; }
+  }
+
+  async function adopt(card) {
+    const text = card._text;
+    if (!text || !chapter) return;
+    const old = editorText();
+    const useRange = rangeAlive();
+    if (useRange) {
+      const ok = await ui.confirm("采纳 AI 内容", "将用 AI 生成的内容替换当前选中的正文（替换前会自动留存一份版本快照）。", "替换");
+      if (!ok) return;
+    }
+    /* 采纳前留存旧内容快照 */
+    try { await api.patch(`/chapters/${chapter.id}`, { content: old, snapshot_source: "auto", snapshot_label: "采纳前自动留存" }); } catch (e) {}
+
+    if (useRange) {
+      selRange.deleteContents();
+      selRange.insertNode(document.createTextNode(text));
+      selRange = null; selText = "";
+      hideSelToolbar();
+    } else {
+      editor.textContent = old ? old.replace(/\s+$/, "") + "\n\n" + text : text;
+    }
+    dirty = true;
+    await saveContent("ai");
+    ui.toast("已采纳并写入正文", "ok");
+
+    /* 提供撤销采纳 */
+    card._actions.innerHTML = "";
+    card._actions.append(ui.el("button", {
+      class: "flex items-center gap-0.5 px-2 py-1 rounded-md bg-error-container text-on-error-container font-label-sm text-label-sm",
+      onclick: async () => {
+        const ok = await ui.confirm("撤销采纳", "将正文恢复到采纳前的内容。", "撤销");
+        if (!ok) return;
+        editor.textContent = old;
+        dirty = true;
+        await saveContent("ai");
+        ui.toast("已撤销采纳", "ok");
+        card.remove();
+      },
+    }, ui.icon("undo", "text-[14px]"), "撤销采纳"));
+  }
+
+  /* ---------- 无作品参数时的作品选择 ---------- */
+
+  async function renderWorkPicker(v) {
+    ui.setCrumb("写作工作台");
+    const grid = ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-space-md" });
+    v.append(
+      ui.el("div", { class: "flex flex-col gap-1 mb-space-lg" },
+        ui.el("h1", { class: "font-headline-lg text-headline-lg text-primary font-semibold" }, "选择要写作的作品"),
+        ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "从下面的作品进入写作工作台。")),
+      grid);
+    let works;
+    try { works = await api.get("/works"); } catch (e) { ui.toast(e.message, "err"); return; }
+    if (!works.length) {
+      grid.append(ui.el("div", { class: "col-span-full flex flex-col items-center gap-space-md py-space-xl text-on-surface-variant" },
+        ui.icon("auto_stories", "text-[48px] text-outline-variant"),
+        ui.el("p", { class: "font-body-md text-body-md" }, "书架还是空的，请先到书架创建作品"),
+        ui.el("button", {
+          class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md",
+          onclick: () => { location.hash = "#/bookshelf"; },
+        }, "前往书架")));
+      return;
+    }
+    for (const w of works) {
+      grid.append(ui.el("div", {
+        class: "bg-surface-container-lowest rounded-xl p-space-md shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs cursor-pointer hover:shadow-[0_8px_28px_rgba(6,21,35,0.08)] transition-shadow",
+        onclick: async () => {
+          if (w.last_chapter) { location.hash = `#/workbench/${w.id}?chapter=${w.last_chapter.id}`; return; }
+          const t = await api.get(`/works/${w.id}/tree`);
+          const c = t.flatMap((x) => x.chapters)[0];
+          location.hash = c ? `#/workbench/${w.id}?chapter=${c.id}` : `#/workbench/${w.id}`;
+        },
+      },
+        ui.el("div", { class: "flex items-center gap-2" },
+          ui.el("span", { class: "px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm" }, w.status || "连载中"),
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, ui.fmtWords(w.total_words) + " 字")),
+        ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold truncate" }, w.title),
+        w.last_chapter && ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "最近：" + w.last_chapter.title)));
+    }
+  }
+});
