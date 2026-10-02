@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """版本快照：auto 节流、带标签强制新写、手动快照与恢复。"""
 from conftest import make_wvc
 

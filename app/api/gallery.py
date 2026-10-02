@@ -1,13 +1,18 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """丹青阁：作品图片生成与图库 API（OpenAI Images 兼容协议）。"""
 import base64
 import binascii
+import mimetypes
+import time
 
 import httpx
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..ai_client import AIError, chat, get_ai_config
+from ..ai_tasks import create_task, finish_task, start_task
 from ..db import DB_PATH, get_db
 
 router = APIRouter(tags=["gallery"])
@@ -115,7 +120,14 @@ async def generate_image(body: GenerateIn):
     cfg = _check_img_config(_img_config())
     size = (body.size or cfg.get("img_size") or "1024x1024").strip()
 
-    data = await _fetch_image_bytes(cfg, prompt, size)
+    task_id = create_task(body.work_id, f"img_{body.kind}", f"生图：{prompt[:60]}")
+    start_time = time.time()
+    try:
+        data = await _fetch_image_bytes(cfg, prompt, size)
+    except Exception as e:
+        from ..ai_tasks import fail_task
+        fail_task(task_id, str(e), int((time.time() - start_time) * 1000))
+        raise
 
     db = get_db()
     cur = db.execute(
@@ -127,7 +139,10 @@ async def generate_image(body: GenerateIn):
     (IMAGES_DIR / fname).write_bytes(data)
     db.execute("UPDATE images SET path=? WHERE id=?", (fname, img_id))
     db.commit()
-    return _one("SELECT * FROM images WHERE id=?", (img_id,))
+    elapsed = int((time.time() - start_time) * 1000)
+    finish_task(task_id, {"image_id": img_id, "kind": body.kind, "prompt": prompt},
+                token_used=0, elapsed_ms=elapsed)
+    return {**_one("SELECT * FROM images WHERE id=?", (img_id,)), "task_id": task_id}
 
 
 # ---------- 图库 ----------
@@ -144,7 +159,8 @@ def image_file(image_id: int):
     f = IMAGES_DIR / img["path"]
     if not img["path"] or not f.is_file():
         raise HTTPException(404, "图片文件不存在（可能已被移动或清理）")
-    return FileResponse(f, media_type="image/png", filename=f"image_{image_id}.png")
+    media_type, _ = mimetypes.guess_type(img["path"]) or ("image/png", None)
+    return FileResponse(f, media_type=media_type or "image/png", filename=f"image_{image_id}.png")
 
 
 @router.delete("/images/{image_id}", status_code=204)
@@ -178,6 +194,32 @@ def set_cover(work_id: int, body: CoverIn):
                (str(body.image_id), work_id))
     db.commit()
     return _one("SELECT * FROM works WHERE id=?", (work_id,))
+
+@router.post("/works/{work_id}/cover-upload")
+def upload_cover(work_id: int, file: UploadFile = File(...)):
+    _one("SELECT id FROM works WHERE id=?", (work_id,))
+    content_type = (file.content_type or "").lower()
+    if not content_type.startswith("image/"):
+        raise HTTPException(400, "请上传图片文件（jpg/png/webp 等）")
+    data = file.file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(400, "图片大小不能超过 5MB")
+
+    db = get_db()
+    cur = db.execute(
+        "INSERT INTO images(work_id, kind, prompt, path) VALUES (?, 'cover', '', '')",
+        (work_id,))
+    img_id = cur.lastrowid
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    ext = mimetypes.guess_extension(content_type) or ".png"
+    fname = f"{img_id}_cover{ext}"
+    (IMAGES_DIR / fname).write_bytes(data)
+    db.execute("UPDATE images SET path=? WHERE id=?", (fname, img_id))
+    db.execute("UPDATE works SET cover_image=?, updated_at=datetime('now','localtime') WHERE id=?",
+               (str(img_id), work_id))
+    db.commit()
+    return _one("SELECT * FROM works WHERE id=?", (work_id,))
+
 
 
 # ---------- 配置测试 ----------

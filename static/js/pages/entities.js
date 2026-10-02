@@ -234,12 +234,18 @@ registerPage("entities", async (view, { segs }) => {
           ui.el("button", {
             class: "p-2 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface-variant transition-all",
             title: archived ? "取消归档" : "归档",
-            onclick: async () => {
+            onclick: async (ev) => {
+              const btn = ev.currentTarget;
+              if (btn && btn.disabled) return;
+              if (btn) btn.disabled = true;
               try {
                 await api.post(`/entities/${e.id}/archive`);
                 ui.toast(archived ? "已取消归档" : "已归档", "ok");
                 load(false);
-              } catch (err) { ui.toast(err.message, "err"); }
+              } catch (err) {
+                ui.toast(err.message, "err");
+                if (btn) btn.disabled = false;
+              }
             },
           }, ui.icon(archived ? "unarchive" : "archive", "text-[20px]")),
           ui.el("button", {

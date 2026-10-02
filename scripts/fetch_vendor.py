@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """下载前端外部依赖到 static/vendor/，实现完全离线运行。
 
 国内网络环境：Tailwind 走 npmmirror，字体走 fonts.googleapis.cn。

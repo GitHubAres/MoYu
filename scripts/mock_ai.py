@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """Mock OpenAI 兼容接口：返回固定的 chat/completions 响应，用于验证 audit 解析。"""
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse

@@ -1,0 +1,96 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- 黛青水墨底色渐变 -->
+    <linearGradient id="inkBg" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#223344"/>
+      <stop offset="50%" stop-color="#1B2A38"/>
+      <stop offset="100%" stop-color="#121C26"/>
+    </linearGradient>
+
+    <!-- 墨滴水韵光泽 -->
+    <linearGradient id="inkGloss" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- 笔尖金属质感与倒角光泽 -->
+    <linearGradient id="nibMetallic" x1="0%" y1="30%" x2="100%" y2="70%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.12"/>
+      <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.04"/>
+    </linearGradient>
+
+    <!-- 朱砂微光灵动渐变 -->
+    <radialGradient id="cinnabarGlow" cx="45%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#FF6B5E"/>
+      <stop offset="55%" stop-color="#D9483B"/>
+      <stop offset="100%" stop-color="#A52A20"/>
+    </radialGradient>
+
+    <!-- 朱砂外晕光 -->
+    <radialGradient id="sparkHalo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#D9483B" stop-opacity="0.45"/>
+      <stop offset="70%" stop-color="#D9483B" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#D9483B" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- 柔和沉浸阴影 -->
+    <filter id="inkShadow" x="-15%" y="-15%" width="130%" height="135%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#0E161F" flood-opacity="0.38"/>
+    </filter>
+  </defs>
+
+  <!-- 徽标背景层：优雅倒角的墨玉基座 -->
+  <rect x="32" y="32" width="448" height="448" rx="108" fill="url(#inkBg)" filter="url(#inkShadow)"/>
+  <rect x="32" y="32" width="448" height="448" rx="108" fill="none" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2"/>
+
+  <!-- 墨玉内侧微妙水韵弧光 -->
+  <path d="M 72 140 C 72 80, 100 52, 160 52 L 352 52 C 412 52, 440 80, 440 140 C 440 160, 360 220, 256 220 C 152 220, 72 160, 72 140 Z" fill="url(#inkGloss)"/>
+
+  <!-- 主体视觉：墨滴与经典文人笔锋（Pen Nib）交织 -->
+  <g transform="translate(0, 0)">
+    <!-- 笔锋主体外廓 -->
+    <path d="M 256 92
+             C 272 92, 336 180, 348 236
+             C 356 274, 344 320, 318 362
+             L 256 424
+             L 194 362
+             C 168 320, 156 274, 164 236
+             C 176 180, 240 92, 256 92 Z"
+          fill="#FFFFFF" fill-opacity="0.95"/>
+
+    <!-- 笔锋内嵌金属/宣纸色光影层 -->
+    <path d="M 256 108
+             C 268 108, 324 186, 334 236
+             C 341 270, 330 310, 308 348
+             L 256 400
+             L 204 348
+             C 182 310, 171 270, 178 236
+             C 188 186, 244 108, 256 108 Z"
+          fill="url(#inkBg)"/>
+
+    <!-- 笔翼左侧微亮反光 -->
+    <path d="M 256 112
+             C 248 112, 196 186, 186 236
+             C 180 268, 190 304, 210 340
+             L 256 386 L 256 112 Z"
+          fill="url(#nibMetallic)"/>
+
+    <!-- 笔锋导墨中缝线（Slit） -->
+    <line x1="256" y1="280" x2="256" y2="406" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="4.5" stroke-linecap="round"/>
+
+    <!-- 朱砂灵光呼吸晕圈 -->
+    <circle cx="256" cy="242" r="64" fill="url(#sparkHalo)"/>
+
+    <!-- 核心点睛：朱砂印 / 灵感红星（Cinnabar Core） -->
+    <circle cx="256" cy="242" r="28" fill="url(#cinnabarGlow)"/>
+
+    <!-- 朱砂圆心的高光点 -->
+    <circle cx="247" cy="233" r="7.5" fill="#FFFFFF" fill-opacity="0.88"/>
+    <ellipse cx="264" cy="250" rx="9" ry="5" fill="#A52A20" fill-opacity="0.5"/>
+
+    <!-- 笔尖端部的精致微光折射（灵感微芒） -->
+    <polygon points="256,412 258,419 265,421 258,423 256,430 254,423 247,421 254,419" fill="#D9483B"/>
+  </g>
+</svg>

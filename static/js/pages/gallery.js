@@ -102,6 +102,11 @@ window.GalleryTab = (() => {
 
     const sizeHint = ui.el("span", { class: "font-label-sm text-label-sm text-outline" },
       `尺寸 ${settings.img_size || "1024x1024"}（在系统设置中调整）· 模型 ${settings.img_model || "未设置"}`);
+    const taskLinkEl = ui.el("a", {
+      class: "hidden flex items-center gap-1 text-secondary hover:underline font-label-sm text-label-sm",
+      href: "#/tasks",
+      onclick: (e) => { e.preventDefault(); location.hash = "#/tasks"; },
+    }, "查看任务记录");
 
     async function doGenerate() {
       const prompt = promptTa.value.trim();
@@ -111,6 +116,10 @@ window.GalleryTab = (() => {
       try {
         const img = await api.post("/gallery/generate", { work_id: work.id, kind, prompt });
         ui.toast(`${KIND_META[kind].label}已生成`, "ok");
+        if (img.task_id) {
+          taskLinkEl.textContent = `查看任务记录 #${img.task_id}`;
+          taskLinkEl.classList.remove("hidden");
+        }
         await loadImages();
         // 第一张封面自动设为作品封面
         if (kind === "cover" && !coverId) await setCover(img.id, true);
@@ -142,7 +151,7 @@ window.GalleryTab = (() => {
           suggestBtn),
         promptTa),
       ui.el("div", { class: "flex items-center gap-space-md flex-wrap" },
-        genBtn, sizeHint)));
+        genBtn, sizeHint, taskLinkEl)));
 
     /* ---------- 画廊 ---------- */
     const gridBox = ui.el("div", {});

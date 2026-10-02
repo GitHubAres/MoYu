@@ -174,7 +174,7 @@ registerPage("prompts", async (view) => {
       class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
       onclick: (e) => { if (e.target === overlay) overlay.remove(); },
     },
-      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[640px] max-w-[92vw] max-h-[90vh] overflow-y-auto shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[640px] max-w-[calc(100vw-1.5rem)] mx-2 sm:mx-0 max-h-[90vh] overflow-y-auto shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
         ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" },
           p ? (isBuiltin ? `编辑「${p.name}」（内置）` : `编辑「${p.name}」`) : "新建模板"),
         isBuiltin && ui.el("div", { class: "flex items-start gap-space-xs rounded-lg bg-secondary-fixed/60 px-space-sm py-space-xs text-on-secondary-fixed font-body-sm text-body-sm" },

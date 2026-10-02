@@ -1,0 +1,17 @@
+﻿.git
+.github
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+*.spec
+build/
+dist/
+release/
+tests/
+data/
+moyu_startup.log
+docs/screenshots

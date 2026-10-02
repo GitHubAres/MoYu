@@ -1,4 +1,4 @@
-/* 系统设置页（对应设计稿 _10，本地版裁剪：去掉云端同步/隐私项，加 AI 配置与备份） */
+﻿/* 系统设置页（对应设计稿 _10，本地版裁剪：去掉云端同步/隐私项，加 AI 配置与备份） */
 registerPage("settings", async (view) => {
   ui.setCrumb("系统设置");
 
@@ -182,7 +182,7 @@ registerPage("settings", async (view) => {
       });
       modelIn.addEventListener("change", () => save({ [`route_${task}_model`]: modelIn.value.trim() }, "任务模型已保存"));
       urlIn.addEventListener("change", () => save({ [`route_${task}_base_url`]: urlIn.value.trim() }, "任务接口已保存"));
-      return ui.el("div", { class: "grid grid-cols-[80px_1fr_1fr] items-center gap-space-md" },
+      return ui.el("div", { class: "flex flex-col sm:grid sm:grid-cols-[80px_1fr_1fr] items-start sm:items-center gap-1.5 sm:gap-space-md py-1" },
         ui.el("span", { class: "font-label-md text-label-md text-primary font-medium" }, label),
         modelIn, urlIn);
     }),
@@ -308,7 +308,7 @@ registerPage("settings", async (view) => {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
         onclick: (e) => { if (e.target === overlay) close(); },
       },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[480px] max-w-[92vw] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[480px] max-w-[calc(100vw-2rem)] mx-2 sm:mx-0 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "生成文风档案"),
           ui.el("p", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "勾选 1~3 章作为分析样本，每章截取前 2500 字交由 AI 提炼文风。"),
           ui.el("div", { class: "flex flex-col gap-2 max-h-[320px] overflow-y-auto" },
@@ -341,7 +341,7 @@ registerPage("settings", async (view) => {
       class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
       onclick: (e) => { if (e.target === overlay) close(false); },
     },
-      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[560px] max-w-[92vw] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[560px] max-w-[calc(100vw-2rem)] mx-2 sm:mx-0 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
         ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "编辑文风档案"),
         ui.el("p", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "AI 生成时将把以下内容作为文风约束注入提示词。"),
         ta,
@@ -397,6 +397,265 @@ registerPage("settings", async (view) => {
     class: "flex items-center gap-1.5 px-space-md py-2 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-all font-label-md text-label-md shadow-sm",
     href: "/api/settings/backup",
   }, ui.icon("database", "text-[18px]"), "导出整库备份 (moyu.db)");
+
+
+  /* ---------- 6. 软件自动更新（v1.4.0） ---------- */
+  let currentHealth = { version: "1.4.0" };
+  try { currentHealth = await api.get("/health"); } catch (_) {}
+
+  const updateChannelSel = ui.el("select", {
+    class: "px-space-md py-2 rounded-lg bg-surface-container-low text-primary font-body-sm text-body-sm focus:outline-none focus:ring-1 focus:ring-secondary",
+    onchange: () => save({ update_channel: updateChannelSel.value }),
+  },
+    ui.el("option", { value: "stable" }, "稳定版 (stable · 推荐)"),
+    ui.el("option", { value: "beta" }, "尝鲜测试版 (beta)"));
+  updateChannelSel.value = settings.update_channel || "stable";
+
+  const updateAutoCheckSel = ui.el("select", {
+    class: "px-space-md py-2 rounded-lg bg-surface-container-low text-primary font-body-sm text-body-sm focus:outline-none focus:ring-1 focus:ring-secondary",
+    onchange: () => save({ update_auto_check: updateAutoCheckSel.value }),
+  },
+    ui.el("option", { value: "1" }, "自动检查 (进入设置时检查)"),
+    ui.el("option", { value: "0" }, "手动检查 (关闭自动请求)"));
+  updateAutoCheckSel.value = settings.update_auto_check !== undefined ? String(settings.update_auto_check) : "1";
+
+  const updateMirrorInput = ui.el("input", {
+    type: "text",
+    placeholder: "如 https://ghproxy.net/（可选，加速国内访问）",
+    value: settings.update_mirror || "",
+    class: "w-full px-space-md py-2 rounded-lg bg-surface-container-low text-primary font-body-sm text-body-sm placeholder:text-outline focus:outline-none focus:ring-1 focus:ring-secondary",
+  });
+  updateMirrorInput.addEventListener("change", () => save({ update_mirror: updateMirrorInput.value.trim() }));
+
+  const updateResultBox = ui.el("div", { class: "flex flex-col gap-space-md" });
+  const checkStatusLabel = ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" },
+    settings.update_last_check ? `上次检查：${settings.update_last_check}` : "尚未进行更新检查");
+
+  const checkBtn = ui.el("button", {
+    class: "flex items-center gap-1.5 px-space-md py-2 rounded-lg bg-secondary text-on-secondary hover:opacity-90 transition-all font-label-md text-label-md shadow-sm disabled:opacity-50 min-h-[44px]",
+  }, ui.icon("refresh", "text-[18px]"), "检查新版本");
+
+  async function pollVpsUpdateProgress(statusBox) {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 60) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const s = await api.get("/update/status");
+        if (s.status === "running") {
+          statusBox.innerHTML = "";
+          statusBox.append(
+            ui.el("div", { class: "flex items-center gap-2 text-secondary font-label-md" },
+              ui.icon("refresh", "animate-spin text-[16px]"),
+              ui.el("span", {}, s.message || "正在更新中...")),
+            ui.el("div", { class: "w-full h-2 rounded-full bg-surface-container-highest overflow-hidden mt-1" },
+              ui.el("div", { class: "h-full bg-secondary transition-all duration-300", style: `width:${s.progress || 30}%` }))
+          );
+        } else if (s.status === "success") {
+          clearInterval(interval);
+          statusBox.innerHTML = "";
+          statusBox.append(
+            ui.el("div", { class: "p-space-md rounded-lg bg-emerald-50 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200 font-label-md flex items-center gap-2" },
+              ui.icon("check_circle", "text-[18px]"),
+              ui.el("span", {}, s.message || "更新成功！"))
+          );
+          ui.toast("更新成功！", "ok");
+        } else if (s.status === "failed") {
+          clearInterval(interval);
+          statusBox.innerHTML = "";
+          statusBox.append(
+            ui.el("div", { class: "p-space-md rounded-lg bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-200 font-body-sm flex flex-col gap-1" },
+              ui.el("div", { class: "flex items-center gap-2 font-medium" },
+                ui.icon("error", "text-[18px]"),
+                ui.el("span", {}, "更新失败")),
+              ui.el("span", { class: "text-xs font-mono" }, s.message || "未知错误"))
+          );
+        }
+      } catch (_) {}
+    }, 2000);
+  }
+
+  function renderUpdateResult(res) {
+    updateResultBox.innerHTML = "";
+    if (res.checked_at) {
+      checkStatusLabel.textContent = `上次检查：${res.checked_at}`;
+    }
+
+    if (!res.has_update) {
+      // 状态一：已是最新版本
+      updateResultBox.append(
+        ui.el("div", { class: "p-space-lg rounded-xl bg-surface-container-low border border-outline-variant/30 flex items-center gap-space-md" },
+          ui.icon("check_circle", "text-[28px] text-emerald-600 dark:text-emerald-400 shrink-0"),
+          ui.el("div", { class: "flex flex-col" },
+            ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "当前已是最新版本"),
+            ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" },
+              `墨语 MoYu v${res.current_version} · ${res.channel === "beta" ? "尝鲜测试通道" : "正式稳定通道"} · 本地环境运行良好。`)))
+      );
+      return;
+    }
+
+    // 状态二：发现新版本
+    const isSkipped = res.is_skipped;
+    const notesBox = ui.el("div", { class: "flex flex-col gap-1.5" },
+      ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant font-medium" }, "新版特性与更新日志："),
+      ui.el("pre", {
+        class: "font-body-sm text-body-sm whitespace-pre-wrap font-sans max-h-60 overflow-y-auto p-space-md rounded-lg bg-surface-container-lowest border border-outline-variant/20 text-primary leading-relaxed select-text"
+      }, res.release_notes || "（发布者未附带详细更新日志）"));
+
+    const actionRow = ui.el("div", { class: "flex flex-wrap items-center gap-space-md mt-space-sm" });
+
+    // 1. 前往 GitHub 发布页
+    if (res.html_url) {
+      actionRow.append(
+        ui.el("a", {
+          href: res.html_url,
+          target: "_blank",
+          rel: "noreferrer",
+          class: "flex items-center gap-1 px-space-md py-2 rounded-lg bg-surface-container text-primary hover:bg-surface-container-high transition-all font-label-md text-label-md min-h-[44px]",
+        }, ui.icon("open_in_new", "text-[16px]"), "查看 GitHub 发布详情")
+      );
+    }
+
+    // 2. 桌面端 / 源码环境：提供 exe 直链下载
+    if (res.exe_url) {
+      actionRow.append(
+        ui.el("a", {
+          href: res.exe_url,
+          target: "_blank",
+          rel: "noreferrer",
+          class: "flex items-center gap-1 px-space-md py-2 rounded-lg bg-secondary text-on-secondary hover:opacity-90 transition-all font-label-md text-label-md min-h-[44px] shadow-sm",
+        }, ui.icon("download", "text-[18px]"), `下载 Windows 安装包 (${res.exe_name || "exe"})`)
+      );
+    }
+
+    // 3. VPS 裸机 / systemd 环境：一键应用更新
+    if (res.env === "systemd" || res.env === "source") {
+      const vpsStatusBox = ui.el("div", { class: "w-full flex flex-col gap-2 mt-2" });
+      const applyBtn = ui.el("button", {
+        class: "flex items-center gap-1.5 px-space-md py-2 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-all font-label-md text-label-md min-h-[44px] disabled:opacity-50",
+        onclick: async () => {
+          if (!confirm("即将执行自动备份并更新代码至最新版本，是否继续？")) return;
+          applyBtn.disabled = true;
+          try {
+            const applyRes = await api.post("/update/apply");
+            ui.toast(applyRes.message || "更新任务已启动", "ok");
+            pollVpsUpdateProgress(vpsStatusBox);
+          } catch (err) {
+            ui.toast(err.message, "err");
+            applyBtn.disabled = false;
+          }
+        },
+      }, ui.icon("refresh", "text-[18px]"), "立即在 VPS 执行一键更新");
+      actionRow.append(applyBtn);
+      actionRow.append(vpsStatusBox);
+    }
+
+    // 4. Docker 模式提示
+    if (res.env === "docker") {
+      actionRow.append(
+        ui.el("div", { class: "w-full p-space-sm rounded-lg bg-surface-container-high/60 text-on-surface-variant font-body-sm text-body-sm flex items-center gap-2" },
+          ui.icon("info", "text-[18px] text-secondary"),
+          ui.el("span", {}, "Docker 容器已受安全隔离。推荐在宿主机执行 `docker compose pull && docker compose up -d` 或配置 Watchtower 镜像全自动拉取更新。"))
+      );
+    }
+
+    // 5. 跳过此版本按钮
+    const skipBtn = ui.el("button", {
+      class: "text-on-surface-variant hover:text-primary transition-colors font-label-sm text-label-sm px-2 py-1 min-h-[44px]",
+      onclick: async () => {
+        try {
+          await api.post("/update/skip", { version: res.latest_version });
+          ui.toast(`已跳过 v${res.latest_version} 版本的弹窗提醒`, "ok");
+          skipBtn.textContent = "已跳过该版本";
+          skipBtn.disabled = true;
+        } catch (e) {
+          ui.toast(e.message, "err");
+        }
+      }
+    }, isSkipped ? "已跳过此版本提醒" : "跳过此版本");
+    if (isSkipped) skipBtn.disabled = true;
+    actionRow.append(skipBtn);
+
+    updateResultBox.append(
+      ui.el("div", { class: "p-space-lg rounded-xl bg-surface-container-low border border-secondary/30 flex flex-col gap-space-md" },
+        ui.el("div", { class: "flex items-start justify-between" },
+          ui.el("div", { class: "flex flex-col" },
+            ui.el("div", { class: "flex items-center gap-2" },
+              ui.icon("auto_awesome", "text-[22px] text-secondary"),
+              ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, `发现新版本：墨语 MoYu v${res.latest_version}`),
+              ui.el("span", { class: "px-2 py-0.5 rounded text-[11px] font-medium bg-secondary-container text-on-secondary-container" }, res.raw_tag || `v${res.latest_version}`)),
+            ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant mt-0.5" },
+              `当前安装版本：v${res.current_version} · 发布日期：${(res.published_at || "").slice(0, 10) || "近期"}`)),
+          isSkipped && ui.el("span", { class: "font-label-sm text-label-sm text-outline px-2 py-0.5 rounded bg-surface-container" }, "已设置跳过")),
+        notesBox,
+        actionRow)
+    );
+  }
+
+  function renderUpdateError(err) {
+    updateResultBox.innerHTML = "";
+    updateResultBox.append(
+      ui.el("div", { class: "p-space-lg rounded-xl bg-surface-container-low border border-error/30 flex flex-col gap-space-sm" },
+        ui.el("div", { class: "flex items-center gap-2 text-error" },
+          ui.icon("error", "text-[22px]"),
+          ui.el("span", { class: "font-headline-sm text-headline-sm font-semibold" }, "检查更新失败")),
+        ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" },
+          err.message || "无法连接到 GitHub 版本检查服务，请确认网络畅通。"),
+        ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" },
+          "💡 提示：若在国内网络下访问 GitHub 较慢或超时，可在上方配置「镜像加速代理」（例如填入 https://ghproxy.net/）后再次检查。"),
+        ui.el("div", { class: "mt-space-xs" },
+          ui.el("button", {
+            class: "px-space-md py-1.5 rounded-lg bg-surface-container text-primary hover:bg-surface-container-high font-label-md text-label-md min-h-[44px]",
+            onclick: () => doCheckUpdate(true),
+          }, "重试检查")))
+    );
+  }
+
+  async function doCheckUpdate(force = false) {
+    checkBtn.disabled = true;
+    checkBtn.textContent = "正在检查…";
+    updateResultBox.innerHTML = "";
+    updateResultBox.append(
+      ui.el("div", { class: "flex items-center gap-2 p-space-md text-on-surface-variant font-body-sm text-body-sm" },
+        ui.icon("refresh", "animate-spin text-[18px] text-secondary"),
+        ui.el("span", {}, "正在连接版本服务检查新版本与发布日志..."))
+    );
+    try {
+      await save({
+        update_channel: updateChannelSel.value,
+        update_auto_check: updateAutoCheckSel.value,
+        update_mirror: updateMirrorInput.value.trim(),
+      }, "更新设置已保存");
+      const url = force ? "/update/check?force=true" : "/update/check";
+      const res = await api.get(url);
+      renderUpdateResult(res);
+    } catch (e) {
+      renderUpdateError(e);
+    } finally {
+      checkBtn.disabled = false;
+      checkBtn.innerHTML = "";
+      checkBtn.append(ui.icon("refresh", "text-[18px]"), "检查新版本");
+    }
+  }
+
+  checkBtn.addEventListener("click", () => doCheckUpdate(true));
+
+  // 页面加载时的自动检查（若开启且非禁用）
+  if (settings.update_auto_check !== "0") {
+    setTimeout(async () => {
+      try {
+        const res = await api.get("/update/check");
+        if (res.has_update && !res.is_skipped) {
+          renderUpdateResult(res);
+        } else if (res.checked_at) {
+          checkStatusLabel.textContent = `上次检查：${res.checked_at}`;
+        }
+      } catch (_) {}
+    }, 600);
+  }
 
   /* ---------- 6. 快捷键 ---------- */
   const SHORTCUTS = [
@@ -475,6 +734,23 @@ registerPage("settings", async (view) => {
         ui.el("div", { class: "flex flex-col gap-1.5" },
           ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "默认尺寸"), imgSize)),
       ui.el("div", { class: "flex items-center gap-space-md" }, imgTestBtn, imgTestResult)),
+
+
+    section("refresh", "软件更新", "检查墨语 MoYu 最新版本，查看新特性发布日志，支持 Windows 桌面端引导下载与 Linux/VPS 一键更新。",
+      ui.el("div", { class: "grid grid-cols-1 md:grid-cols-3 gap-space-md" },
+        ui.el("div", { class: "flex flex-col gap-1.5" },
+          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "更新通道"),
+          updateChannelSel),
+        ui.el("div", { class: "flex flex-col gap-1.5" },
+          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "自动检查策略"),
+          updateAutoCheckSel),
+        ui.el("div", { class: "flex flex-col gap-1.5" },
+          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "GitHub 镜像代理 (可选)"),
+          updateMirrorInput)),
+      ui.el("div", { class: "flex flex-wrap items-center gap-space-md" },
+        checkBtn,
+        checkStatusLabel),
+      updateResultBox),
 
     section("database", "数据与备份", null,
       ui.el("div", { class: "flex flex-col gap-2 p-space-md rounded-xl bg-surface-container-low font-body-sm text-body-sm text-on-surface-variant" },

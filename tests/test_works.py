@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """works 核心链路：作品→卷→章→内容保存→树→级联删除。"""
 from conftest import make_chapter, make_volume, make_work, make_wvc
 

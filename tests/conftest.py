@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """pytest 公共夹具：临时库 + TestClient。
 
 关键顺序：必须在导入 app 任何模块之前设置 MOYU_DB，

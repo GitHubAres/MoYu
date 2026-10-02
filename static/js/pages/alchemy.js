@@ -130,6 +130,29 @@ registerPage("alchemy", async (view) => {
   const btnGhost = "flex items-center gap-1 px-space-sm py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md transition-colors";
   const inputCls = "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm";
 
+  async function pollTask(taskId, onProgress) {
+    const start = Date.now();
+    while (Date.now() - start < 180000) {
+      await new Promise((r) => setTimeout(r, 1200));
+      try {
+        const t = await api.get(`/tasks/${taskId}`);
+        if (onProgress) onProgress(t);
+        if (t.status === "done") {
+          return t.output_json ? JSON.parse(t.output_json) : {};
+        }
+        if (t.status === "failed") {
+          throw new Error(t.error_msg || "任务执行失败");
+        }
+        if (t.status === "cancelled") {
+          throw new Error("任务已被取消");
+        }
+      } catch (e) {
+        if (e.message && (e.message.includes("失败") || e.message.includes("取消"))) throw e;
+      }
+    }
+    throw new Error("任务处理超时，可至「AI 任务台账」查看历史结果");
+  }
+
   function loadingCard(text) {
     return ui.el("div", { class: cardCls + " flex items-center gap-space-md" },
       ui.el("span", { class: "material-symbols-outlined text-[24px] text-secondary animate-spin" }, "progress_activity"),
@@ -261,7 +284,8 @@ registerPage("alchemy", async (view) => {
         rightBox.append(loadingCard("正在拆解文本样本…"));
         renderDistillLeft(leftBox, rightBox);
         try {
-          const r = await api.post("/alchemy/analyze", body);
+          const task = await api.post("/alchemy/analyze?async_mode=true", body);
+          const r = task.task_id ? await pollTask(task.task_id) : task;
           distill.report = r.report;
           distill.sampleInfo = r.sample_info;
         } catch (e) {
@@ -331,7 +355,16 @@ registerPage("alchemy", async (view) => {
     leftBox.append(
       ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold tracking-wider" }, "上传资料"),
       ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" },
-        "支持 TXT / MD / DOCX。AI 会将资料中的设定与情节线索提炼为「设定条目 + 大纲节点」预览，确认后入库。"));
+        "资料融汇只抽取设定与大纲，不导入整本正文。支持 TXT / MD / DOCX，AI 会将资料中的设定与情节线索提炼为「设定条目 + 大纲节点」预览，确认后入库。"),
+      ui.el("div", { class: "p-space-sm rounded-lg bg-surface-container-low flex flex-col gap-space-xs" },
+        ui.el("div", { class: "flex items-center gap-1 font-label-sm text-label-sm text-secondary font-semibold" },
+          ui.icon("info", "text-[16px]"), "边界说明"),
+        ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" },
+          "如需将整本小说正文按章节导入书架，请使用「导入导出」的稿件导入功能。"),
+        ui.el("button", {
+          class: "self-start flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md",
+          onclick: () => { location.hash = "#/io"; },
+        }, ui.icon("file_download", "text-[16px]"), "前往稿件导入")));
 
     const upBtn = filePickerButton(".txt,.md,.docx", "upload_file",
       fuse.fileName ? "重新上传" : "选择文件",
@@ -362,7 +395,8 @@ registerPage("alchemy", async (view) => {
         rightBox.append(loadingCard("正在智能分类资料…"));
         renderContent();
         try {
-          const r = await api.post("/alchemy/extract-lore", { file_token: fuse.fileToken });
+          const task = await api.post("/alchemy/extract-lore?async_mode=true", { file_token: fuse.fileToken });
+          const r = task.task_id ? await pollTask(task.task_id) : task;
           fuse.entities = (r.entities || []).map((e) => ({ ...e, _checked: true }));
           fuse.outline = (r.outline || []).map((o) => ({ ...o, _checked: true }));
         } catch (e) {
@@ -385,7 +419,8 @@ registerPage("alchemy", async (view) => {
     if (!fuse.entities) {
       rightBox.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-xl text-center" },
         ui.icon("merge", "text-[48px] text-outline-variant"),
-        ui.el("p", { class: "font-body-md text-body-md text-on-surface-variant" }, "上传资料后点「智能分类」，这里会显示可勾选的预览结果")));
+        ui.el("p", { class: "font-body-md text-body-md text-on-surface-variant" }, "上传资料后点「智能分类」，这里会显示可勾选的设定条目与大纲节点"),
+        ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "提示：此功能不导入正文，整本稿件拆章请去「导入导出」页。")));
       return;
     }
     if (!fuse.entities.length && !fuse.outline.length) {
@@ -557,9 +592,10 @@ registerPage("alchemy", async (view) => {
         brew.running = true;
         renderContent();
         try {
-          const r = await api.post("/alchemy/brew", {
+          const task = await api.post("/alchemy/brew?async_mode=true", {
             step: meta.id, instruction: instr.value, context: brewContext(),
           });
+          const r = task.task_id ? await pollTask(task.task_id) : task;
           brew.candidate = r.result;
         } catch (e) {
           brew.candidate = null;

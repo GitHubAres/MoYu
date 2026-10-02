@@ -1,10 +1,14 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """设定一致性检查 API：纯建议，不修改任何正文/设定。"""
 import json
+import time
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..ai_tasks import finish_task, start_task, create_task
 from ..db import get_db
 
 router = APIRouter(prefix="/audit", tags=["audit"])
@@ -105,6 +109,25 @@ async def run_audit(body: AuditIn):
     if not db.execute("SELECT id FROM works WHERE id=?", (body.work_id,)).fetchone():
         raise HTTPException(404, "资源不存在")
 
+    task_id = create_task(body.work_id, "audit", f"检查 {len(body.chapter_ids)} 个章节")
+    start_time = time.time()
+    try:
+        result = await _do_audit(body)
+        elapsed = int((time.time() - start_time) * 1000)
+        usage = result.get("usage") or {}
+        finish_task(task_id, {"issues": result["issues"], "checked_chapters": result["checked_chapters"]},
+                    token_used=usage.get("total_tokens") or 0, elapsed_ms=elapsed)
+        return {**result, "task_id": task_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        elapsed = int((time.time() - start_time) * 1000)
+        from ..ai_tasks import fail_task
+        fail_task(task_id, str(e), elapsed)
+        raise
+
+
+async def _do_audit(body: AuditIn):
     s = _settings()
     base_url = (s.get("ai_base_url") or "").rstrip("/")
     api_key = s.get("ai_api_key") or ""

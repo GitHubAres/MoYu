@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """导入导出：TXT 全书导出、TXT 拆章导入 preview + confirm。"""
 from pathlib import Path
 
@@ -102,3 +104,37 @@ def test_import_preview_rejects_bad_input(client):
     r = client.post("/api/import/preview",
                     files={"file": ("x.txt", b"", "text/plain")})
     assert r.status_code == 400
+
+def test_export_epub_full_book(client):
+    import zipfile
+    w, v, c = make_wvc(client, "EPUB导出测试书")
+    client.patch(f"/api/chapters/{c['id']}", json={
+        "title": "第一章 初入仙门", "content": "修仙之路漫漫。\n\n唯道心坚定者可达彼岸。"})
+
+    r = client.post("/api/export", json={"work_id": w["id"], "format": "epub"})
+    assert r.status_code == 201
+    rec = r.json()
+    assert rec["status"] == "done"
+    assert rec["word_count"] > 0
+    assert rec["size"] > 0
+
+    path = Path(rec["path"])
+    assert path.is_file()
+
+    with zipfile.ZipFile(str(path), "r") as zf:
+        names = zf.namelist()
+        assert names[0] == "mimetype"
+        assert zf.read("mimetype") == b"application/epub+zip"
+        assert "META-INF/container.xml" in names
+        assert "OEBPS/content.opf" in names
+        assert "OEBPS/toc.ncx" in names
+        assert "OEBPS/style.css" in names
+        assert "OEBPS/chapter_0001.xhtml" in names
+
+        chap_content = zf.read("OEBPS/chapter_0001.xhtml").decode("utf-8")
+        assert "第一章 初入仙门" in chap_content
+        assert "修仙之路漫漫。" in chap_content
+
+    assert client.delete(f"/api/exports/{rec['id']}").status_code == 204
+    assert not path.exists()
+

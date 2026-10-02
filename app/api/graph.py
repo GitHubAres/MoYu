@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """人物关系图谱 API：图谱数据查询与实体关系 CRUD。"""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

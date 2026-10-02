@@ -120,7 +120,7 @@ registerPage("board", async (view, { segs }) => {
 
     function card(f, lane) {
       const [nextStatus, nextIcon, nextTip] = NEXT[f.status];
-      const actionCls = "p-1.5 rounded-lg bg-surface-container-low text-on-surface-variant transition-colors";
+      const actionCls = "p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg bg-surface-container-low text-on-surface-variant transition-colors cursor-pointer";
       const el = ui.el("article", {
         class: "flex flex-col bg-surface-container-lowest rounded-xl p-space-md shadow-[0_2px_8px_rgba(6,21,35,0.03)] hover:shadow-[0_8px_24px_rgba(27,42,56,0.06)] transition-shadow cursor-grab",
         draggable: "true",
@@ -208,7 +208,7 @@ registerPage("board", async (view, { segs }) => {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
         onclick: (e) => { if (e.target === overlay) close(false); },
       },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[480px] max-w-[92vw] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[480px] max-w-[calc(100vw-2rem)] mx-2 sm:mx-0 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, isNew ? "新建伏笔" : "编辑伏笔"),
           field("标题", title),
           field("内容", content),

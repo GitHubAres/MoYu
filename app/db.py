@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """SQLite 数据层：连接管理与建表。"""
 import os
 import sqlite3
@@ -144,6 +146,63 @@ CREATE TABLE IF NOT EXISTS images (
     created_at TEXT DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_entities_work ON entities(work_id, category);
+
+CREATE TABLE IF NOT EXISTS ai_tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_id INTEGER REFERENCES works(id) ON DELETE SET NULL,
+    task_type TEXT NOT NULL,
+    input_summary TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',
+    output_json TEXT DEFAULT '',
+    token_used INTEGER DEFAULT 0,
+    elapsed_ms INTEGER DEFAULT 0,
+    error_msg TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_tasks_work ON ai_tasks(work_id, status, id DESC);
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_id INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+    chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_chap ON chat_sessions(chapter_id, id DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    task_type TEXT DEFAULT '',
+    meta_json TEXT DEFAULT '{}',
+    adopted INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id ASC);
+
+CREATE TABLE IF NOT EXISTS announcements (
+    id            TEXT PRIMARY KEY,
+    source        TEXT NOT NULL,
+    level         TEXT NOT NULL DEFAULT 'normal',
+    title         TEXT NOT NULL,
+    body_md       TEXT NOT NULL,
+    link_url      TEXT DEFAULT '',
+    link_text     TEXT DEFAULT '',
+    version_tag   TEXT DEFAULT '',
+    starts_at     TEXT DEFAULT '',
+    ends_at       TEXT DEFAULT '',
+    fetched_at    TEXT NOT NULL,
+    content_hash  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS announcement_acks (
+    announcement_id TEXT PRIMARY KEY REFERENCES announcements(id),
+    acked_at        TEXT NOT NULL,
+    ack_type        TEXT DEFAULT 'view'
+);
 """
 
 DEFAULT_SETTINGS = {
@@ -161,6 +220,12 @@ DEFAULT_SETTINGS = {
     "img_api_key": "",
     "img_model": "Kwai-Kolors/Kolors",
     "img_size": "1024x1024",
+    "update_channel": "stable",
+    "update_auto_check": "1",
+    "update_last_check": "",
+    "update_skipped_ver": "",
+    "update_mirror": "",
+    "announcement_url": "https://github.com/GitHubAres/MoYu-V1.0.0/releases/latest/download/announcement.json",
 }
 
 

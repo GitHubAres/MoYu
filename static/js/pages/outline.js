@@ -232,6 +232,8 @@ registerPage("outline", async (view, { segs }) => {
         }, ui.icon("delete", "text-[16px]"), "删除节点")),
       /* AI 章节草稿预览区 */
       ui.el("div", { id: "ai-draft-slot", class: "flex flex-col gap-space-md relative" }),
+      /* AI 生成子节点 */
+      aiGenerateChildrenSection(node),
       /* AI 剧构推演 */
       aiTwistSection(node));
 
@@ -355,7 +357,7 @@ registerPage("outline", async (view, { segs }) => {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
         onclick: (e) => { if (e.target === overlay) close(null); },
       },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] max-w-[calc(100vw-2rem)] mx-2 sm:mx-0 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "关联已有章节"),
           sel,
           ui.el("div", { class: "flex justify-end gap-2" },
@@ -508,6 +510,123 @@ registerPage("outline", async (view, { segs }) => {
             ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary" }, "墨语MoYu AI 剧构推演"),
             ui.el("p", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "基于当前大纲张力与上下文生成剧情走向建议"))),
         runBtn),
+      list);
+  }
+
+  /* ---------- AI 生成子节点 ---------- */
+
+  function aiGenerateChildrenSection(node) {
+    const list = ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-space-md" });
+    const hintInput = ui.el("textarea", {
+      class: "w-full bg-surface-container-lowest rounded-lg px-3 py-2 font-body-md text-body-md leading-relaxed resize-y min-h-[72px] outline-none focus:ring-1 focus:ring-primary/30",
+      placeholder: "补充要求，例如：生成 5 个情节点 / 侧重人物成长 / 包含一个反转…（可选）",
+    });
+    const btnLabel = ui.el("span", {}, "AI 生成子节点");
+    const runBtn = ui.el("button", {
+      class: "flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-secondary text-on-secondary hover:opacity-90 font-label-md text-label-md shadow-sm transition-all",
+      onclick: async () => {
+        runBtn.disabled = true;
+        btnLabel.textContent = "生成中…";
+        list.innerHTML = "";
+        try {
+          const res = await api.post("/ai/generate", {
+            task: "outline",
+            instruction: "请为当前大纲节点生成 3-6 个子节点标题，用于细化剧情结构。只输出子节点标题列表，每行一个标题，或返回 JSON 数组。标题应简洁、有张力。",
+            context: `作品：《${work.title}》${work.genre ? "（" + work.genre + "）" : ""}\n当前节点：${nodePath(node).join(" / ")}\n梗概：${node.synopsis || "（暂无梗概）"}\n${hintInput.value.trim() ? "补充要求：" + hintInput.value.trim() : ""}`,
+            selection: "",
+            length: "short",
+            candidates: 1,
+            stream: false,
+            work_id: workId,
+          });
+          renderChildren(res.candidates && res.candidates[0] ? res.candidates[0] : "");
+        } catch (e) {
+          ui.toast(e.message, "err");
+        } finally {
+          runBtn.disabled = false;
+          btnLabel.textContent = "AI 生成子节点";
+        }
+      },
+    }, ui.icon("account_tree", "text-[16px]"), btnLabel);
+
+    function parseChildTitles(text) {
+      const t = text.trim();
+      try {
+        const parsed = JSON.parse(t);
+        if (Array.isArray(parsed)) return parsed.map(x => String(x).trim()).filter(Boolean);
+      } catch {}
+      return t.split("\n")
+        .map(l => l.replace(/^(\s*[\d一二三四五六七八九十]+[\.\、）\]\[]\s*|\s*[-*•]\s*|\s*[（(]\d+[)）]\s*)/, "").trim())
+        .filter(l => l.length > 0 && l.length < 120);
+    }
+
+    async function createChild(title) {
+      if (!title.trim()) return;
+      try {
+        const n = await api.post(`/works/${workId}/outline`, { title: title.trim(), parent_id: node.id });
+        return n.id;
+      } catch (e) { ui.toast(e.message, "err"); return null; }
+    }
+
+    function renderChildren(rawText) {
+      list.innerHTML = "";
+      const titles = parseChildTitles(rawText);
+      if (!titles.length) {
+        list.append(ui.el("div", { class: "col-span-full font-body-sm text-body-sm text-on-surface-variant bg-surface-container-lowest/60 rounded-lg p-space-md text-center" },
+          "AI 未返回可识别的子节点标题，请调整要求后重试"));
+        return;
+      }
+      const editors = titles.map((t) => ui.el("input", {
+        type: "text",
+        class: "w-full bg-transparent outline-none font-body-md text-body-md",
+        value: t,
+      }));
+      const createAllBtn = ui.el("button", {
+        class: "col-span-full w-full py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md shadow-sm hover:opacity-90 transition-all",
+        onclick: async () => {
+          createAllBtn.disabled = true;
+          createAllBtn.textContent = "创建中…";
+          let count = 0;
+          for (const input of editors) {
+            if (await createChild(input.value)) count++;
+          }
+          createAllBtn.disabled = false;
+          createAllBtn.textContent = "全部创建";
+          if (count) {
+            ui.toast(`已创建 ${count} 个子节点`, "ok");
+            await reload(node.id);
+          }
+        },
+      }, "全部创建");
+      list.append(createAllBtn);
+      editors.forEach((input, i) => {
+        list.append(ui.el("div", { class: "bg-surface-container-lowest p-space-md rounded-xl shadow-xs ai-glow flex items-center gap-space-sm" },
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, `0${i + 1}`),
+          input,
+          ui.el("button", {
+            class: "px-3 py-1.5 rounded-lg bg-surface-container-low hover:bg-surface-container text-primary font-label-sm text-label-sm font-medium shrink-0",
+            onclick: async () => {
+              if (await createChild(input.value)) {
+                ui.toast(`已创建子节点「${input.value.trim()}」`, "ok");
+                await reload(node.id);
+              }
+            },
+          }, "创建")));
+      });
+    }
+
+    list.append(ui.el("div", { class: "col-span-full font-body-sm text-body-sm text-on-surface-variant bg-surface-container-lowest/60 rounded-lg p-space-md text-center" },
+      "输入补充要求后点击「AI 生成子节点」，基于当前节点生成下一层大纲结构"));
+
+    return ui.el("div", { class: "bg-surface-container-low rounded-xl p-space-lg flex flex-col gap-space-md relative" },
+      ui.el("div", { class: "flex flex-col sm:flex-row sm:items-center justify-between gap-space-sm" },
+        ui.el("div", { class: "flex items-center gap-2" },
+          ui.icon("account_tree", "text-[24px] text-secondary"),
+          ui.el("div", {},
+            ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary" }, "墨语MoYu AI 生成子节点"),
+            ui.el("p", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "基于当前节点主题自动规划下一层大纲节点"))),
+        runBtn),
+      hintInput,
       list);
   }
 

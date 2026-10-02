@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """剧情时间线 API：事件 CRUD + AI 从章节提取（先预览、确认后再入库）。"""
 import json
 

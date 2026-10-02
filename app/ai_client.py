@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """OpenAI 兼容接口客户端：非流式调用与 SSE 流式解析。"""
 import json
 

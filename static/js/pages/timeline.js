@@ -142,7 +142,7 @@ registerPage("timeline", async (view, { segs }) => {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
         onclick: (e) => { if (e.target === overlay) close(null); },
       },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[480px] max-w-[92vw] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[480px] max-w-[calc(100vw-2rem)] mx-2 sm:mx-0 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, title),
           ui.el("label", { class: labelCls }, "时间标签（故事内时间）", timeInput),
           ui.el("label", { class: labelCls }, "事件描述", eventInput),
@@ -214,7 +214,7 @@ registerPage("timeline", async (view, { segs }) => {
       class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
       onclick: (e) => { if (e.target === overlay) overlay.remove(); },
     },
-      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[560px] max-w-[94vw] max-h-[86vh] overflow-y-auto shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[560px] max-w-[calc(100vw-2rem)] mx-2 sm:mx-0 max-h-[86vh] overflow-y-auto shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
         ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "AI 从章节提取事件"),
         body, footer));
     document.getElementById("modal-root").append(overlay);

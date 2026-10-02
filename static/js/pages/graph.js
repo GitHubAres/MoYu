@@ -294,7 +294,7 @@ registerPage("graph", async (view, { segs }) => {
       g.querySelector("line").setAttribute("stroke-width", 3);
       const a = nodeById.get(e.from_id), b = nodeById.get(e.to_id);
       edgeBar = ui.el("div", {
-        class: "absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center gap-space-sm bg-surface-container-lowest rounded-full px-4 py-2 shadow-[0_8px_24px_rgba(27,42,56,0.12)] border border-border-feather",
+        class: "absolute left-1/2 -translate-x-1/2 top-4 z-10 flex items-center max-w-[calc(100vw-2rem)] flex-wrap justify-center gap-1 sm:gap-space-sm bg-surface-container-lowest rounded-full px-2.5 sm:px-4 py-1.5 sm:py-2 shadow-[0_8px_24px_rgba(27,42,56,0.12)] border border-border-feather",
       },
         ui.icon("link", "text-[18px] text-cinnabar-accent"),
         ui.el("span", { class: "font-body-sm text-body-sm text-on-surface" },
@@ -340,7 +340,7 @@ registerPage("graph", async (view, { segs }) => {
       const rels = edges.filter((e) => e.from_id === n.id || e.to_id === n.id);
       const tags = Array.isArray(n.tags) ? n.tags : String(n.tags || "").split(",").filter(Boolean);
       nodeCard = ui.el("aside", {
-        class: "absolute top-4 right-4 z-10 w-[300px] max-w-[85%] bg-surface-container-lowest rounded-xl p-space-md shadow-[0_12px_32px_rgba(27,42,56,0.14)] border border-border-feather flex flex-col gap-space-sm",
+        class: "absolute top-16 sm:top-4 right-2 sm:right-4 z-10 w-[300px] max-w-[85%] bg-surface-container-lowest rounded-xl p-space-md shadow-[0_12px_32px_rgba(27,42,56,0.14)] border border-border-feather flex flex-col gap-space-sm",
       },
         ui.el("div", { class: "flex items-start justify-between gap-2" },
           ui.el("div", { class: "flex items-center gap-space-xs min-w-0" },
@@ -434,7 +434,7 @@ registerPage("graph", async (view, { segs }) => {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
         onclick: (e) => { if (e.target === overlay) close(false); },
       },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[460px] max-w-[92vw] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[460px] max-w-[calc(100vw-2rem)] mx-2 sm:mx-0 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "新增关系"),
           field("起点实体", fromSel),
           ui.el("div", { class: "flex justify-center text-on-surface-variant" }, ui.icon("arrow_downward", "text-[18px]")),

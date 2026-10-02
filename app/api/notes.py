@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """灵感便签 API。"""
 from fastapi import APIRouter
 from pydantic import BaseModel

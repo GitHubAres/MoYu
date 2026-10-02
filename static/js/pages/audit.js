@@ -27,6 +27,11 @@ registerPage("audit", async (view) => {
     onclick: runAudit,
   }, ui.icon("fact_check", "text-[18px]"), "开始检查");
   const statusLine = ui.el("div", { class: "font-label-sm text-label-sm text-on-surface-variant" });
+  const taskLinkEl = ui.el("a", {
+    class: "hidden flex items-center gap-1 text-secondary hover:underline font-label-sm text-label-sm",
+    href: "#/tasks",
+    onclick: (e) => { e.preventDefault(); location.hash = "#/tasks"; },
+  }, "查看任务记录");
   const resultBox = ui.el("div", { class: "flex flex-col gap-space-md" });
 
   view.append(
@@ -54,7 +59,8 @@ registerPage("audit", async (view) => {
                 ui.el("button", { class: "text-secondary hover:underline", onclick: () => setAllChecked(false) }, "清空"))),
             chapterBox,
             runBtn,
-            statusLine)),
+            statusLine,
+            taskLinkEl)),
         ui.el("div", { class: "col-span-12 lg:col-span-8 xl:col-span-9" }, resultBox))));
 
   /* ---------- 范围加载 ---------- */
@@ -127,6 +133,10 @@ registerPage("audit", async (view) => {
       const data = await resp.json();
       issues = data.issues || [];
       statusLine.textContent = `已检查 ${data.checked_chapters} 章`;
+      if (data.task_id) {
+        taskLinkEl.textContent = `查看任务记录 #${data.task_id}`;
+        taskLinkEl.classList.remove("hidden");
+      }
       if (data.usage && data.usage.total_tokens) {
         statusLine.textContent += ` · 消耗约 ${Number(data.usage.total_tokens).toLocaleString()} tokens`;
       }
@@ -190,7 +200,7 @@ registerPage("audit", async (view) => {
     const entityCount = new Set(issues.map((i) => i.entity).filter(Boolean)).size;
 
     resultBox.append(
-      ui.el("div", { class: "grid grid-cols-3 gap-space-md" },
+      ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-space-md" },
         statCard("问题总数", issues.length, "text-primary"),
         statCard("高严重度", highCount, "text-cinnabar-accent"),
         statCard("涉及设定", entityCount, "text-secondary")),

@@ -77,12 +77,18 @@ registerPage("versions", async (view, { segs, params }) => {
     ui.setActions(
       ui.el("button", {
         class: "flex items-center gap-1 px-space-sm py-1.5 rounded-full bg-primary text-on-primary shadow-[0_2px_12px_rgba(6,21,35,0.2)] hover:bg-primary-container transition-all",
-        onclick: async () => {
+        onclick: async (e) => {
+          const btn = e.currentTarget;
+          if (btn.disabled) return;
+          btn.disabled = true;
           try {
             await api.post(`/chapters/${chapterId}/snapshot`);
             ui.toast("手动快照已创建", "ok");
             router.dispatch();
-          } catch (e) { ui.toast(e.message, "err"); }
+          } catch (e) {
+            ui.toast(e.message, "err");
+            btn.disabled = false;
+          }
         },
       }, ui.icon("bookmark_add", "text-[18px]"), ui.el("span", { class: "font-label-md text-label-md" }, "手动创建快照")));
 
@@ -195,7 +201,7 @@ registerPage("versions", async (view, { segs, params }) => {
       if (state.left === "current") return;
       const data = state.cache[state.left];
       restoreBar.append(ui.el("div", {
-        class: "sticky bottom-6 w-full mt-space-lg p-space-md rounded-2xl bg-primary text-on-primary shadow-[0_12px_32px_rgba(6,21,35,0.18)] flex flex-wrap items-center justify-between gap-space-sm z-30",
+        class: "sticky bottom-3 sm:bottom-6 w-full mt-space-md sm:mt-space-lg p-space-sm sm:p-space-md rounded-xl sm:rounded-2xl bg-primary text-on-primary shadow-[0_12px_32px_rgba(6,21,35,0.18)] flex flex-wrap items-center justify-between gap-space-sm z-30",
       },
         ui.el("div", { class: "flex items-center gap-space-xs font-body-sm text-body-sm text-inverse-primary min-w-0" },
           ui.icon("swap_horizontal_circle", "text-[20px] text-cinnabar-accent"),
@@ -204,7 +210,7 @@ registerPage("versions", async (view, { segs, params }) => {
             `${data.label}（${data.meta}）`),
           ui.el("span", { class: "font-label-sm text-label-sm text-inverse-primary/80 shrink-0" }, "｜操作可撤销")),
         ui.el("button", {
-          class: "flex items-center gap-space-xs px-space-lg py-space-xs rounded-xl bg-secondary-container hover:bg-secondary text-on-secondary font-label-md text-label-md font-semibold shadow-md transition-all",
+          class: "flex items-center justify-center min-h-[44px] gap-space-xs px-space-md sm:px-space-lg py-2 rounded-xl bg-secondary-container hover:bg-secondary text-on-secondary font-label-md text-label-md font-semibold shadow-md transition-all cursor-pointer",
           onclick: async () => {
             const ok = await ui.confirm("恢复版本",
               `将把「${chapter.title}」回退至 ${data.label}。\n当前正文会自动留存为一份“恢复前自动留存”快照，可随时再次恢复。`, "恢复");

@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """导入导出与整库备份 API。"""
 import json
 import os
@@ -11,7 +13,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from ..db import DATA_DIR, DB_PATH, get_db, word_count
-from ..exporter import EXPORT_DIR, chapters_for_scope, export_docx, export_txt
+from ..exporter import EXPORT_DIR, chapters_for_scope, export_docx, export_epub, export_txt
 
 router = APIRouter(tags=["io"])
 
@@ -59,6 +61,8 @@ def _run_export(eid: int, work: dict, fmt: str, payload: dict):
         options = payload.get("options") or {}
         if fmt == "txt":
             _, wc = export_txt(work, tree, options, path)
+        elif fmt == "epub":
+            _, wc = export_epub(work, tree, options, path)
         else:
             _, wc = export_docx(work, tree, options, path)
         payload.pop("error", None)
@@ -83,8 +87,8 @@ class ExportIn(BaseModel):
 @router.post("/export", status_code=201)
 def create_export(body: ExportIn):
     fmt = body.format.lower()
-    if fmt not in ("txt", "docx"):
-        raise HTTPException(400, "仅支持导出 TXT / DOCX 格式")
+    if fmt not in ("txt", "docx", "epub"):
+        raise HTTPException(400, "仅支持导出 TXT / DOCX / EPUB 格式")
     work = _one("SELECT * FROM works WHERE id=?", (body.work_id,))
     stype = body.scope.get("type", "all")
     if stype not in _SCOPE_LABEL:

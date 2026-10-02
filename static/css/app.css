@@ -1,3 +1,42 @@
+﻿
+/* 响应式基础与防溢出 */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+img, video, canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 抽屉遮罩 (移动端侧边栏与面板) */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(6, 21, 35, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 45;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.drawer-backdrop.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 触屏交互保底（防止无 hover 状态下隐藏操作按钮） */
+@media (hover: none) and (pointer: coarse) {
+  .group:hover .group-hover\:flex,
+  .group .touch-action-visible {
+    display: flex !important;
+  }
+}
+
 /* 墨语MoYu 自定义样式（Tailwind 之外的补充） */
 
 html, body { margin: 0; padding: 0; }
@@ -72,3 +111,81 @@ body.theme-paper .bg-surface-container-low { background: #f0ead9 !important; }
 
 /* toast */
 .toast-item { transition: opacity .3s, transform .3s; }
+
+/* 移动端触控热区与流式字号规范 (v1.2.3) */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 流式字号与自适应文本规范 */
+.fluid-title {
+  font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+  line-height: 1.3;
+}
+.fluid-body {
+  font-size: clamp(0.95rem, 1.2vw, 1.125rem);
+  line-height: 1.6;
+}
+
+/* 小屏断点表格与卡片自适应保底 */
+@media (max-width: 640px) {
+  .sm-stack {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+  }
+  .sm-full {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+  .sm-nowrap-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* 移动端安全区与视口裁切保护 (v1.2.3 深度修复) */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+body {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* 顶栏移动端安全区下移与防挤压 */
+header {
+  top: var(--sat) !important;
+}
+
+/* 解决悬浮 FAB 按钮被 iPhone 底部手势横条遮挡 */
+#global-quick-note-fab {
+  bottom: calc(1.5rem + var(--sab)) !important;
+}
+
+/* 移动端超窄屏 (375px/393px) 容器防溢出保底 */
+@media (max-width: 640px) {
+  header {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+  }
+  /* 顶栏统计栏与动作在手机端自动收敛，防止挤压遮挡 */
+  #header-stat-box {
+    display: none !important;
+  }
+  .overflow-hidden-mobile {
+    overflow-x: hidden !important;
+  }
+}

@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """设定人物库 API：分类条目 CRUD、归档、章节关联。"""
 import json
 
@@ -172,7 +174,55 @@ def unlink_entity_chapter(entity_id: int, chapter_id: int):
 def chapter_entities(chapter_id: int):
     """某章节关联的设定条目（工作台 AI 上下文用）。"""
     _one("SELECT id FROM chapters WHERE id=?", (chapter_id,))
-    return _all(
-        """SELECT e.id, e.name, e.category, e.tags, substr(e.content,1,200) AS content
+    rows = _all(
+        """SELECT e.id, e.work_id, e.name, e.category, e.tags, e.content, e.fields_json, e.updated_at
            FROM entities e JOIN chapter_entities ce ON ce.entity_id=e.id
-           WHERE ce.chapter_id=? AND e.archived=0""", (chapter_id,))
+           WHERE ce.chapter_id=? AND e.archived=0
+           ORDER BY e.category, e.name, e.id""", (chapter_id,))
+    return [_serialize(r) for r in rows]
+
+
+class ChapterEntityLinkIn(BaseModel):
+    entity_id: int
+
+
+@router.post("/chapters/{chapter_id}/entities", status_code=201)
+def link_chapter_entity(chapter_id: int, body: ChapterEntityLinkIn):
+    ch = _one("""SELECT c.id, v.work_id FROM chapters c
+                 JOIN volumes v ON v.id = c.volume_id WHERE c.id=?""", (chapter_id,))
+    ent = _one("SELECT id, work_id FROM entities WHERE id=?", (body.entity_id,))
+    if ch["work_id"] != ent["work_id"]:
+        raise HTTPException(400, "实体与章节不属于同一作品")
+    db = get_db()
+    db.execute("INSERT OR IGNORE INTO chapter_entities(chapter_id, entity_id) VALUES (?,?)",
+               (chapter_id, body.entity_id))
+    db.commit()
+    return chapter_entities(chapter_id)
+
+
+@router.delete("/chapters/{chapter_id}/entities/{entity_id}", status_code=204)
+def unlink_chapter_entity(chapter_id: int, entity_id: int):
+    _one("SELECT id FROM chapters WHERE id=?", (chapter_id,))
+    _one("SELECT id FROM entities WHERE id=?", (entity_id,))
+    db = get_db()
+    db.execute("DELETE FROM chapter_entities WHERE chapter_id=? AND entity_id=?",
+               (chapter_id, entity_id))
+    db.commit()
+
+
+class ChapterBatchEntitiesIn(BaseModel):
+    entity_ids: list[int]
+
+
+@router.post("/chapters/{chapter_id}/entities/batch", status_code=200)
+def batch_link_chapter_entities(chapter_id: int, body: ChapterBatchEntitiesIn):
+    ch = _one("""SELECT c.id, v.work_id FROM chapters c
+                 JOIN volumes v ON v.id = c.volume_id WHERE c.id=?""", (chapter_id,))
+    db = get_db()
+    for eid in body.entity_ids:
+        ent = db.execute("SELECT id, work_id FROM entities WHERE id=?", (eid,)).fetchone()
+        if ent and ent["work_id"] == ch["work_id"]:
+            db.execute("INSERT OR IGNORE INTO chapter_entities(chapter_id, entity_id) VALUES (?,?)",
+                       (chapter_id, eid))
+    db.commit()
+    return chapter_entities(chapter_id)

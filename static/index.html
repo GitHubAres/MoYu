@@ -1,12 +1,16 @@
+﻿<!-- 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT -->
+<!-- MoYu-fingerprint: moyu-local-v1.1.0 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
 <title>墨语MoYu · 本地写作工作台</title>
-<link href="/static/vendor/fonts.css" rel="stylesheet"/>
-<link href="/static/css/app.css?v=9" rel="stylesheet"/>
-<script src="/static/vendor/tailwind.js"></script>
+<link rel="icon" type="image/svg+xml" href="/static/logo.svg?v=1.2.6"/>
+<link rel="alternate icon" type="image/png" href="/static/logo.png?v=1.2.6"/>
+<link href="/static/vendor/fonts.css?v=1.2.6" rel="stylesheet"/>
+<link href="/static/css/app.css?v=1.2.6" rel="stylesheet"/>
+<script src="/static/vendor/tailwind.js?v=1.2.6"></script>
 <style type="text/tailwindcss">
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
@@ -63,7 +67,6 @@
   --color-paper-pure: #FFFFFF;
   --color-cool-subtle: #F6F8FA;
   --color-border-feather: #E5E9EE;
-
   --font-display: "Noto Serif SC", "Noto Serif", serif;
   --font-display-mobile: "Noto Serif SC", "Noto Serif", serif;
   --font-headline-lg: "Noto Serif SC", "Noto Serif", serif;
@@ -74,7 +77,6 @@
   --font-body-sm: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-label-md: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
   --font-label-sm: "Plus Jakarta Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
-
   --text-display: 40px; --text-display--line-height: 52px; --text-display--font-weight: 600;
   --text-display-mobile: 30px; --text-display-mobile--line-height: 40px; --text-display-mobile--font-weight: 600;
   --text-headline-lg: 28px; --text-headline-lg--line-height: 38px; --text-headline-lg--font-weight: 600;
@@ -85,10 +87,8 @@
   --text-body-sm: 13px; --text-body-sm--line-height: 20px; --text-body-sm--font-weight: 400;
   --text-label-md: 12px; --text-label-md--line-height: 16px; --text-label-md--font-weight: 500;
   --text-label-sm: 11px; --text-label-sm--line-height: 14px; --text-label-sm--font-weight: 600;
-
   --radius-lg: 0.5rem;
   --radius-xl: 0.75rem;
-
   --spacing-gutter: 1.25rem;
   --spacing-margin: 1.75rem;
   --spacing-space-xs: 0.375rem;
@@ -100,8 +100,7 @@
 </style>
 </head>
 <body class="bg-surface font-body-md text-body-md text-on-surface antialiased">
-
-<aside class="fixed left-0 top-0 h-full w-64 bg-surface-container-low/70 backdrop-blur-2xl z-50 flex flex-col justify-between py-space-lg px-space-md shadow-[0_1px_8px_rgba(0,0,0,0.02)]">
+<aside id="sidebar-drawer" class="fixed left-0 top-0 h-full w-64 bg-surface-container-low/95 lg:bg-surface-container-low/70 backdrop-blur-2xl z-50 flex flex-col justify-between py-space-lg px-space-md shadow-[0_1px_8px_rgba(0,0,0,0.02)] -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out">
   <div class="flex flex-col gap-space-lg">
     <div class="flex items-center gap-space-sm px-space-xs">
       <div class="w-8 h-8 rounded-lg bg-primary-container flex items-center justify-center">
@@ -113,6 +112,7 @@
       </div>
     </div>
     <nav id="main-nav" class="flex flex-col gap-1">
+      <a data-route="tasks" href="#/tasks" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">task</span><span class="font-body-sm text-body-sm">任务记录</span></a>
       <a data-route="bookshelf" href="#/bookshelf" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">auto_stories</span><span class="font-body-sm text-body-sm">书架作品</span></a>
       <a data-route="workbench" href="#/workbench" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">edit_note</span><span class="font-body-sm text-body-sm">写作工作台</span></a>
       <a data-route="outline" href="#/outline" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">account_tree</span><span class="font-body-sm text-body-sm">故事大纲</span></a>
@@ -129,6 +129,7 @@
   <div class="flex flex-col gap-space-sm">
     <div class="flex flex-col gap-1">
       <a data-route="io" href="#/io" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">drive_file_move</span><span class="font-body-sm text-body-sm">导入导出</span></a>
+      <a data-route="announcements" href="#/announcements" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">article</span><span class="font-body-sm text-body-sm">公告中心</span></a>
       <a data-route="settings" href="#/settings" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">settings</span><span class="font-body-sm text-body-sm">系统设置</span></a>
     </div>
     <div class="p-space-xs rounded-xl bg-surface-container/60 flex items-center gap-space-xs">
@@ -137,10 +138,11 @@
     </div>
   </div>
 </aside>
-
-<div class="pl-64 min-h-screen bg-surface flex flex-col">
-  <header class="fixed top-0 left-64 right-0 h-16 bg-surface/85 backdrop-blur-xl z-40 flex items-center justify-between px-space-xl shadow-[0_1px_8px_rgba(0,0,0,0.02)]">
-    <div class="flex items-center gap-space-md min-w-0">
+<div id="sidebar-backdrop" class="drawer-backdrop lg:hidden"></div>
+<div class="pl-0 lg:pl-64 min-h-screen bg-surface flex flex-col">
+  <header class="fixed top-0 left-0 lg:left-64 right-0 h-16 bg-surface/85 backdrop-blur-xl z-40 flex items-center justify-between px-3 sm:px-space-md lg:px-space-xl shadow-[0_1px_8px_rgba(0,0,0,0.02)]">
+    <div class="flex items-center gap-2 sm:gap-space-md min-w-0">
+      <button id="mobile-menu-btn" class="lg:hidden flex items-center justify-center w-10 h-10 -ml-1 mr-0.5 rounded-lg hover:bg-surface-container text-on-surface-variant shrink-0 cursor-pointer" aria-label="打开侧边导航"><span class="material-symbols-outlined text-[24px]">menu</span></button>
       <div id="topbar-crumb" class="flex items-center gap-space-xs font-body-sm text-body-sm text-on-surface-variant truncate"></div>
       <div id="save-indicator" class="hidden items-center gap-space-xs px-space-xs py-1 rounded-full bg-surface-container-low text-on-surface-variant">
         <span class="material-symbols-outlined text-[14px] text-secondary" id="save-icon">cloud_done</span>
@@ -148,7 +150,7 @@
       </div>
     </div>
     <div class="flex items-center gap-space-lg">
-      <div class="flex items-center gap-space-md">
+      <div id="header-stat-box" class="hidden sm:flex items-center gap-space-md">
         <div class="flex items-baseline gap-1 font-body-sm text-body-sm text-on-surface-variant">
           <span class="font-label-sm text-label-sm">今日字数</span>
           <span class="font-headline-sm text-headline-sm text-primary font-semibold" id="stat-today">0</span>
@@ -163,29 +165,33 @@
       <div id="topbar-actions" class="flex items-center gap-space-xs"></div>
     </div>
   </header>
-  <main id="view" class="relative pt-16 w-full flex-1 px-space-xl py-space-lg bg-surface"></main>
+  <main id="view" class="relative pt-16 w-full flex-1 px-3 sm:px-space-md lg:px-space-xl py-space-md lg:py-space-lg bg-surface"></main>
 </div>
-
-<div id="toast-root" class="fixed bottom-6 right-6 z-[100] flex flex-col gap-2"></div>
+<div id="toast-root" class="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-[100] flex flex-col gap-2 pointer-events-none items-center sm:items-end"></div>
 <div id="modal-root"></div>
-
-<script src="/static/js/api.js?v=9"></script>
-<script src="/static/js/ui.js?v=9"></script>
-<script src="/static/js/router.js?v=9"></script>
-<script src="/static/js/pages/bookshelf.js?v=9"></script>
-<script src="/static/js/pages/workbench.js?v=9"></script>
-<script src="/static/js/pages/outline.js?v=9"></script>
-<script src="/static/js/pages/entities.js?v=9"></script>
-<script src="/static/js/pages/board.js?v=9"></script>
-<script src="/static/js/pages/prompts.js?v=9"></script>
-<script src="/static/js/pages/versions.js?v=9"></script>
-<script src="/static/js/pages/io.js?v=9"></script>
-<script src="/static/js/pages/settings.js?v=9"></script>
-<script src="/static/js/pages/audit.js?v=9"></script>
-<script src="/static/js/pages/graph.js?v=9"></script>
-<script src="/static/js/pages/timeline.js?v=9"></script>
-<script src="/static/js/pages/alchemy.js?v=9"></script>
-<script src="/static/js/pages/gallery.js?v=9"></script>
-<script src="/static/js/app.js?v=9"></script>
+<script src="/static/js/api.js?v=1.2.6"></script>
+<script src="/static/js/ui.js?v=1.2.6"></script>
+<script src="/static/js/router.js?v=1.2.6"></script>
+<script src="/static/js/pages/login.js?v=1.2.6"></script>
+<script src="/static/js/pages/bookshelf.js?v=1.2.6"></script>
+<script src="/static/js/pages/workbench_chat.js?v=1.3.0"></script>
+<script src="/static/js/pages/workbench.js?v=1.3.0"></script>
+<script src="/static/js/pages/tasks.js?v=1.2.6"></script>
+<script src="/static/js/pages/outline.js?v=1.2.6"></script>
+<script src="/static/js/pages/entities.js?v=1.2.6"></script>
+<script src="/static/js/pages/board.js?v=1.2.6"></script>
+<script src="/static/js/pages/prompts.js?v=1.2.6"></script>
+<script src="/static/js/pages/versions.js?v=1.2.6"></script>
+<script src="/static/js/pages/io.js?v=1.2.6"></script>
+<script src="/static/js/pages/settings.js?v=1.2.6"></script>
+<script src="/static/js/pages/audit.js?v=1.2.6"></script>
+<script src="/static/js/pages/graph.js?v=1.2.6"></script>
+<script src="/static/js/pages/timeline.js?v=1.2.6"></script>
+<script src="/static/js/pages/alchemy.js?v=1.2.6"></script>
+<script src="/static/js/pages/gallery.js?v=1.2.6"></script>
+<script src="/static/js/pages/announcement.js?v=1.5.0"></script>
+<!-- MoYu-fingerprint: hidden-mark -->
+<div id="moyu-fingerprint" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;" aria-hidden="true">MoYu-fingerprint</div>
+<script src="/static/js/app.js?v=1.2.6"></script>
 </body>
 </html>

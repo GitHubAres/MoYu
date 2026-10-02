@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """故事大纲 API：节点树 CRUD 与章节关联。"""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

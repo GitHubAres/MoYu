@@ -1,95 +1,92 @@
-# 墨语MoYu · 本地 AI 小说写作工作台
+﻿# 墨语MoYu · 本地与云端 AI 小说写作工作台
 
-> 一支笔、一炉丹、一盏灯——部署在本地、数据不出机的 AI 长篇创作工作台。
+> 一支笔、一炉丹、一盏灯——部署在本地或私有 VPS、数据不出机的一站式 AI 长篇创作工作台。
 
 ![License](https://img.shields.io/badge/license-MIT-blue)
-![Python](https://img.shields.io/badge/python-3.12-green)
-![Platform](https://img.shields.io/badge/platform-Windows-lightgrey)
-![Data](https://img.shields.io/badge/data-100%25%20本地-orange)
+![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-green)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)
+![Data](https://img.shields.io/badge/data-100%25%20本地私有-orange)
 
-「墨语MoYu」面向网文作者与长篇创作者：从灵感整理、作品规划、正文创作、设定管理到作品导出的完整闭环。**全部数据存储在本地 SQLite**，AI 只是可控的创作助手——所有 AI 内容先预览、由你确认后才入库，绝不静默写入正文。
+「墨语MoYu」面向网文作者与长篇创作者：涵盖灵感孵化、大纲规划、正文写作、设定管理到作品导出的完整闭环。**全部数据存储在私有 SQLite**，AI 是严谨可控的创作助手——所有 AI 内容先预览、由你确认后才入库，绝不静默写入正文。
 
 ## ✨ 功能一览
 
-| 模块 | 能力 |
+| 模块 | 能力与特性 |
 |---|---|
-| 📚 书架作品 | 作品管理、字数统计、继续写作、灵感便签 |
-| ✍️ 写作工作台 | 三栏编辑器、自动保存、专注模式、查找替换、光标记忆、章节拖拽排序 |
-| 🤖 AI 助手 | 续写/扩写/缩写/改写，流式生成可停止，多候选差异预览，采纳可撤销 |
-| 🧭 故事大纲 | 树形大纲、章节映射、AI 剧构推演、从节点生成章节草稿 |
-| 📖 万象谱 | 角色/地点/势力/物品/术语设定库，章节关联，全局检索 |
-| 🕸️ 关系图谱 | 人物关系力导向图，缩放/平移/拖拽 |
-| ⏳ 剧情时间线 | AI 从章节提取剧情事件，预览确认后入库 |
-| 🏷️ 伏笔看板 | 埋设/待回收/已回收三栏，闭环率统计 |
-| 🧪 炼丹炉 | 拆书蒸馏文风 · 资料融汇入库 · 四步开炉炼丹（框架→世界观→人物→大纲） |
-| 🎨 丹青阁 | AI 生成作品封面/插图，图库管理，一键设封面 |
-| 🕰️ 版本快照 | 自动/手动快照、双栏差异对比、一键恢复（恢复前自动留存） |
-| ✅ 一致性检查 | AI 稽核设定矛盾，附原文引用，仅为建议不改动内容 |
-| 📦 导入导出 | TXT/DOCX 智能拆章导入，全书/按卷/勾选导出，整库备份 |
-| 🔍 全局搜索 | Ctrl+K 唤起，跨作品/章节/设定/大纲秒级检索 |
+| 🖥️ 原生桌面与全端响应式 | 基于 Windows WebView2 原生窗口（1366x820），支持 --browser 外部浏览器与手机/平板自适应，全端无横向滚动条，移动端抽屉导航与大触控区适配（≥44×44px，clamp流式字号） |
+| 🚢 生产级 VPS 与容器部署 | 官方提供轻量 Dockerfile（基于 python:3.11-slim，非 root 运行）、docker-compose 卷持久化、Nginx 反代（支持 AI 流式输出不卡顿）及 systemd 常驻守护支持 |
+| 📚 书架仪表盘 | 作品管理、字数/今日目标统计卡片、搜索过滤、最近写作直达、灵感便签侧栏 |
+| ✍️ 写作工作台 | 卷章拓扑树、沉浸大字号纯文本编辑器、自动保存、专注模式、查找替换、选区悬浮工具栏、章节拖拽排序 |
+| 🤖 AI 修撰使 | 多轮对话式伴写窗口，支持按章节独立维护会话与重置，SSE 流式打字机生成，选区与设定库深度感知，采纳前自动快照留存且可一键撤销，内置经典多候选对比模式开关 |
+| 📑 故事大纲 | 树形卷章大纲、节点详情摘要、卷章自动关联、AI 剧构推演与草稿生成 |
+| 🗃️ 设定人物库 | 角色/地点/势力/物品等类型设定卡片 CRUD，正文智能识别关联，可一键挂载到 AI 上下文 |
+| 🕸️ 关系图谱 | 人物与实体关系网络力导向图可视化，缩放/平移/拖拽，直观编辑势力关系连线 |
+| ⏳ 剧情时间线 | 纵向大事记时间轴编排，事件概要、涉及章节与登场人物关联 |
+| 🏛️ 伏笔看板 | 未解/推进中/已收线三泳道流转，埋笔描述、回收设想与章节定位 |
+| ⚗️ 炼丹炉 | 故事骨架与立意推演 → 世界观法则生成 → 核心角色塑造 → 一键开炉建书生成长纲与设定集 |
+| 🎨 丹青阁 | AI 生成作品封面与角色立绘，本地画廊管理，一键设为作品封面 |
+| 🕰️ 版本快照 | 定时与 AI 采纳自动快照、手动快照、行级差异对比、一键无损回滚（恢复前自动留底） |
+| 🛡️ 一致性检查 | AI 审计章节正文与设定集实体的冲突与前后矛盾，附原文引用定位与修改指引 |
+| 💬 提示词中心 | 系统预置精调模板（续写/扩写/缩写/润色）+ 自定义提示词模板增删改查 |
+| 📋 任务中心 | 异步后台 AI 任务列表、进度追踪、错误日志回溯与重试 |
+| 🔄 软件自动更新 | 设置页内置版本检查与发布日志展示，支持稳定/尝鲜通道与国内镜像加速；桌面端引导下载与版本跳过；Linux/VPS 一键自动备份与代码平滑升级，Docker 支持 Watchtower 自动更新 |
+| 📦 导入导出 | TXT/DOCX 智能正则拆章导入，全书/按卷多格式导出排版文稿，整库结构化备份 |
+| 🔍 全局搜索 | Ctrl+K 极速唤起，跨作品/章节/设定/大纲全库秒级检索定位 |
 
-## 📸 界面预览
+## 🚀 安装与运行
 
-| 书架作品 | 写作工作台 |
-|---|---|
-| ![书架](docs/screenshots/01-bookshelf.png) | ![工作台](docs/screenshots/02-workbench.png) |
+### 方式 A：Windows 原生单文件桌面端（无需环境）
+1. 从 [Releases](../../releases) 下载 `墨语MoYu-v1.4.0-win64.exe`
+2. **双击运行**：直接打开沉浸式轻量原生窗口（依托系统内置 WebView2 运行，无黑框命令行，双击秒开）。
+3. **关闭退出**：点击窗口右上角“关闭”按钮（×），程序自动优雅停止后台服务并退出，绝不留存后台僵尸进程。
+4. **单实例保护**：重复双击 exe 不会发生端口争用冲突，会自动唤起激活已有运行中的墨语。
+5. **浏览器回退模式**：命令行运行 `墨语MoYu-v1.4.0-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式。
 
-| 关系图谱 | 炼丹炉 |
-|---|---|
-| ![关系图谱](docs/screenshots/03-graph.png) | ![炼丹炉](docs/screenshots/04-alchemy.png) |
+### 方式 B：Linux VPS / 私有服务器 Docker 部署（一键上线）
+```bash
+# 1. 克隆代码
+git clone https://github.com/your-username/moyu.git /opt/moyu
+cd /opt/moyu
 
-## 🚀 安装（Windows，无需任何环境）
+# 2. 一键启动并自动持久化数据卷
+docker compose up -d --build
+```
+> 详细 VPS 裸机（Nginx + systemd）与 Docker 部署指南详见 [docs/deployment.md](docs/deployment.md)。
 
-1. 从 [Releases](../../releases) 下载 `墨语MoYu.exe`
-2. 双击运行——自动启动本地服务并打开浏览器
-3. 首次运行会在 exe 旁生成 `data/` 文件夹存放全部数据
+---
 
-> 重复双击不会再开实例，直接唤出页面。关闭：任务管理器结束「墨语MoYu.exe」。
-
-## ⚙️ 配置 AI（二选一或都要）
-
-**文字 AI（必需）**：系统设置 → AI 模型配置 → 选服务商自动填充，填入 API Key 即可。已预设 DeepSeek / Kimi / 智谱 GLM / 通义千问 / OpenAI，也支持任何 OpenAI 兼容接口。
-
-**生图 AI（可选，丹青阁用）**：系统设置 → 生图接口，推荐 [SiliconFlow](https://platform.siliconflow.cn)（有免费额度），填 Key 即可生成封面插图。
-
-## 📖 五分钟上手
-
-1. **创建作品**：书架 → 新建长篇作品（或点「创建示例作品」体验演示数据）
-2. **开始写作**：继续写作 → 进入工作台，输入自动保存，顶栏可见保存状态
-3. **AI 续写**：右侧 AI 侧栏勾选上下文 → 选任务 → 生成 → 候选卡预览 → 采纳（可撤销）
-4. **维护设定**：万象谱建角色/地点 → 写作时自动进入 AI 上下文
-5. **导出成书**：导入导出 → 选范围与格式（TXT/DOCX）→ 生成下载
-
-## 🛠️ 从源码运行
+## 🛠️ 从源码运行与本地开发
 
 ```bash
-# 需要 Python 3.12+（推荐用 uv 管理）
+# 需要 Python 3.10+
 pip install -r requirements.txt
-python scripts/fetch_vendor.py   # 首次：本地化前端资源
-python run.py                    # http://127.0.0.1:8321
+python scripts/fetch_vendor.py   # 首次运行：本地化前端静态依赖
+python run.py                    # 启动本地开发服务：http://127.0.0.1:8321
 ```
 
-开发/测试/打包：
-
+测试与打包构建：
 ```bash
-pytest -q                    # 27 项 API 回归测试
-python build_exe.py          # 打包单文件 exe（onefile）
-python build_exe.py --onedir # 文件夹形态（启动更快）
+python -m pytest -q          # 58 项 API、响应式与部署健康检查回归测试全绿
+python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v1.4.0-win64.exe
+python build_exe.py --onedir # 文件夹形态（便于调试与启动优化）
 ```
 
-## 🏗️ 技术栈
+## 🧱 技术栈
 
-- **后端**：Python · FastAPI · SQLite（标准库驱动，零 ORM）
-- **前端**：原生 JS 单页应用 + Tailwind CSS（全量本地化，断网可用）
-- **AI**：OpenAI 兼容协议文字接口 + OpenAI Images 兼容生图接口
-- **打包**：PyInstaller 单 exe，数据落盘 exe 旁 `data/`
+- **后端**：Python 3.10+ · FastAPI · SQLite（标准库驱动，零 ORM，无外部数据库守护进程）
+- **桌面视窗**：pywebview 5.x/6.x + Windows WebView2（Chromium 内核，极速轻量，无控制台黑框）
+- **容器与部署**：Docker（多阶段构建，非 root 运行）、docker-compose、Nginx 反代模版、systemd 服务单元
+- **前端**：原生 JavaScript 单页应用（SPA）+ Tailwind CSS（纯本地化，全端响应式自适应）
+- **AI**：标准 OpenAI 兼容协议客户端（httpx 异步流式处理，固定超参规避模型限制）
+- **数据存储**：SQLite 单文件数据库，支持通过 `MOYU_DATA_DIR` 环境变量指定持久化路径
 
-## 🔒 隐私
+## 🔒 隐私与数据安全
 
-- 数据 100% 存于本地 `data/moyu.db`，无任何遥测与上报
-- API Key 仅存于本地数据库
-- 备份 = 复制 `data/` 文件夹；迁移 = 拷贝整个文件夹
+- 数据 100% 存在用户指定的数据目录（默认 `data/moyu.db`），无遥测、无后台日志上传
+- 用户的 API Key 仅保存在 SQLite 数据库，不在前端日志或打包文件中回显
+- 数据备份极简：直接拷贝 `data/` 目录即可无损迁移
 
-## 📄 许可
+## 📄 许可证
 
-MIT License。界面设计基于 Stitch 生成的「Literary Minimalist Ink」设计稿。
+墨语 MoYu 遵循 MIT License 发布，许可证全文见根目录 LICENSE。
+界面视觉语言基于 Literary Minimalist Ink（黛青 #1B2A38 + 朱砂 #D9483B）。

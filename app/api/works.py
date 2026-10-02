@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """作品 / 卷 / 章 / 版本 API。"""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -69,7 +71,7 @@ def get_work(work_id: int):
 def update_work(work_id: int, body: dict):
     _one("SELECT id FROM works WHERE id=?", (work_id,))
     db = get_db()
-    for k in ("title", "intro", "genre", "status", "cover_color"):
+    for k in ("title", "intro", "genre", "status", "cover_color", "cover_image"):
         if k in body:
             db.execute(f"UPDATE works SET {k}=?, updated_at=datetime('now','localtime') WHERE id=?",
                        (body[k], work_id))
@@ -176,6 +178,8 @@ def update_chapter(chapter_id: int, body: ChapterPatch):
     db = get_db()
     if body.title is not None:
         db.execute("UPDATE chapters SET title=? WHERE id=?", (body.title, chapter_id))
+        # 同步更新关联大纲节点的标题，保持章节与大纲一致
+        db.execute("UPDATE outline_nodes SET title=? WHERE chapter_id=?", (body.title, chapter_id))
     if body.status is not None:
         db.execute("UPDATE chapters SET status=? WHERE id=?", (body.status, chapter_id))
     if body.sort_order is not None:

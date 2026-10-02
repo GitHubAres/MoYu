@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """全局搜索 API：跨表 LIKE 检索，分组返回。"""
 from fastapi import APIRouter
 

@@ -9,7 +9,7 @@ registerPage("io", async (view) => {
   let scopeType = "all";    // all | volumes | chapters
   let selVolumes = new Set();
   let selChapters = new Set();
-  let format = "docx";      // txt | docx
+  let format = "docx";      // txt | docx | epub
   const options = { indent: true, format_titles: true, append_entities: false };
   let importing = null;     // preview 返回 {file_token, title, chapters, total_words}
 
@@ -144,7 +144,7 @@ registerPage("io", async (view) => {
       optionRow("format_titles", "format_size", "自动格式化卷章序号与标题", "不符合「第X章 标题」格式的标题自动补序号"),
       optionRow("append_entities", "badge", "文末附带设定简介附录", "添加人物/地点/物品等设定条目供审读")));
 
-  const previewCard = ui.el("div", { class: "lg:col-span-5 bg-surface-container-lowest rounded-xl p-space-lg shadow-md flex flex-col gap-space-md sticky top-20" },
+  const previewCard = ui.el("div", { class: "lg:col-span-5 bg-surface-container-lowest rounded-xl p-space-lg shadow-md flex flex-col gap-space-md lg:sticky lg:top-20" },
     ui.el("div", { class: "flex items-center justify-between" },
       ui.el("div", { class: "flex items-center gap-space-xs" },
         ui.el("span", { class: "w-2.5 h-2.5 rounded-full bg-secondary animate-pulse" }),
@@ -312,9 +312,9 @@ registerPage("io", async (view) => {
       historyBody.append(ui.el("tr", { class: "hover:bg-surface-container-low transition-colors" },
         ui.el("td", { class: "py-space-sm px-space-sm font-semibold text-primary" },
           ui.el("div", { class: "flex items-center gap-space-xs" },
-            ui.icon(r.format === "docx" ? "article" : "text_snippet", "text-[18px] text-secondary"),
+            ui.icon(r.format === "docx" ? "article" : (r.format === "epub" ? "menu_book" : "text_snippet"), "text-[18px] text-secondary"),
             ui.el("div", { class: "flex flex-col min-w-0" },
-              ui.el("span", { class: "truncate max-w-[280px]", title: r.name }, r.name),
+              ui.el("span", { class: "truncate max-w-[170px] sm:max-w-[280px]", title: r.name }, r.name),
               ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant font-normal" }, r.work_title || "（作品已删除）")))),
         ui.el("td", { class: "py-space-sm px-space-sm" },
           ui.el("span", { class: "px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm" }, r.format.toUpperCase())),

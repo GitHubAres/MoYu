@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """演示数据：一键创建示例作品《太虚仙途》。"""
 from fastapi import APIRouter
 

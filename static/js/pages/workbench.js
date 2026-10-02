@@ -1,3 +1,14 @@
+/* 阿拉伯数字 1~99 转中文数字 */
+function toChineseNumber(n) {
+  const nums = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+  if (n <= 0) return String(n);
+  if (n < 10) return nums[n];
+  if (n < 20) return "十" + (n % 10 ? nums[n % 10] : "");
+  const tens = ["", "十", "二十", "三十", "四十", "五十", "六十", "七十", "八十", "九十"];
+  return tens[Math.floor(n / 10)] + (n % 10 ? nums[n % 10] : "");
+}
+function chapterTitle(n) { return `第${toChineseNumber(n)}章`; }
+
 /* 写作工作台（对应设计稿 _2）：左目录树 3 列 | 中编辑器 6 列 | 右 AI 侧栏 3 列 */
 registerPage("workbench", async (view, { segs, params }) => {
   const workId = segs[0] ? Number(segs[0]) : null;
@@ -12,15 +23,56 @@ registerPage("workbench", async (view, { segs, params }) => {
   let selRange = null, selText = "";      // 编辑器内最近一次有效选区
   let abortCtrl = null, generating = false;
   let aiTask = "continue", aiLength = "medium", aiCandidates = 1;
+  let aiPromptId = null;
+  let isClassicCandidateMode = false;
+  let workbenchChatInstance = null;
+  let classicBox = null;
+  let prompts = [];
+  let currentTaskId = null;
+  let outlineNodes = [];
+  let recentInstructions = JSON.parse(localStorage.getItem("moyu_recent_instructions") || "[]");
   let taskBtns = {}, lenBtns = {}, candBtns = {};   // 分段按钮组（buildAiPanel 时赋值）
   let ctxItems = [];                                // 上下文 checkbox 项（renderContext 时填充）
   const collapsed = new Set();            // 折叠的分卷 id
   let treeStatsEl = null;                 // 目录树头部"总字数"文本节点（renderTree 时刷新）
   let dragInfo = null;                    // 拖拽中的章节 { chapterId, volId }
+  let allEntities = [];                   // 当前作品全部设定条目（用于智能探测）
+  let linkedEntities = [];                // 当前章节已持久化关联的设定
+  let detectedEntities = [];              // 正文中智能探测到但未固定关联的设定
+  let uncheckedEntityIds = new Set();     // 用户手动取消勾选的实体 id（跨刷新保持）
+  let entityDetectTimer = null;           // 正文实体探测防抖定时器
+
+  const ENTITY_CATS = {
+    character: { label: "角色", icon: "person", badge: "bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+    place:     { label: "地点", icon: "location_on", badge: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
+    faction:   { label: "势力", icon: "temple_buddhist", badge: "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
+    item:      { label: "物品", icon: "colorize", badge: "bg-purple-50 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300" },
+    term:      { label: "术语", icon: "menu_book", badge: "bg-teal-50 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
+    custom:    { label: "设定", icon: "bookmark", badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" },
+  };
+
+  const promptSelect = ui.el("select", {
+    class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm",
+  });
+  function refreshPromptOptions() {
+    promptSelect.innerHTML = "";
+    promptSelect.append(ui.el("option", { value: "" }, "默认提示词"));
+    const filtered = prompts.filter((p) => p.task_type === aiTask);
+    for (const p of filtered) {
+      promptSelect.append(ui.el("option", { value: p.id, selected: aiPromptId === p.id ? "selected" : null }, p.name));
+    }
+  }
+  promptSelect.addEventListener("change", () => {
+    aiPromptId = promptSelect.value ? Number(promptSelect.value) : null;
+  });
 
   try {
     work = await api.get(`/works/${workId}`);
     tree = await api.get(`/works/${workId}/tree`);
+    prompts = await api.get("/prompts");
+    try { outlineNodes = await api.get(`/works/${workId}/outline`); } catch (e) { outlineNodes = []; }
+    try { allEntities = await api.get(`/works/${workId}/entities`); } catch (e) { allEntities = []; }
+    refreshPromptOptions();
   } catch (e) {
     ui.toast(e.message, "err");
     location.hash = "#/bookshelf";
@@ -35,7 +87,7 @@ registerPage("workbench", async (view, { segs, params }) => {
   }
   if (!tree.some((v) => v.chapters.length)) {
     const vol = tree[tree.length - 1];
-    const c = await api.post("/chapters", { volume_id: vol.id, title: "第一章" });
+    const c = await api.post("/chapters", { volume_id: vol.id, title: chapterTitle(1) });
     vol.chapters.push({ id: c.id, title: c.title, status: "draft", word_count: 0 });
   }
 
@@ -55,6 +107,26 @@ registerPage("workbench", async (view, { segs, params }) => {
   const findBar = buildFindBar();
   const candidatesBox = ui.el("div", { class: "flex flex-col gap-space-sm" });
   const ctxBox = ui.el("div", { class: "flex flex-col gap-1" });
+  const relatedBox = ui.el("div", { class: "flex flex-col gap-1" });
+  const recentBox = ui.el("div", { class: "hidden flex flex-col gap-1" });
+
+  const taskStatusEl = ui.el("div", {
+    class: "hidden bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex items-center gap-2 text-on-surface-variant font-label-sm text-label-sm",
+  }, ui.icon("task", "text-[16px]"));
+  function updateTaskStatus(id, text) {
+    currentTaskId = id || currentTaskId;
+    if (!currentTaskId) { taskStatusEl.classList.add("hidden"); return; }
+    taskStatusEl.innerHTML = "";
+    taskStatusEl.append(ui.icon("task", "text-[16px]"));
+    taskStatusEl.append(ui.el("span", null, text || "任务已记录"));
+    taskStatusEl.append(ui.el("a", {
+      class: "ml-auto text-secondary hover:underline",
+      href: "#/tasks",
+      onclick: (e) => { e.preventDefault(); location.hash = "#/tasks"; },
+    }, "查看任务记录"));
+    taskStatusEl.classList.remove("hidden");
+  }
+
   const instrInput = ui.el("textarea", {
     class: "w-full px-2 py-1.5 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm resize-none",
     rows: "2", placeholder: "自定义指令（可选），如：加强紧张感",
@@ -68,21 +140,76 @@ registerPage("workbench", async (view, { segs, params }) => {
     onclick: () => abortCtrl && abortCtrl.abort(),
   }, ui.icon("stop", "text-[18px]"), "停止");
 
+  const workbenchBackdrop = ui.el("div", {
+    class: "drawer-backdrop lg:hidden",
+    onclick: () => closeMobileDrawers(),
+  });
+
+  function openMobileDrawer(side) {
+    workbenchBackdrop.classList.add("active");
+    if (side === "left") {
+      leftCol.classList.remove("-translate-x-full");
+      rightCol.classList.add("translate-x-full");
+    } else {
+      rightCol.classList.remove("translate-x-full");
+      leftCol.classList.add("-translate-x-full");
+    }
+  }
+
+  function closeMobileDrawers() {
+    workbenchBackdrop.classList.remove("active");
+    leftCol.classList.add("-translate-x-full");
+    rightCol.classList.add("translate-x-full");
+  }
+
+  const leftColClose = ui.el("div", { class: "lg:hidden flex justify-between items-center pb-2 border-b border-border-feather mb-2" },
+    ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "卷章目录"),
+    ui.el("button", {
+      class: "w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container text-on-surface-variant cursor-pointer",
+      onclick: () => closeMobileDrawers(),
+    }, ui.icon("close", "text-[20px]"))
+  );
+
+  const rightColClose = ui.el("div", { class: "lg:hidden flex justify-between items-center pb-2 border-b border-border-feather mb-2" },
+    ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "AI 修撰使"),
+    ui.el("button", {
+      class: "w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-container text-on-surface-variant cursor-pointer",
+      onclick: () => closeMobileDrawers(),
+    }, ui.icon("close", "text-[20px]"))
+  );
+
+  const mobileWorkbenchBar = ui.el("div", {
+    class: "lg:hidden flex items-center justify-between gap-2 p-2 mb-1 bg-surface-container-lowest rounded-xl shadow-[0_2px_12px_rgba(6,21,35,0.03)] border border-border-feather"
+  },
+    ui.el("button", {
+      class: "flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-surface-container text-on-surface font-label-md text-label-md cursor-pointer hover:bg-surface-container-high transition-colors",
+      onclick: () => openMobileDrawer("left"),
+    }, ui.icon("menu_book", "text-[18px]"), "卷章目录"),
+    ui.el("button", {
+      class: "flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg bg-secondary-container text-on-secondary-container font-label-md text-label-md cursor-pointer hover:opacity-90 transition-opacity",
+      onclick: () => openMobileDrawer("right"),
+    }, ui.icon("auto_awesome", "text-[18px]"), "AI 修撰使")
+  );
+
   const leftCol = ui.el("div", {
-    class: "col-span-3 workbench-side flex flex-col gap-space-sm sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto pr-1",
-  }, treeBox);
-  const centerCol = ui.el("div", { class: "col-span-6 flex flex-col gap-space-sm min-w-0" },
-    ui.el("div", { class: "bg-surface-container-lowest rounded-xl px-space-lg py-space-md shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
+    class: "fixed inset-y-0 left-0 z-50 w-80 max-w-[85vw] bg-surface-container-low/95 backdrop-blur-xl p-4 shadow-2xl -translate-x-full transition-transform duration-300 overflow-y-auto lg:static lg:inset-auto lg:z-auto lg:w-auto lg:max-w-none lg:bg-transparent lg:p-0 lg:shadow-none lg:translate-x-0 lg:col-span-3 workbench-side flex flex-col gap-space-sm lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto pr-1",
+  }, leftColClose, treeBox);
+
+  const centerCol = ui.el("div", { class: "col-span-12 lg:col-span-6 flex flex-col gap-space-sm min-w-0" },
+    mobileWorkbenchBar,
+    ui.el("div", { class: "bg-surface-container-lowest rounded-xl px-space-md sm:px-space-lg py-space-md shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
       ui.el("div", { class: "flex items-center gap-space-sm" }, titleInput),
       countLine,
       findBar.box,
       ui.el("div", { class: "h-[1px] bg-border-feather my-1" }),
       editor));
+
   const rightCol = ui.el("div", {
-    class: "col-span-3 workbench-side flex flex-col gap-space-sm sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto pr-1",
-  },
+    class: "fixed inset-y-0 right-0 z-50 w-84 max-w-[90vw] bg-surface-container-low/95 backdrop-blur-xl p-4 shadow-2xl translate-x-full transition-transform duration-300 overflow-y-auto lg:static lg:inset-auto lg:z-auto lg:w-auto lg:max-w-none lg:bg-transparent lg:p-0 lg:shadow-none lg:translate-x-0 lg:col-span-3 workbench-side flex flex-col gap-space-sm lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto pr-1",
+  }, rightColClose,
     buildAiPanel());
-  view.append(ui.el("div", { class: "grid grid-cols-12 gap-space-lg items-start" }, leftCol, centerCol, rightCol));
+
+  view.append(ui.el("div", { class: "grid grid-cols-12 gap-space-lg items-start" }, leftCol, centerCol, rightCol), workbenchBackdrop);
 
   /* 顶栏：面包屑 + 专注模式 */
   const focusBtn = ui.el("button", {
@@ -98,8 +225,11 @@ registerPage("workbench", async (view, { segs, params }) => {
   editor.addEventListener("input", () => {
     dirty = true;
     scheduleCounts();
+    if (chapter) saveLocalBackup(chapter.id, editorText());
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => saveContent(), 2000);
+    clearTimeout(entityDetectTimer);
+    entityDetectTimer = setTimeout(() => syncDetectedEntities(), 1200);
   });
   /* 粘贴强制纯文本 */
   editor.addEventListener("paste", (e) => {
@@ -132,6 +262,20 @@ registerPage("workbench", async (view, { segs, params }) => {
   const selToolbar = buildSelToolbar();
   document.body.append(selToolbar);
   document.addEventListener("selectionchange", onSelectionChange);
+
+  /* 页面关闭/刷新防丢保护 */
+  const onBeforeUnload = (e) => {
+    if (!editor.isConnected) {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      return;
+    }
+    if (dirty) {
+      if (chapter) saveLocalBackup(chapter.id, editorText());
+      e.preventDefault();
+      e.returnValue = "";
+    }
+  };
+  window.addEventListener("beforeunload", onBeforeUnload);
 
   /* ---------- 初始加载章节 ---------- */
   const wanted = Number(params.get("chapter")) || null;
@@ -179,13 +323,48 @@ registerPage("workbench", async (view, { segs, params }) => {
     }
   }
 
+    /* ---------- 本地离线灾备暂存（防断网 / 崩溃丢稿） ---------- */
+  function getLocalBackupKey(chapId) { return "moyu_backup_ch_" + chapId; }
+  function saveLocalBackup(chapId, content) {
+    if (!chapId) return;
+    try {
+      localStorage.setItem(getLocalBackupKey(chapId), JSON.stringify({
+        content,
+        time: Date.now(),
+      }));
+    } catch (_) {}
+  }
+  function clearLocalBackup(chapId) {
+    if (!chapId) return;
+    try { localStorage.removeItem(getLocalBackupKey(chapId)); } catch (_) {}
+  }
+  function getLocalBackup(chapId) {
+    if (!chapId) return null;
+    try {
+      const raw = localStorage.getItem(getLocalBackupKey(chapId));
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) { return null; }
+  }
+
   async function openChapter(id) {
     if (chapter && chapter.id === id) return;
     clearTimeout(saveTimer);
     if (dirty && chapter) await saveContent();
     if (abortCtrl) { abortCtrl.abort(); generating = false; syncGenBtns(); }
     chapter = await api.get(`/chapters/${id}`);
-    editor.textContent = chapter.content || "";
+    const backup = getLocalBackup(id);
+    let useContent = chapter.content || "";
+    if (backup && backup.content && backup.content !== useContent && (backup.time > new Date(chapter.updated_at || 0).getTime())) {
+      const restore = await ui.confirm("发现离线未保存草稿", "检测到本地存有一份比数据库中更新的草稿（可能上次断网或异常关闭时保存），是否恢复？", "恢复本地草稿");
+      if (restore) {
+        useContent = backup.content;
+        dirty = true;
+        ui.toast("已恢复本地暂存草稿", "info");
+      } else {
+        clearLocalBackup(id);
+      }
+    }
+    editor.textContent = useContent;
     titleInput.value = chapter.title;
     prevWords = chapter.word_count || 0;
     dirty = false; saveError = false;
@@ -199,6 +378,10 @@ registerPage("workbench", async (view, { segs, params }) => {
     renderTree();
     renderContext();
     updateCounts();
+    if (workbenchChatInstance && workbenchChatInstance.loadChapter) {
+      await workbenchChatInstance.loadChapter(id);
+    }
+    if (window.innerWidth < 1024) closeMobileDrawers();
     if (chapter.cursor_pos) restoreCaret(chapter.cursor_pos);
   }
 
@@ -216,14 +399,16 @@ registerPage("workbench", async (view, { segs, params }) => {
       prevWords = updated.word_count || 0;
       chapter = updated;
       dirty = false; saveError = false;
+      clearLocalBackup(chapter.id);
       ui.setSaveIndicator("saved");
       ui.refreshStats();
       updateCounts();
       syncTreeAfterSave(updated);
     } catch (e) {
       saveError = true;
+      if (chapter) saveLocalBackup(chapter.id, editorText());
       ui.setSaveIndicator("error");
-      ui.toast("保存失败：" + e.message + "（点击顶部状态可重试）", "err");
+      ui.toast("保存失败：" + e.message + "（内容已自动暂存在本地，点击顶部状态可重试）", "err");
     }
   }
 
@@ -453,7 +638,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     }
     if (!tree.some((v) => v.chapters.length)) {
       const vol = tree[tree.length - 1];
-      const c = await api.post("/chapters", { volume_id: vol.id, title: "第一章" });
+      const c = await api.post("/chapters", { volume_id: vol.id, title: chapterTitle(1) });
       vol.chapters.push({ id: c.id, title: c.title, status: "draft", word_count: 0 });
     }
   }
@@ -470,7 +655,7 @@ registerPage("workbench", async (view, { segs, params }) => {
   async function newChapter(vol) {
     vol = vol || tree[tree.length - 1];
     if (!vol) return;
-    const c = await api.post("/chapters", { volume_id: vol.id, title: `第${vol.chapters.length + 1}章` });
+    const c = await api.post("/chapters", { volume_id: vol.id, title: chapterTitle(vol.chapters.length + 1) });
     vol.chapters.push({ id: c.id, title: c.title, status: c.status, word_count: 0 });
     collapsed.delete(vol.id);
     await openChapter(c.id);
@@ -478,7 +663,7 @@ registerPage("workbench", async (view, { segs, params }) => {
 
   function iconBtn(name, title, onclick) {
     return ui.el("button", {
-      class: "hidden group-hover:flex p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high",
+      class: "flex lg:hidden lg:group-hover:flex p-1.5 min-w-[32px] min-h-[32px] items-center justify-center rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high cursor-pointer",
       title, onclick,
     }, ui.icon(name, "text-[15px]"));
   }
@@ -487,11 +672,11 @@ registerPage("workbench", async (view, { segs, params }) => {
 
   function buildFindBar() {
     const findInput = ui.el("input", {
-      class: "w-36 px-2 py-1 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm",
+      class: "w-28 sm:w-36 px-2 py-1 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-[16px] sm:text-body-sm flex-1 sm:flex-initial",
       placeholder: "查找",
     });
     const repInput = ui.el("input", {
-      class: "w-36 px-2 py-1 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm",
+      class: "w-28 sm:w-36 px-2 py-1 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-[16px] sm:text-body-sm flex-1 sm:flex-initial",
       placeholder: "替换为",
     });
     const countEl = ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant w-14 text-center" }, "");
@@ -578,7 +763,18 @@ registerPage("workbench", async (view, { segs, params }) => {
     for (const [task, label] of [["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "改写"]]) {
       bar.append(ui.el("button", {
         class: "px-2 py-1 rounded-lg hover:bg-primary-container font-label-sm text-label-sm",
-        onclick: () => { aiTask = task; syncTaskBtns(); hideSelToolbar(); runGenerate(); },
+        onclick: () => {
+          aiTask = task;
+          syncTaskBtns();
+          hideSelToolbar();
+          if (isClassicCandidateMode || !workbenchChatInstance) {
+            runGenerate();
+          } else {
+            if (window.innerWidth < 1024) openMobileDrawer("right");
+            workbenchChatInstance.setActiveTask(task);
+            workbenchChatInstance.sendQuickTask(task, selText);
+          }
+        },
       }, label));
     }
     return bar;
@@ -599,6 +795,9 @@ registerPage("workbench", async (view, { segs, params }) => {
     if (!text.trim()) { hideSelToolbar(); return; }
     selRange = range.cloneRange();
     selText = text;
+    if (workbenchChatInstance && workbenchChatInstance.updateSelectionQuote) {
+      workbenchChatInstance.updateSelectionQuote();
+    }
     const rect = range.getBoundingClientRect();
     selToolbar.style.left = Math.max(8, rect.left + rect.width / 2 - 120) + "px";
     selToolbar.style.top = Math.max(8, rect.top - 48) + "px";
@@ -612,16 +811,15 @@ registerPage("workbench", async (view, { segs, params }) => {
   let focusExitBtn = null;
   function toggleFocus() {
     const on = document.body.classList.toggle("focus-mode");
-    centerCol.classList.toggle("col-span-6", !on);
-    centerCol.classList.toggle("col-span-12", on);
+    centerCol.classList.toggle("lg:col-span-6", !on);
     centerCol.classList.toggle("max-w-3xl", on);
     centerCol.classList.toggle("mx-auto", on);
-    centerCol.classList.toggle("w-full", on);
     hideSelToolbar();
+    if (window.innerWidth < 1024) closeMobileDrawers();
     /* 专注模式下顶栏被隐藏，提供浮动退出按钮 */
     if (on && !focusExitBtn) {
       focusExitBtn = ui.el("button", {
-        class: "fixed top-4 right-4 z-[70] flex items-center gap-1 px-space-sm py-1.5 rounded-full bg-primary text-on-primary shadow-lg font-label-md text-label-md",
+        class: "fixed top-4 right-4 z-[70] flex items-center gap-1 px-space-sm py-1.5 rounded-full bg-primary text-on-primary shadow-lg font-label-md text-label-md cursor-pointer",
         onclick: toggleFocus,
       }, ui.icon("close_fullscreen", "text-[18px]"), "退出专注 (Esc)");
       document.body.append(focusExitBtn);
@@ -656,35 +854,240 @@ registerPage("workbench", async (view, { segs, params }) => {
     return { wrap, sync };
   }
 
+
+
+
+
+  function findCurrentOutlineNode() {
+    const flat = [];
+    (function walk(nodes) {
+      for (const n of nodes) { flat.push(n); walk(n.children || []); }
+    })(outlineNodes);
+    return flat.find((n) => n.chapter_id === chapter.id) || null;
+  }
+
+  function saveRecentInstruction(text) {
+    if (!text) return;
+    recentInstructions = [text, ...recentInstructions.filter((t) => t !== text)].slice(0, 5);
+    localStorage.setItem("moyu_recent_instructions", JSON.stringify(recentInstructions));
+    renderRecentInstructions();
+  }
+
+  function renderRecentInstructions() {
+    recentBox.innerHTML = "";
+    recentBox.classList.toggle("hidden", !recentInstructions.length);
+    if (!recentInstructions.length) return;
+    recentBox.append(ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "最近指令"));
+    for (const t of recentInstructions) {
+      recentBox.append(ui.el("button", {
+        class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-body-sm text-body-sm truncate max-w-full",
+        title: t,
+        onclick: () => { instrInput.value = t; },
+      }, t));
+    }
+  }
+
+
+  async function applyAdoptContent(text, msgId = null) {
+    if (!text || !chapter) return { ok: false };
+    const old = editorText();
+    const useRange = rangeAlive();
+    if (useRange) {
+      const ok = await ui.confirm("采纳 AI 内容", "将用 AI 生成的内容替换当前选中的正文（替换前会自动留存一份版本快照）。", "替换");
+      if (!ok) return { ok: false };
+    }
+    try {
+      await api.patch(`/chapters/${chapter.id}`, {
+        content: old,
+        snapshot_source: "auto",
+        snapshot_label: "采纳前自动留存"
+      });
+    } catch (e) {
+      console.warn("采纳前自动快照留存失败:", e);
+    }
+
+    if (useRange) {
+      selRange.deleteContents();
+      selRange.insertNode(document.createTextNode(text));
+      selRange = null; selText = "";
+      hideSelToolbar();
+    } else {
+      editor.textContent = old ? old.replace(/\s+$/, "") + "\n\n" + text : text;
+    }
+    dirty = true;
+    await saveContent("ai");
+
+    if (msgId) {
+      try {
+        await api.patch(`/chat/messages/${msgId}`, { adopted: 1 });
+      } catch (e) {
+        console.warn("更新消息采纳状态失败:", e);
+      }
+    }
+
+    ui.toast("已采纳并写入正文", "ok");
+    return { ok: true, oldContent: old };
+  }
+
+  async function applyUndoAdopt(oldContent, msgId = null) {
+    if (!chapter || oldContent === undefined) return;
+    const ok = await ui.confirm("撤销采纳", "将正文恢复到采纳前的内容。", "撤销");
+    if (!ok) return;
+    editor.textContent = oldContent;
+    dirty = true;
+    await saveContent("ai");
+    if (msgId) {
+      try {
+        await api.patch(`/chat/messages/${msgId}`, { adopted: 0 });
+      } catch (e) {
+        console.warn("更新消息撤销状态失败:", e);
+      }
+    }
+    ui.toast("已撤销采纳", "ok");
+  }
+
   function buildAiPanel() {
+    window.aiLengthPreference = aiLength;
+    window.aiActivePromptId = aiPromptId;
+
     const taskSeg = seg([["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "改写"]],
-      () => aiTask, (v) => { aiTask = v; });
+      () => aiTask, (v) => {
+        aiTask = v;
+        aiPromptId = null;
+        window.aiActivePromptId = null;
+        refreshPromptOptions();
+        if (workbenchChatInstance) workbenchChatInstance.setActiveTask(v);
+      });
     taskBtns = taskSeg;
-    const lenSeg = seg([["short", "简"], ["medium", "中"], ["long", "长"]], () => aiLength, (v) => { aiLength = v; });
+
+    const lenSeg = seg([["short", "简"], ["medium", "中"], ["long", "长"]],
+      () => aiLength, (v) => {
+        aiLength = v;
+        window.aiLengthPreference = v;
+      });
     lenBtns = lenSeg;
-    const candSeg = seg([[1, "1"], [2, "2"], [3, "3"]], () => aiCandidates, (v) => { aiCandidates = v; });
+
+    const candSeg = seg([[1, "1"], [2, "2"], [3, "3"]],
+      () => aiCandidates, (v) => { aiCandidates = v; });
     candBtns = candSeg;
 
-    return [
+    const classicHeader = ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
+      ui.el("div", { class: "flex items-center justify-between" },
+        ui.el("div", { class: "flex items-center gap-2" },
+          ui.el("div", { class: "w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center shrink-0" },
+            ui.icon("auto_awesome", "text-[18px]")),
+          ui.el("div", { class: "flex flex-col" },
+            ui.el("span", { class: "font-headline-sm text-label-md text-primary font-semibold" }, "经典多候选面板"),
+            ui.el("span", { class: "font-label-sm text-[11px] text-on-surface-variant" }, "多候选生成与行级对比"))),
+        ui.el("button", {
+          class: "flex items-center gap-0.5 px-2 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-label-sm text-label-sm cursor-pointer",
+          onclick: () => {
+            isClassicCandidateMode = false;
+            syncAiPanelMode();
+          },
+        }, ui.icon("forum", "text-[15px]"), "切回聊天")
+      ),
+      ui.el("div", { class: "flex flex-wrap gap-1 pt-1" },
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/outline/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/outline/${workId}`; } }, "故事大纲"),
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/entities/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/entities/${workId}`; } }, "设定库"),
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/versions/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = chapter ? `#/versions/${workId}?chapter=${chapter.id}` : `#/versions/${workId}`; } }, "版本快照"),
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: "#/audit", onclick: (e) => { e.preventDefault(); location.hash = "#/audit"; } }, "一致性检查"))
+    );
+
+    classicBox = ui.el("div", { class: "hidden flex flex-col gap-space-sm" },
+      classicHeader,
       ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
         ui.el("div", { class: "flex items-center gap-1 text-primary" },
           ui.icon("linked_services", "text-[16px]"),
           ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "已挂载上下文")),
-        ctxBox),
+        ctxBox,
+        relatedBox),
       ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
         ui.el("div", { class: "flex items-center gap-1 text-primary" },
           ui.icon("auto_awesome", "text-[16px]"),
-          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "墨语MoYu 修撰使")),
+          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "任务控制")),
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "任务"),
         taskSeg.wrap,
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "提示词模板"),
+        promptSelect,
         ui.el("div", { class: "flex items-center gap-space-sm" },
           ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
         ui.el("div", { class: "flex items-center gap-space-sm" },
           ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
         instrInput,
-        genBtn, stopBtn),
-      candidatesBox,
-    ];
+        recentBox,
+        genBtn, stopBtn,
+        taskStatusEl),
+      candidatesBox
+    );
+
+    const drawerSettingsBox = ui.el("div", { class: "flex flex-col gap-2 pt-2 border-t border-border-feather" },
+      ui.el("div", { class: "flex items-center gap-space-sm" },
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
+      ui.el("div", { class: "flex items-center gap-space-sm" },
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
+      ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "提示词模板"),
+      promptSelect,
+      ui.el("div", { class: "flex flex-wrap gap-1 pt-1 border-t border-border-feather/50" },
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/outline/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/outline/${workId}`; } }, "故事大纲"),
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/entities/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/entities/${workId}`; } }, "设定库"),
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/versions/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = chapter ? `#/versions/${workId}?chapter=${chapter.id}` : `#/versions/${workId}`; } }, "版本快照"),
+        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: "#/audit", onclick: (e) => { e.preventDefault(); location.hash = "#/audit"; } }, "一致性检查"))
+    );
+
+    const drawerContextBox = ui.el("div", { class: "flex flex-col gap-2" }, ctxBox, relatedBox);
+
+    if (window.WorkbenchChat) {
+      workbenchChatInstance = window.WorkbenchChat.init({
+        workId,
+        getChapter: () => chapter,
+        getSelection: () => ({ text: selText, range: selRange }),
+        clearSelection: () => { selRange = null; selText = ""; hideSelToolbar(); },
+        getContext: () => ctxItems.filter((i) => i.cb.checked).map((i) => i.getText()).filter(Boolean).join("\n\n----\n\n"),
+        getContextCount: () => ctxItems.filter((i) => i.cb.checked).length,
+        contextDrawerEl: drawerContextBox,
+        classicSettingsEl: drawerSettingsBox,
+        isClassicMode: () => isClassicCandidateMode,
+        toggleClassicMode: (val) => {
+          isClassicCandidateMode = val;
+          syncAiPanelMode();
+        },
+        onAdopt: async (msg, text) => {
+          const res = await applyAdoptContent(text, msg ? msg.id : null);
+          if (res && res.ok) {
+            msg._oldContent = res.oldContent;
+            return true;
+          }
+          return false;
+        },
+        onUndoAdopt: async (msg) => {
+          await applyUndoAdopt(msg ? msg._oldContent : undefined, msg ? msg.id : null);
+        },
+        onRetry: (task) => {
+          aiTask = task;
+          syncTaskBtns();
+          workbenchChatInstance.setActiveTask(task);
+          workbenchChatInstance.sendQuickTask(task, selText);
+        },
+      });
+    }
+
+    function syncAiPanelMode() {
+      if (isClassicCandidateMode) {
+        classicBox.classList.remove("hidden");
+        if (workbenchChatInstance) workbenchChatInstance.el.classList.add("hidden");
+      } else {
+        classicBox.classList.add("hidden");
+        if (workbenchChatInstance) workbenchChatInstance.el.classList.remove("hidden");
+      }
+    }
+
+    const panelWrapper = ui.el("div", {
+      class: "flex flex-col gap-space-sm h-full min-h-0",
+    }, workbenchChatInstance ? workbenchChatInstance.el : null, classicBox);
+
+    syncAiPanelMode();
+    return panelWrapper;
   }
 
   function syncTaskBtns() { taskBtns.sync && taskBtns.sync(); }
@@ -693,7 +1096,50 @@ registerPage("workbench", async (view, { segs, params }) => {
     stopBtn.classList.toggle("hidden", !generating);
   }
 
-  /* 已挂载上下文：当前章节 + 前情摘要（关联设定暂无数据来源，留 TODO） */
+  /* ---------- 实体上下文联动 ---------- */
+
+  function formatEntityContext(e) {
+    const meta = ENTITY_CATS[e.category] || ENTITY_CATS.custom;
+    const lines = [`【${meta.label}设定 · ${e.name}】`];
+    if (e.tags) lines.push(`标签：${e.tags}`);
+    if (e.fields && typeof e.fields === "object") {
+      const fl = [];
+      for (const [k, v] of Object.entries(e.fields)) {
+        if (v && typeof v === "string" && v.trim()) fl.push(`- ${k}：${v.trim()}`);
+      }
+      if (fl.length) lines.push("关键属性：\n" + fl.join("\n"));
+    }
+    if (e.content && e.content.trim()) lines.push(`设定描述：\n${e.content.trim()}`);
+    return lines.join("\n");
+  }
+
+  function detectEntitiesInContent(text) {
+    if (!text || !allEntities.length) return [];
+    const found = [];
+    for (const ent of allEntities) {
+      if (!ent.name || ent.name.length < 2) continue;
+      if (text.includes(ent.name)) { found.push(ent); continue; }
+      if (ent.tags) {
+        const tags = ent.tags.split(/[,，\s]+/).filter((t) => t.length >= 2);
+        if (tags.some((t) => text.includes(t))) found.push(ent);
+      }
+    }
+    return found;
+  }
+
+  function syncDetectedEntities() {
+    if (!chapter) return;
+    const text = editorText();
+    const linkedIds = new Set(linkedEntities.map((e) => e.id));
+    const oldIds = new Set(detectedEntities.map((e) => e.id));
+    const newDetected = detectEntitiesInContent(text).filter((e) => !linkedIds.has(e.id));
+    const newIds = new Set(newDetected.map((e) => e.id));
+    if (newIds.size !== oldIds.size || [...newIds].some((id) => !oldIds.has(id))) {
+      detectedEntities = newDetected;
+      renderContext();
+    }
+  }
+
   async function loadPrevSummary() {
     prevChapterText = "";
     const flatIds = tree.flatMap((v) => v.chapters.map((c) => c.id));
@@ -716,26 +1162,403 @@ registerPage("workbench", async (view, { segs, params }) => {
     };
   }
 
-  function renderContext() {
+  async function renderContext() {
     ctxBox.innerHTML = "";
     ctxItems = [];
-    const cur = ctxRow(`当前章节（前 3000 字）`, true);
+
+    /* ---- 基础上下文组 ---- */
+    const baseGroup = ui.el("div", { class: "flex flex-col gap-0.5 pb-2 border-b border-border-feather" });
+
+    const cur = ctxRow("当前章节（前 3000 字）", true);
     cur.getText = () => editorText().slice(0, 3000);
-    ctxItems.push(cur); ctxBox.append(cur.row);
+    ctxItems.push(cur);
+    baseGroup.append(cur.row);
+
     if (prevChapterText) {
-      const prev = ctxRow(`前情摘要（上一章末尾 500 字）`, true);
+      const prev = ctxRow("前情摘要（上一章末 500 字）", true);
       prev.getText = () => prevChapterText;
-      ctxItems.push(prev); ctxBox.append(prev.row);
+      ctxItems.push(prev);
+      baseGroup.append(prev.row);
     }
-    // 关联设定（chapter_entities）：异步加载后追加进上下文列表
-    api.get(`/chapters/${chapter.id}/entities`).then((list) => {
-      for (const e of list) {
-        const brief = (e.content || "").replace(/\s+/g, " ").slice(0, 30);
-        const item = ctxRow(`设定 · ${e.name}${brief ? `（${brief}…）` : ""}`, true);
-        item.getText = () => `设定[${e.name}]：${e.content || ""}`;
-        ctxItems.push(item); ctxBox.append(item.row);
+
+    const node = findCurrentOutlineNode();
+    if (node && (node.title || node.synopsis)) {
+      const preview = node.synopsis ? `（${node.synopsis.replace(/\s+/g, " ").slice(0, 20)}…）` : "";
+      const outRow = ctxRow(`大纲 · ${node.title}${preview}`, true);
+      outRow.getText = () => `【关联大纲 · ${node.title}】\n${node.synopsis || "（本节暂无细纲）"}`;
+      ctxItems.push(outRow);
+      baseGroup.append(outRow.row);
+    }
+    ctxBox.append(baseGroup);
+
+    /* ---- 设定库联动组 ---- */
+    const entitySection = ui.el("div", { class: "flex flex-col gap-1.5 pt-1.5" });
+    const countBadge = ui.el("span", {
+      class: "text-[11px] px-1.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm leading-[18px]",
+    }, "0项");
+
+    const detectBtn = ui.el("button", {
+      class: "flex items-center gap-0.5 px-1.5 py-0.5 rounded-md hover:bg-surface-container text-secondary text-[12px] font-label-sm transition-colors",
+      title: "扫描正文，智能识别提及的人物、地点与设定",
+      onclick: () => runSmartDetect(),
+    }, ui.icon("troubleshoot", "text-[14px]"), "识别");
+
+    const addEntityBtn = ui.el("button", {
+      class: "flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-primary-container text-on-primary text-[12px] font-label-sm hover:opacity-90 transition-opacity",
+      title: "从全书设定库挑选条目关联到本章",
+      onclick: () => openEntityPickerDialog(),
+    }, ui.icon("add", "text-[14px]"), "关联");
+
+    const entityHeader = ui.el("div", { class: "flex items-center justify-between" },
+      ui.el("div", { class: "flex items-center gap-1.5" },
+        ui.icon("psychology", "text-[16px] text-primary"),
+        ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, "设定库联动"),
+        countBadge),
+      ui.el("div", { class: "flex items-center gap-0.5" }, detectBtn, addEntityBtn));
+
+    const entityListEl = ui.el("div", { class: "flex flex-col gap-0.5 max-h-[220px] overflow-y-auto" });
+    entitySection.append(entityHeader, entityListEl);
+    ctxBox.append(entitySection);
+
+    await refreshEntityList(entityListEl, countBadge);
+    renderRelated();
+    if (workbenchChatInstance && workbenchChatInstance.updateContextCount) {
+      workbenchChatInstance.updateContextCount();
+    }
+  }
+
+  async function refreshEntityList(container, countBadge) {
+    if (!container) return;
+    container.innerHTML = "";
+    if (!chapter) return;
+
+    try { linkedEntities = await api.get(`/chapters/${chapter.id}/entities`); }
+    catch (e) { linkedEntities = []; }
+
+    const linkedIds = new Set(linkedEntities.map((e) => e.id));
+    const text = editorText();
+    detectedEntities = detectEntitiesInContent(text).filter((e) => !linkedIds.has(e.id));
+
+    const allToShow = [
+      ...linkedEntities.map((e) => ({ entity: e, isLinked: true })),
+      ...detectedEntities.map((e) => ({ entity: e, isLinked: false })),
+    ];
+
+    function updateBadge() {
+      const active = allToShow.filter((it) => it.ctxEntry && it.ctxEntry.cb.checked).length;
+      if (countBadge) countBadge.textContent = `${active}/${allToShow.length}项`;
+    }
+
+    if (!allToShow.length) {
+      container.append(ui.el("div", {
+        class: "py-2 px-1 rounded-lg text-center text-on-surface-variant text-[12px] flex flex-col items-center gap-1",
+      },
+        ui.el("span", null, "暂无挂载设定"),
+        ui.el("span", { class: "text-[11px] text-outline" }, "可点击「关联」或「识别」")));
+      updateBadge();
+      return;
+    }
+
+    for (const item of allToShow) {
+      const ent = item.entity;
+      const isLinked = item.isLinked;
+      const meta = ENTITY_CATS[ent.category] || ENTITY_CATS.custom;
+
+      const cb = ui.el("input", { type: "checkbox", class: "accent-[#316bf3] shrink-0" });
+      cb.checked = !uncheckedEntityIds.has(ent.id);
+      cb.addEventListener("change", () => {
+        if (cb.checked) uncheckedEntityIds.delete(ent.id);
+        else uncheckedEntityIds.add(ent.id);
+        updateBadge();
+      });
+
+      const ctxEntry = { cb, getText: () => formatEntityContext(ent) };
+      item.ctxEntry = ctxEntry;
+      ctxItems.push(ctxEntry);
+
+      const catIcon = ui.el("span", {
+        class: `inline-flex items-center justify-center w-5 h-5 rounded text-[12px] shrink-0 ${meta.badge}`,
+        title: meta.label,
+      }, ui.icon(meta.icon, "text-[12px]"));
+
+      const nameEl = ui.el("span", {
+        class: "font-body-sm text-body-sm text-on-surface truncate flex-1 cursor-pointer hover:text-secondary",
+        title: `${ent.name}${ent.tags ? ` · ${ent.tags}` : ""}\n点击查看设定详情`,
+        onclick: (ev) => { ev.preventDefault(); openEntityPreviewDialog(ent); },
+      }, ent.name);
+
+      const statusTag = isLinked
+        ? ui.el("span", { class: "text-[10px] px-1 rounded bg-surface-container text-on-surface-variant shrink-0" }, "已绑定")
+        : ui.el("span", { class: "text-[10px] px-1 rounded bg-amber-50 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300 shrink-0" }, "正文提及");
+
+      const actionBtn = isLinked
+        ? ui.el("button", {
+            class: "text-on-surface-variant hover:text-error p-0.5 rounded transition-colors shrink-0",
+            title: "取消本章关联",
+            onclick: async (ev) => {
+              ev.preventDefault(); ev.stopPropagation();
+              try {
+                await api.del(`/chapters/${chapter.id}/entities/${ent.id}`);
+                ui.toast(`已取消关联「${ent.name}」`, "ok");
+                renderContext();
+              } catch (err) { ui.toast("取消关联失败：" + err.message, "err"); }
+            },
+          }, ui.icon("close", "text-[14px]"))
+        : ui.el("button", {
+            class: "text-secondary hover:text-primary p-0.5 rounded transition-colors shrink-0",
+            title: "固定关联到本章",
+            onclick: async (ev) => {
+              ev.preventDefault(); ev.stopPropagation();
+              try {
+                await api.post(`/chapters/${chapter.id}/entities`, { entity_id: ent.id });
+                ui.toast(`已将「${ent.name}」固定关联至本章`, "ok");
+                renderContext();
+              } catch (err) { ui.toast("关联失败：" + err.message, "err"); }
+            },
+          }, ui.icon("bookmark_add", "text-[14px]"));
+
+      const row = ui.el("div", {
+        class: "flex items-center gap-1.5 px-1 py-0.5 rounded-lg hover:bg-surface-container-low transition-colors group",
+      }, cb, catIcon, nameEl, statusTag, actionBtn);
+
+      container.append(row);
+    }
+    updateBadge();
+  }
+
+  async function runSmartDetect() {
+    if (!chapter) return;
+    if (!allEntities.length) {
+      try { allEntities = await api.get(`/works/${workId}/entities`); } catch (e) {}
+    }
+    const text = editorText();
+    const all = detectEntitiesInContent(text);
+    if (!all.length) {
+      ui.toast("正文中未提及已登记的设定条目", "info");
+    } else {
+      const linkedIds = new Set(linkedEntities.map((e) => e.id));
+      const newOnes = all.filter((e) => !linkedIds.has(e.id));
+      ui.toast(`智能识别完成：探测到 ${all.length} 个设定条目${newOnes.length ? `（${newOnes.length} 个未绑定）` : ""}`, "ok");
+    }
+    await renderContext();
+  }
+
+  /* ---------- 实体挑选弹窗 ---------- */
+
+  function openEntityPickerDialog() {
+    if (!chapter) return;
+    const root = document.getElementById("modal-root");
+    let filterCat = "all";
+    let filterQ = "";
+
+    const searchInput = ui.el("input", {
+      class: "w-full bg-transparent outline-none font-body-sm text-body-sm",
+      placeholder: "搜索设定名称、标签、内容…",
+    });
+
+    const tabsBox = ui.el("div", { class: "flex items-center gap-1 flex-wrap" });
+    const listBox = ui.el("div", { class: "flex flex-col gap-2 max-h-[46vh] overflow-y-auto pr-1" });
+
+    function renderPickerTabs() {
+      tabsBox.innerHTML = "";
+      const tabs = [{ key: "all", label: "全部" }, ...Object.values(ENTITY_CATS)];
+      for (const t of tabs) {
+        const key = t.key || "all";
+        const count = key === "all"
+          ? allEntities.length
+          : allEntities.filter((e) => e.category === key).length;
+        tabsBox.append(ui.el("button", {
+          class: `px-2.5 py-1 rounded-full text-[12px] font-label-sm transition-all ${
+            filterCat === key
+              ? "bg-primary text-on-primary font-semibold"
+              : "bg-surface-container-low text-on-surface-variant hover:bg-surface-container"
+          }`,
+          onclick: () => { filterCat = key; renderPickerTabs(); renderPickerList(); },
+        }, `${t.label}${count ? ` (${count})` : ""}`));
       }
-    }).catch(() => {});
+    }
+
+    function renderPickerList() {
+      listBox.innerHTML = "";
+      const linkedIds = new Set(linkedEntities.map((e) => e.id));
+      const q = filterQ.trim().toLowerCase();
+      const filtered = allEntities.filter((e) => {
+        if (filterCat !== "all" && e.category !== filterCat) return false;
+        if (!q) return true;
+        return (e.name && e.name.toLowerCase().includes(q)) ||
+               (e.tags && e.tags.toLowerCase().includes(q)) ||
+               (e.content && e.content.toLowerCase().includes(q));
+      });
+
+      if (!filtered.length) {
+        listBox.append(ui.el("div", {
+          class: "p-6 text-center text-on-surface-variant font-body-sm flex flex-col items-center gap-2",
+        },
+          ui.icon("manage_search", "text-[32px] text-outline"),
+          ui.el("p", null, allEntities.length === 0
+            ? "设定库暂无条目，可先前往万象谱创建"
+            : "没有符合条件的设定条目"),
+          allEntities.length === 0 ? ui.el("button", {
+            class: "px-3 py-1 rounded-lg bg-primary text-on-primary font-label-md text-label-md",
+            onclick: () => { overlay.remove(); location.hash = `#/entities/${workId}`; },
+          }, "前往万象谱") : null));
+        return;
+      }
+
+      for (const ent of filtered) {
+        const isLinked = linkedIds.has(ent.id);
+        const meta = ENTITY_CATS[ent.category] || ENTITY_CATS.custom;
+        const brief = (ent.content || "").replace(/\s+/g, " ").slice(0, 50);
+
+        const linkBtn = ui.el("button", {
+          class: isLinked
+            ? "px-2.5 py-1 rounded-md bg-surface-container text-on-surface-variant font-label-sm text-label-sm hover:bg-error-container hover:text-on-error-container transition-colors shrink-0"
+            : "px-2.5 py-1 rounded-md bg-primary text-on-primary font-label-sm text-label-sm hover:bg-primary-container transition-colors shrink-0",
+          onclick: async () => {
+            try {
+              if (isLinked) {
+                await api.del(`/chapters/${chapter.id}/entities/${ent.id}`);
+                linkedEntities = linkedEntities.filter((x) => x.id !== ent.id);
+                ui.toast(`已取消关联「${ent.name}」`, "ok");
+              } else {
+                await api.post(`/chapters/${chapter.id}/entities`, { entity_id: ent.id });
+                linkedEntities.push(ent);
+                ui.toast(`已关联「${ent.name}」`, "ok");
+              }
+              renderPickerList();
+              renderContext();
+            } catch (err) { ui.toast("操作失败：" + err.message, "err"); }
+          },
+        }, isLinked ? "取消关联" : "+ 关联");
+
+        const row = ui.el("div", {
+          class: "flex items-start justify-between gap-3 p-2.5 rounded-xl border border-border-feather hover:border-primary/40 bg-surface-container-lowest transition-colors",
+        },
+          ui.el("div", { class: "flex items-start gap-2.5 min-w-0" },
+            ui.el("div", { class: `w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${meta.badge}` },
+              ui.icon(meta.icon, "text-[16px]")),
+            ui.el("div", { class: "flex flex-col gap-0.5 min-w-0" },
+              ui.el("div", { class: "flex items-center gap-1.5 flex-wrap" },
+                ui.el("span", { class: "font-label-md text-label-md text-on-surface font-semibold truncate" }, ent.name),
+                ui.el("span", { class: `text-[10px] px-1 rounded ${meta.badge}` }, meta.label),
+                ent.tags ? ui.el("span", { class: "text-[11px] text-on-surface-variant" }, `· ${ent.tags}`) : null),
+              brief ? ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant line-clamp-2" }, brief) : null)),
+          linkBtn);
+        listBox.append(row);
+      }
+    }
+
+    let debounceSearch = null;
+    searchInput.addEventListener("input", () => {
+      clearTimeout(debounceSearch);
+      debounceSearch = setTimeout(() => { filterQ = searchInput.value; renderPickerList(); }, 200);
+    });
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[560px] max-w-[calc(100vw-1.5rem)] shadow-[0_12px_32px_rgba(27,42,56,0.16)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.icon("psychology", "text-[22px] text-primary"),
+            ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "关联设定到当前章节")),
+          ui.el("button", {
+            class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant",
+            onclick: () => overlay.remove(),
+          }, ui.icon("close", "text-[20px]"))),
+        ui.el("div", { class: "flex items-center gap-2 bg-surface-container-low rounded-lg px-2.5 py-1" },
+          ui.icon("search", "text-[18px] text-on-surface-variant"), searchInput),
+        tabsBox,
+        listBox,
+        ui.el("div", { class: "flex items-center justify-between pt-1 border-t border-border-feather" },
+          ui.el("a", {
+            class: "flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:underline",
+            href: `#/entities/${workId}`,
+            onclick: (e) => { e.preventDefault(); overlay.remove(); location.hash = `#/entities/${workId}`; },
+          }, ui.icon("open_in_new", "text-[14px]"), "前往万象谱管理全部设定"),
+          ui.el("button", {
+            class: "px-4 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors",
+            onclick: () => overlay.remove(),
+          }, "完成"))));
+
+    renderPickerTabs();
+    renderPickerList();
+    root.append(overlay);
+    searchInput.focus();
+  }
+
+  /* ---------- 实体详情预览弹窗 ---------- */
+
+  function openEntityPreviewDialog(ent) {
+    const root = document.getElementById("modal-root");
+    const meta = ENTITY_CATS[ent.category] || ENTITY_CATS.custom;
+
+    const fieldsBox = ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-2 gap-2" });
+    if (ent.fields && typeof ent.fields === "object") {
+      for (const [k, v] of Object.entries(ent.fields)) {
+        if (v && typeof v === "string" && v.trim()) {
+          fieldsBox.append(ui.el("div", { class: "flex flex-col p-2 rounded-lg bg-surface-container-low" },
+            ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant font-medium" }, k),
+            ui.el("span", { class: "font-body-sm text-body-sm text-on-surface" }, v.trim())));
+        }
+      }
+    }
+    const hasFields = fieldsBox.children.length > 0;
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[520px] max-w-[calc(100vw-1.5rem)] shadow-[0_12px_32px_rgba(27,42,56,0.16)] flex flex-col gap-space-md max-h-[85vh] overflow-y-auto" },
+        ui.el("div", { class: "flex items-start justify-between gap-2" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.el("div", { class: `w-9 h-9 rounded-lg flex items-center justify-center ${meta.badge}` },
+              ui.icon(meta.icon, "text-[20px]")),
+            ui.el("div", { class: "flex flex-col" },
+              ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, ent.name),
+              ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `${meta.label}${ent.tags ? ` · ${ent.tags}` : ""}`))),
+          ui.el("button", {
+            class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant",
+            onclick: () => overlay.remove(),
+          }, ui.icon("close", "text-[20px]"))),
+        hasFields ? fieldsBox : null,
+        ui.el("div", { class: "flex flex-col gap-1" },
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant font-medium" }, "详细设定"),
+          ui.el("div", {
+            class: "p-3 rounded-lg bg-surface-container-low font-body-sm text-body-sm text-on-surface whitespace-pre-wrap leading-relaxed max-h-[30vh] overflow-y-auto",
+          }, ent.content || "（暂无详细说明）")),
+        ui.el("div", { class: "flex items-center justify-between pt-2 border-t border-border-feather" },
+          ui.el("a", {
+            class: "flex items-center gap-1 font-label-sm text-label-sm text-secondary hover:underline",
+            href: `#/entities/${workId}`,
+            onclick: (e) => { e.preventDefault(); overlay.remove(); location.hash = `#/entities/${workId}`; },
+          }, ui.icon("edit", "text-[14px]"), "在万象谱中编辑"),
+          ui.el("button", {
+            class: "px-4 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors",
+            onclick: () => overlay.remove(),
+          }, "关闭"))));
+    root.append(overlay);
+  }
+
+  /* ---------- 关联信息栏 ---------- */
+
+  function renderRelated() {
+    relatedBox.innerHTML = "";
+    if (!chapter) return;
+    const node = findCurrentOutlineNode();
+    if (node) {
+      relatedBox.append(ui.el("div", { class: "flex items-start gap-2 px-2 py-1.5 rounded-lg bg-surface-container-low" },
+        ui.icon("account_tree", "text-[16px] text-secondary mt-0.5"),
+        ui.el("div", { class: "flex flex-col min-w-0" },
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "关联大纲节点"),
+          ui.el("span", { class: "font-body-sm text-body-sm text-on-surface truncate" }, node.title))));
+    }
+    relatedBox.append(ui.el("div", { class: "flex items-start gap-2 px-2 py-1.5 rounded-lg bg-surface-container-low" },
+      ui.icon("edit_note", "text-[16px] text-secondary mt-0.5"),
+      ui.el("div", { class: "flex flex-col min-w-0" },
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "当前章节字数"),
+        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface" }, `${ui.fmtWords(chapter.word_count || 0)} 字`))));
   }
 
   /* ---------- 生成（SSE 流式） ---------- */
@@ -743,6 +1566,7 @@ registerPage("workbench", async (view, { segs, params }) => {
   async function runGenerate() {
     if (generating || !chapter) return;
     if (dirty) await saveContent();
+    saveRecentInstruction(instrInput.value.trim());
     const context = ctxItems.filter((i) => i.cb.checked)
       .map((i) => i.getText()).filter(Boolean).join("\n\n----\n\n");
     const payload = {
@@ -753,6 +1577,7 @@ registerPage("workbench", async (view, { segs, params }) => {
       length: aiLength,
       candidates: aiCandidates,
       stream: true,
+      prompt_id: aiPromptId,
     };
     abortCtrl = new AbortController();
     let resp;
@@ -797,7 +1622,9 @@ registerPage("workbench", async (view, { segs, params }) => {
           if (!frame.startsWith("data:")) continue;
           let evt;
           try { evt = JSON.parse(frame.slice(5).trim()); } catch (e) { continue; }
-          if (evt.error) {
+          if (evt.task_id) {
+            updateTaskStatus(evt.task_id, "当前生成任务运行中…");
+          } else if (evt.error) {
             ui.toast(evt.error, "err");
             if (curCard) { finishCard(curCard, true); curCard = null; }
           } else if (evt.start) {
@@ -811,6 +1638,7 @@ registerPage("workbench", async (view, { segs, params }) => {
           } else if (evt.done) {
             gotDone = true;
             if (curCard) { finishCard(curCard); curCard = null; }
+            updateTaskStatus(evt.task_id, "当前生成任务已完成");
           }
         }
       }
@@ -918,7 +1746,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     if (card._diffBox) { card._diffBox.remove(); card._diffBox = null; return; }
     const original = selText || editorText().slice(-500);
     const { A, B, del, add } = lineDiff(original, card._text);
-    card._diffBox = ui.el("div", { class: "grid grid-cols-2 gap-2 p-2 rounded-lg bg-surface-container-low" },
+    card._diffBox = ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-2 gap-2 p-2 rounded-lg bg-surface-container-low" },
       ui.el("div", { class: "flex flex-col gap-1 min-w-0" },
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, selText ? "原文（选区）" : "原文（正文末尾 500 字）"),
         renderDiffLines(A, del, "diff-del")),
@@ -939,39 +1767,16 @@ registerPage("workbench", async (view, { segs, params }) => {
 
   async function adopt(card) {
     const text = card._text;
-    if (!text || !chapter) return;
-    const old = editorText();
-    const useRange = rangeAlive();
-    if (useRange) {
-      const ok = await ui.confirm("采纳 AI 内容", "将用 AI 生成的内容替换当前选中的正文（替换前会自动留存一份版本快照）。", "替换");
-      if (!ok) return;
-    }
-    /* 采纳前留存旧内容快照 */
-    try { await api.patch(`/chapters/${chapter.id}`, { content: old, snapshot_source: "auto", snapshot_label: "采纳前自动留存" }); } catch (e) {}
-
-    if (useRange) {
-      selRange.deleteContents();
-      selRange.insertNode(document.createTextNode(text));
-      selRange = null; selText = "";
-      hideSelToolbar();
-    } else {
-      editor.textContent = old ? old.replace(/\s+$/, "") + "\n\n" + text : text;
-    }
-    dirty = true;
-    await saveContent("ai");
-    ui.toast("已采纳并写入正文", "ok");
+    const res = await applyAdoptContent(text, null);
+    if (!res || !res.ok) return;
+    const old = res.oldContent;
 
     /* 提供撤销采纳 */
     card._actions.innerHTML = "";
     card._actions.append(ui.el("button", {
       class: "flex items-center gap-0.5 px-2 py-1 rounded-md bg-error-container text-on-error-container font-label-sm text-label-sm",
       onclick: async () => {
-        const ok = await ui.confirm("撤销采纳", "将正文恢复到采纳前的内容。", "撤销");
-        if (!ok) return;
-        editor.textContent = old;
-        dirty = true;
-        await saveContent("ai");
-        ui.toast("已撤销采纳", "ok");
+        await applyUndoAdopt(old, null);
         card.remove();
       },
     }, ui.icon("undo", "text-[14px]"), "撤销采纳"));

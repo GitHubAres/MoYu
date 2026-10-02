@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+.pyarmor/
 
 # 打包产物
 build/
@@ -13,6 +14,19 @@ release/
 # 运行时数据（含用户作品与 API Key，绝不入库）
 data/
 
+
+*.pem
+*.key
+
 # 系统文件
 .DS_Store
 Thumbs.db
+# 本地私密凭证与密钥配置（仅存于本地，绝不上云）
+.env
+.env.*
+.secrets*
+*.token
+# 临时与构建脚本中间件
+*.log
+*.spec
+temp_*.py

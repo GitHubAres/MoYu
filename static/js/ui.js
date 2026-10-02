@@ -46,16 +46,16 @@ const ui = {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
         onclick: (e) => { if (e.target === overlay) close(false); },
       },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] max-w-[calc(100vw-2rem)] mx-4 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, title),
           ui.el("div", { class: "font-body-sm text-body-sm text-on-surface-variant whitespace-pre-wrap" }, body),
           ui.el("div", { class: "flex justify-end gap-2" },
             ui.el("button", {
-              class: "px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md",
+              class: "px-4 py-2 min-h-[44px] min-w-[76px] rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md cursor-pointer flex items-center justify-center",
               onclick: () => close(false),
             }, "取消"),
             ui.el("button", {
-              class: `px-4 py-2 rounded-lg font-label-md text-label-md ${danger ? "bg-error text-on-error" : "bg-primary text-on-primary"}`,
+              class: `px-4 py-2 min-h-[44px] min-w-[76px] rounded-lg font-label-md text-label-md cursor-pointer flex items-center justify-center ${danger ? "bg-error text-on-error" : "bg-primary text-on-primary"}`,
               onclick: () => close(true),
             }, okText))));
       root.append(overlay);
@@ -67,7 +67,7 @@ const ui = {
     return new Promise((resolve) => {
       const root = document.getElementById("modal-root");
       const input = ui.el("input", {
-        class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-md text-body-md",
+        class: "w-full px-3 py-2.5 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-md text-[16px] sm:text-body-md",
         placeholder, value,
       });
       const close = (val) => { overlay.remove(); resolve(val); };
@@ -75,12 +75,12 @@ const ui = {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
         onclick: (e) => { if (e.target === overlay) close(null); },
       },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] max-w-[calc(100vw-2rem)] mx-4 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, title),
           input,
           ui.el("div", { class: "flex justify-end gap-2" },
-            ui.el("button", { class: "px-4 py-2 rounded-lg bg-surface-container font-label-md text-label-md", onclick: () => close(null) }, "取消"),
-            ui.el("button", { class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md", onclick: () => close(input.value.trim() || null) }, "确定"))));
+            ui.el("button", { class: "px-4 py-2 min-h-[44px] min-w-[76px] rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md cursor-pointer flex items-center justify-center", onclick: () => close(null) }, "取消"),
+            ui.el("button", { class: "px-4 py-2 min-h-[44px] min-w-[76px] rounded-lg bg-primary text-on-primary font-label-md text-label-md cursor-pointer flex items-center justify-center", onclick: () => close(input.value.trim() || null) }, "确定"))));
       input.addEventListener("keydown", (e) => { if (e.key === "Enter") close(input.value.trim() || null); });
       root.append(overlay);
       input.focus();
@@ -246,10 +246,10 @@ const ui = {
 
     const overlay = ui.el("div", {
       id: "palette-overlay",
-      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex justify-center pt-[12vh]",
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex justify-center pt-4 sm:pt-[12vh] px-3 sm:px-0",
       onclick: (e) => { if (e.target === overlay) close(); },
     },
-      ui.el("div", { class: "bg-surface-container-lowest rounded-xl w-[560px] max-w-[90vw] h-fit shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col overflow-hidden" },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl w-[560px] max-w-[calc(100vw-1.5rem)] h-fit max-h-[85vh] shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col overflow-hidden" },
         ui.el("div", { class: "flex items-center gap-2 px-4 py-3 border-b border-border-feather" },
           ui.icon("search", "text-[20px] text-on-surface-variant"),
           input,
@@ -273,5 +273,40 @@ const ui = {
     root.append(overlay);
     renderIdle();
     input.focus();
+  },
+  /* 全局快速记录灵感便签，返回 Promise<saved|null> */
+  quickNoteDialog() {
+    return new Promise((resolve) => {
+      const root = document.getElementById("modal-root");
+      const input = ui.el("textarea", {
+        class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-[16px] sm:text-body-sm resize-none",
+        rows: "4", placeholder: "捕捉掠过脑海的伏笔、绝妙对白或世界法则…",
+      });
+      const close = (val) => { overlay.remove(); resolve(val); };
+      const overlay = ui.el("div", {
+        class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+        onclick: (e) => { if (e.target === overlay) close(null); },
+      },
+        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] max-w-[calc(100vw-2rem)] mx-4 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
+          ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "快速记录"),
+          input,
+          ui.el("div", { class: "flex justify-end gap-2" },
+            ui.el("button", { class: "px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md", onclick: () => close(null) }, "取消"),
+            ui.el("button", {
+              class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md",
+              onclick: async () => {
+                const text = input.value.trim();
+                if (!text) { close(null); return; }
+                try {
+                  const saved = await api.post("/notes", { content: text });
+                  ui.toast("已记录灵感便签", "ok");
+                  window.dispatchEvent(new CustomEvent("moyu:note-added", { detail: saved }));
+                  close(saved);
+                } catch (e) { ui.toast(e.message, "err"); }
+              },
+            }, "记录"))));
+      root.append(overlay);
+      input.focus();
+    });
   },
 };

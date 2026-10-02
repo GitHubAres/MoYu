@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """entities / foreshadows(board) / notes / prompts：CRUD 与枚举校验。"""
 from conftest import make_work, make_wvc
 
@@ -64,6 +66,42 @@ def test_entity_chapter_link(client):
 
     assert client.delete(f"/api/entities/{e['id']}/chapters/{c['id']}").status_code == 204
     assert client.get(f"/api/chapters/{c['id']}/entities").json() == []
+
+
+def test_chapter_entities_workbench_link_and_batch(client):
+    w, v, c = make_wvc(client, "工作台实体联动测试")
+    e1 = client.post(f"/api/works/{w['id']}/entities", json={
+        "category": "character", "name": "叶临渊", "fields_json": {"身份": "主角", "性格": "冷静"},
+        "content": "天剑宗第九代首座弟子，剑心通明。"}).json()
+    e2 = client.post(f"/api/works/{w['id']}/entities", json={
+        "category": "item", "name": "太乙玄晶", "fields_json": {"品阶": "天阶"},
+        "content": "产自断龙渊深处的极品铸剑灵晶。"}).json()
+
+    # 从章节侧添加关联 POST /chapters/{c_id}/entities
+    r = client.post(f"/api/chapters/{c['id']}/entities", json={"entity_id": e1["id"]})
+    assert r.status_code == 201
+    list1 = r.json()
+    assert len(list1) == 1
+    assert list1[0]["name"] == "叶临渊"
+    assert list1[0]["fields"]["性格"] == "冷静"
+    assert "剑心通明" in list1[0]["content"]
+
+    # 跨作品关联受拒
+    w2, _, c2 = make_wvc(client, "外部作品")
+    bad = client.post(f"/api/chapters/{c2['id']}/entities", json={"entity_id": e1["id"]})
+    assert bad.status_code == 400
+
+    # 批量关联 POST /chapters/{c_id}/entities/batch
+    r2 = client.post(f"/api/chapters/{c['id']}/entities/batch", json={"entity_ids": [e1["id"], e2["id"]]})
+    assert r2.status_code == 200
+    names = [x["name"] for x in r2.json()]
+    assert "叶临渊" in names and "太乙玄晶" in names
+
+    # 从章节侧移除关联 DELETE /chapters/{c_id}/entities/{entity_id}
+    del_res = client.delete(f"/api/chapters/{c['id']}/entities/{e1['id']}")
+    assert del_res.status_code == 204
+    rem = client.get(f"/api/chapters/{c['id']}/entities").json()
+    assert [x["name"] for x in rem] == ["太乙玄晶"]
 
 
 # ---------- foreshadows ----------

@@ -1,0 +1,24 @@
+﻿# 墨语 MoYu 生产级 systemd 进程守护配置
+# 放置路径: /etc/systemd/system/moyu.service
+# 启用命令: sudo systemctl daemon-reload && sudo systemctl enable --now moyu
+
+[Unit]
+Description=MoYu AI Novel Writing Workbench (FastAPI Service)
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/moyu
+Environment="HOST=127.0.0.1"
+Environment="PORT=8321"
+Environment="MOYU_DATA_DIR=/var/lib/moyu/data"
+ExecStart=/var/www/moyu/.venv/bin/python run.py
+Restart=always
+RestartSec=5
+KillMode=process
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

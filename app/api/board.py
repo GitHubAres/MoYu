@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """伏笔看板 API：按状态分栏（已埋设/待回收/已回收）。"""
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel

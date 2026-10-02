@@ -1,0 +1,26 @@
+﻿services:
+  moyu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: moyu:1.2.3
+    container_name: moyu-app
+    restart: unless-stopped
+    ports:
+      - "8321:8321"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8321
+      - MOYU_DATA_DIR=/app/data
+    volumes:
+      - moyu-data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8321/api/health')\" || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  moyu-data:
+    driver: local

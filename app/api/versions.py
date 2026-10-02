@@ -1,3 +1,5 @@
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# Licensed under the MIT License. See LICENSE.
 """版本快照详情 / 恢复 / 对比 / 清理 API。"""
 from fastapi import APIRouter, HTTPException
 
