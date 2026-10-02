@@ -4,6 +4,7 @@ import pytest
 
 try:
     from fontTools.ttLib import TTFont
+    import brotli
 except ImportError:
     TTFont = None
 

@@ -29,7 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller fonttools
+          pip install pyinstaller fonttools brotli
 
       - name: 执行自动化回归测试
         run: |
