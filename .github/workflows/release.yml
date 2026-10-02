@@ -48,17 +48,8 @@ jobs:
           Get-ChildItem dist/
 
       - name: 发布至 GitHub Releases
-        uses: softprops/action-gh-release@v2
-        with:
-          name: 墨语 MoYu ${{ github.ref_name }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') }}
-          generate_release_notes: true
-          make_latest: "true"
-          overwrite: true
-          files: |
-            dist/*.exe
-            dist/*.sha256
-            dist/manifest.json
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}"             --title "墨语 MoYu ${{ github.ref_name }}"             --generate-notes             dist/*.exe dist/*.sha256 dist/manifest.json
