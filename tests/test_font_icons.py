@@ -1,6 +1,11 @@
 ﻿import re
 from pathlib import Path
-from fontTools.ttLib import TTFont
+import pytest
+
+try:
+    from fontTools.ttLib import TTFont
+except ImportError:
+    TTFont = None
 
 def verify_icon_font():
     font_path = "static/vendor/fonts/material-symbols-tiny.woff2"
@@ -40,6 +45,8 @@ def verify_icon_font():
     print(f"Font ligature verification passed: {len(expected_icons)}/105 icons present.")
 
 def test_font_ligatures():
+    if TTFont is None:
+        pytest.skip("fontTools is not installed, skipping font ligature test")
     verify_icon_font()
 
 if __name__ == "__main__":

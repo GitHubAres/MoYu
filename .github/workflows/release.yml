@@ -29,7 +29,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller fonttools
 
       - name: 执行自动化回归测试
         run: |
@@ -51,6 +51,7 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'alpha') }}
           generate_release_notes: true
+          make_latest: "true"
           files: |
             dist/*.exe
             dist/*.sha256
