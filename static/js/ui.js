@@ -87,6 +87,36 @@ const ui = {
     });
   },
 
+  /* ???????ui.modal(title, content, actions = [], options = {}) */
+  modal(title, content, actions = [], options = {}) {
+    const root = document.getElementById("modal-root");
+    const close = () => overlay.remove();
+    const maxWidth = options.maxWidth || "max-w-5xl";
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4",
+      onclick: (e) => { if (e.target === overlay && options.clickOutsideToClose !== false) close(); },
+    },
+      ui.el("div", {
+        class: `bg-surface-container-lowest rounded-2xl p-space-md sm:p-space-lg w-full ${maxWidth} max-h-[92vh] shadow-[0_12px_36px_rgba(27,42,56,0.18)] border border-outline-variant/40 flex flex-col gap-space-md overflow-hidden animate-in fade-in zoom-in-95 duration-150`
+      },
+        ui.el("div", { class: "flex items-center justify-between gap-2 pb-2 border-b border-outline-variant/40 shrink-0" },
+          ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold tracking-tight truncate" }, title),
+          ui.el("button", {
+            class: "p-1.5 rounded-full text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors",
+            title: "??",
+            onclick: close,
+          }, ui.icon("close", "text-[20px]"))
+        ),
+        ui.el("div", { class: "flex-1 min-h-0 overflow-y-auto" }, content),
+        actions && actions.length > 0
+          ? ui.el("div", { class: "flex items-center justify-end gap-2 pt-2 border-t border-outline-variant/40 shrink-0" }, ...actions)
+          : null
+      )
+    );
+    root.append(overlay);
+    return { overlay, close };
+  },
+
   setCrumb(...items) {
     const c = document.getElementById("topbar-crumb");
     c.innerHTML = "";
