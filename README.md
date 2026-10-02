@@ -45,7 +45,7 @@
 ### 方式 B：Linux VPS / 私有服务器 Docker 部署（一键上线）
 ```bash
 # 1. 克隆代码
-git clone https://github.com/your-username/moyu.git /opt/moyu
+git clone https://github.com/GitHubAres/MoYu-V1.0.0.git /opt/moyu
 cd /opt/moyu
 
 # 2. 一键启动并自动持久化数据卷

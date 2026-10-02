@@ -1,4 +1,4 @@
-﻿# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
 # Licensed under the MIT License. See LICENSE.
 """PyInstaller 打包入口脚本：
 - 支持单文件模式（默认）与目录模式（--onedir）
@@ -99,6 +99,7 @@ def main():
             "--icon", str(BASE / "build" / "icon.ico"),
             "--add-data", f"{st_data_dir};static",
             "--add-data", f"{BASE / 'docs'};docs",
+            "--add-data", f"{BASE / 'app'};app",
             "--collect-all", "webview",
             "--hidden-import", "clr",
             "--hidden-import", "clr_loader",

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 """本地一键推送到 GitHub Releases 脚本：
 - 严格从本地 .env 读取 GITHUB_TOKEN，密钥不入库
@@ -13,6 +13,7 @@ from pathlib import Path
 import httpx
 
 BASE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(BASE))
 
 # 1. 读取本地 .env
 def load_local_env():
@@ -27,7 +28,7 @@ def load_local_env():
 load_local_env()
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "").strip()
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "GitHubAres/MoYu").strip()
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "GitHubAres/MoYu-V1.0.0").strip()
 
 if not GITHUB_TOKEN:
     print("错误: 未在本地环境或 .env 文件中检测到 GITHUB_TOKEN！")
