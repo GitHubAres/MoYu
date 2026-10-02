@@ -12,6 +12,9 @@ jobs:
   build-and-release:
     name: 构建 Windows 原生桌面版并创建 Release
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: 'utf-8'
 
     steps:
       - name: 检出源码
