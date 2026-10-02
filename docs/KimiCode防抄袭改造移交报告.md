@@ -24,7 +24,7 @@
 
 | 代码库 | 路径 | 性质 | 远端仓库 |
 |---|---|---|---|
-| `moyu` | `D:/KimiCode工作区/moyu/` | 开源核心（AGPL-3.0） | 待新建 `GitHubAres/MoYu` |
+| `moyu` | `D:/KimiCode工作区/moyu/` | 开源核心（AGPL-3.0） | 待新建 `GitHubAres/MoYu-V1.0.0` |
 | `moyu-core` | `D:/KimiCode工作区/moyu-core/` | 私有核心（商业闭源） | 已创建 `GitHubAres/moyu-core`（私有） |
 
 ---
@@ -140,8 +140,8 @@ moyu-handover-20260929/
 
 ### 6.2 阶段 5：GitHub 发布
 
-- **老仓库归档：** 在 `GitHubAres/MoYu-V1.0.0` 打 tag `v1.0-final-mit`，README 加迁移公告。
-- **新仓库发布：** 新建公开仓库 `GitHubAres/MoYu`，推送 v1.1.0 代码。
+- **老仓库归档：** 在 `GitHubAres/MoYu-V1.0.0-V1.0.0` 打 tag `v1.0-final-mit`，README 加迁移公告。
+- **新仓库发布：** 新建公开仓库 `GitHubAres/MoYu-V1.0.0`，推送 v1.1.0 代码。
 - **私有仓库推送：** `moyu-core` 最近两次 push 因网络失败（`Recv failure: Connection was reset` / `Could not connect to server`），本地提交已保存，需重试 push。
 - **Release 创建：** 在 `MoYu` 仓库创建 Release `v1.1.0`，上传构建产物与 `manifest.json`。
 

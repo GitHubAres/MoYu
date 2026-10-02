@@ -67,7 +67,7 @@ def test_semver_parse_and_comparison():
 
 def test_apply_mirror_to_url():
     """验证镜像加速 URL 转换逻辑。"""
-    raw_url = "https://github.com/GitHubAres/MoYu/releases/tag/v1.4.0"
+    raw_url = "https://github.com/GitHubAres/MoYu-V1.0.0/releases/tag/v1.4.0"
     assert apply_mirror_to_url(raw_url, "") == raw_url
     assert apply_mirror_to_url(raw_url, "https://ghproxy.net") == f"https://ghproxy.net/{raw_url}"
     assert apply_mirror_to_url(raw_url, "https://ghproxy.net/") == f"https://ghproxy.net/{raw_url}"
@@ -99,15 +99,15 @@ def test_update_check_endpoint_cached_and_new_version(client):
         "name": "墨语 MoYu v99.0.0 革命性更新",
         "body": "### 新增功能\n- 支持跨星系量子写作同步",
         "published_at": "2026-10-02T12:00:00Z",
-        "html_url": "https://github.com/GitHubAres/MoYu/releases/tag/v99.0.0",
+        "html_url": "https://github.com/GitHubAres/MoYu-V1.0.0/releases/tag/v99.0.0",
         "assets": [
             {
                 "name": "墨语MoYu-v99.0.0-win64.exe",
-                "browser_download_url": "https://github.com/GitHubAres/MoYu/releases/download/v99.0.0/MoYu.exe"
+                "browser_download_url": "https://github.com/GitHubAres/MoYu-V1.0.0/releases/download/v99.0.0/MoYu.exe"
             },
             {
                 "name": "manifest.json",
-                "browser_download_url": "https://github.com/GitHubAres/MoYu/releases/download/v99.0.0/manifest.json"
+                "browser_download_url": "https://github.com/GitHubAres/MoYu-V1.0.0/releases/download/v99.0.0/manifest.json"
             }
         ]
     }
@@ -150,7 +150,7 @@ def test_update_check_endpoint_up_to_date(client):
         "name": f"墨语 MoYu v{APP_VERSION}",
         "body": "当前稳定版本",
         "published_at": "2026-10-01T12:00:00Z",
-        "html_url": "https://github.com/GitHubAres/MoYu/releases/latest",
+        "html_url": "https://github.com/GitHubAres/MoYu-V1.0.0/releases/latest",
         "assets": []
     }
 

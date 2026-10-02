@@ -11,7 +11,7 @@
 
 ### 1.1 准备与克隆
 ```bash
-git clone https://github.com/your-username/moyu.git /opt/moyu
+git clone https://github.com/GitHubAres/MoYu-V1.0.0-V1.0.0.git /opt/moyu
 cd /opt/moyu
 ```
 
