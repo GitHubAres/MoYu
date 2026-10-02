@@ -38,8 +38,9 @@ def create_app(open_browser: bool = False) -> FastAPI:
     from .api import router as api_router
     app.include_router(api_router, prefix="/api")
 
-    from .features import get_prompt_library
-    get_prompt_library().seed_builtin()
+    # 初始化及迁移 Agent Skills 种子
+    from .db import migrate_and_seed_skills
+    migrate_and_seed_skills()
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

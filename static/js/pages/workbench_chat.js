@@ -531,7 +531,7 @@ window.WorkbenchChat = (() => {
         selection: selText,
         context: contextText,
         length: window.aiLengthPreference || "medium",
-        prompt_id: window.aiActivePromptId || null,
+        skill_id: window.aiActiveSkillId || null,
         stream: true,
       };
 

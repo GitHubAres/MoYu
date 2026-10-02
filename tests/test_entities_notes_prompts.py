@@ -160,43 +160,9 @@ def test_notes_crud(client):
 
 # ---------- prompts ----------
 
-def test_builtin_prompts_seeded(client):
-    """create_app 导入 api 模块时自动播种 6 条内置模板。"""
-    prompts = client.get("/api/prompts").json()
-    builtins = [p for p in prompts if p["builtin"] == 1]
-    assert len(builtins) == 6
-    assert {p["task_type"] for p in builtins} == {
-        "continue", "expand", "shorten", "rewrite", "outline", "audit"}
-
-
-def test_prompt_crud_and_enum(client):
-    r = client.post("/api/prompts", json={
-        "name": "我的续写", "task_type": "continue", "template": "请续写 {{selection}}"})
-    assert r.status_code == 201
-    p = r.json()
-    assert p["builtin"] == 0
-
-    assert client.post("/api/prompts", json={
-        "name": "x", "task_type": "wrong", "template": "t"}).status_code == 400
-
-    r = client.patch(f"/api/prompts/{p['id']}", json={"template": "新模板 {{instruction}}"})
-    assert r.json()["template"] == "新模板 {{instruction}}"
-
-    by_type = client.get("/api/prompts", params={"task_type": "continue"}).json()
-    assert all(x["task_type"] == "continue" for x in by_type)
-
-    assert client.delete(f"/api/prompts/{p['id']}").status_code == 204
-    assert client.get(f"/api/prompts").json().count(p) == 0
-
-
-def test_builtin_prompt_protected_and_duplicable(client):
-    builtin = [p for p in client.get("/api/prompts").json() if p["builtin"] == 1][0]
-
-    assert client.delete(f"/api/prompts/{builtin['id']}").status_code == 400
-
-    r = client.post(f"/api/prompts/{builtin['id']}/duplicate")
-    assert r.status_code == 201
-    dup = r.json()
-    assert dup["builtin"] == 0
-    assert dup["name"] == builtin["name"] + "（副本）"
-    assert client.delete(f"/api/prompts/{dup['id']}").status_code == 204
+def test_old_prompts_api_retired_returns_404(client):
+    """根据 V1.6.0 Agent Skills 升级规范，旧版 /api/prompts 接口已正式退役下线，直接返回 404。"""
+    assert client.get("/api/prompts").status_code == 404
+    assert client.post("/api/prompts", json={"name": "test"}).status_code == 404
+    assert client.patch("/api/prompts/1", json={"template": "test"}).status_code == 404
+    assert client.delete("/api/prompts/1").status_code == 404

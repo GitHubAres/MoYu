@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.ai_client import AIError, chat, chat_stream
 from app.ai_tasks import create_task, fail_task, finish_task, start_task
 from app.db import get_db
-from app.features import AIOrchestrator, get_ai_config
+from app.features import AIOrchestrator, build_skill_system_prompt, get_ai_config
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -22,7 +22,7 @@ class ChatIn(BaseModel):
     message: str = ""
     task: str = "continue"
     selection: str = ""
-    prompt_id: Optional[int] = None
+    skill_id: Optional[int] = None
     context: str = ""
     length: str = "medium"
     stream: bool = True
@@ -142,7 +142,7 @@ async def send_chat_message(body: ChatIn):
         {
             "task": body.task,
             "selection": body.selection,
-            "prompt_id": body.prompt_id,
+            "skill_id": body.skill_id,
             "length": body.length,
         },
         ensure_ascii=False,
@@ -167,14 +167,15 @@ async def send_chat_message(body: ChatIn):
 
     # 组装 System Prompt 与长度要求
     task = body.task if body.task in AIOrchestrator.BASIC_PROMPTS else "continue"
-    sys_prompt = AIOrchestrator.BASIC_PROMPTS[task]
-    if body.prompt_id:
-        row = db.execute("SELECT task_type, template FROM prompts WHERE id=?", (body.prompt_id,)).fetchone()
-        if row:
-            task = row["task_type"] if row["task_type"] in AIOrchestrator.BASIC_PROMPTS else task
-            sys_prompt = row["template"]
-
-    sys_prompt += "\n" + AIOrchestrator.LENGTH_HINTS.get(body.length, AIOrchestrator.LENGTH_HINTS["medium"])
+    # 对话场景下，指令由当前 user 消息轮次承载
+    sys_prompt, consumed = build_skill_system_prompt(
+        skill_id=body.skill_id,
+        task=task,
+        context=body.context,
+        selection=body.selection,
+        instruction="",
+        length=body.length,
+    )
 
     # 组装完整的 messages 数组
     messages = [{"role": "system", "content": sys_prompt}]
@@ -184,9 +185,9 @@ async def send_chat_message(body: ChatIn):
 
     # 本轮消息的结构化上下文拼装
     current_parts = []
-    if body.context:
+    if body.context and not consumed.get("context"):
         current_parts.append("【上下文】\n" + body.context)
-    if body.selection:
+    if body.selection and not consumed.get("selection"):
         current_parts.append("【选中文本】\n" + body.selection)
     if user_prompt_text:
         current_parts.append("【写作要求】\n" + user_prompt_text)

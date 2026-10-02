@@ -23,11 +23,11 @@ registerPage("workbench", async (view, { segs, params }) => {
   let selRange = null, selText = "";      // 编辑器内最近一次有效选区
   let abortCtrl = null, generating = false;
   let aiTask = "continue", aiLength = "medium", aiCandidates = 1;
-  let aiPromptId = null;
+  let aiSkillId = null;
   let isClassicCandidateMode = false;
   let workbenchChatInstance = null;
   let classicBox = null;
-  let prompts = [];
+  let skills = [];
   let currentTaskId = null;
   let outlineNodes = [];
   let recentInstructions = JSON.parse(localStorage.getItem("moyu_recent_instructions") || "[]");
@@ -51,25 +51,27 @@ registerPage("workbench", async (view, { segs, params }) => {
     custom:    { label: "设定", icon: "bookmark", badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" },
   };
 
-  const promptSelect = ui.el("select", {
+  const skillSelect = ui.el("select", {
     class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm",
   });
   function refreshPromptOptions() {
-    promptSelect.innerHTML = "";
-    promptSelect.append(ui.el("option", { value: "" }, "默认提示词"));
-    const filtered = prompts.filter((p) => p.task_type === aiTask);
-    for (const p of filtered) {
-      promptSelect.append(ui.el("option", { value: p.id, selected: aiPromptId === p.id ? "selected" : null }, p.name));
+    skillSelect.innerHTML = "";
+    skillSelect.append(ui.el("option", { value: "" }, "默认技能 (内置)"));
+    const matched = skills.filter((s) => !s.applies_to || s.applies_to === aiTask);
+    for (const s of matched) {
+      const label = s.title + (s.source === "builtin" ? " [内置]" : "");
+      skillSelect.append(ui.el("option", { value: s.id, selected: aiSkillId === s.id ? "selected" : null }, label));
     }
   }
-  promptSelect.addEventListener("change", () => {
-    aiPromptId = promptSelect.value ? Number(promptSelect.value) : null;
+  skillSelect.addEventListener("change", () => {
+    aiSkillId = skillSelect.value ? Number(skillSelect.value) : null;
+    window.aiActiveSkillId = aiSkillId;
   });
 
   try {
     work = await api.get(`/works/${workId}`);
     tree = await api.get(`/works/${workId}/tree`);
-    prompts = await api.get("/prompts");
+    try { skills = await api.get("/skills", { enabled: 1 }); } catch (_) { skills = []; }
     try { outlineNodes = await api.get(`/works/${workId}/outline`); } catch (e) { outlineNodes = []; }
     try { allEntities = await api.get(`/works/${workId}/entities`); } catch (e) { allEntities = []; }
     refreshPromptOptions();
@@ -948,13 +950,13 @@ registerPage("workbench", async (view, { segs, params }) => {
 
   function buildAiPanel() {
     window.aiLengthPreference = aiLength;
-    window.aiActivePromptId = aiPromptId;
+    window.aiActiveSkillId = aiSkillId;
 
     const taskSeg = seg([["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "改写"]],
       () => aiTask, (v) => {
         aiTask = v;
-        aiPromptId = null;
-        window.aiActivePromptId = null;
+        aiSkillId = null;
+        window.aiActiveSkillId = null;
         refreshPromptOptions();
         if (workbenchChatInstance) workbenchChatInstance.setActiveTask(v);
       });
@@ -1009,7 +1011,7 @@ registerPage("workbench", async (view, { segs, params }) => {
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "任务"),
         taskSeg.wrap,
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "提示词模板"),
-        promptSelect,
+        skillSelect,
         ui.el("div", { class: "flex items-center gap-space-sm" },
           ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
         ui.el("div", { class: "flex items-center gap-space-sm" },
@@ -1027,7 +1029,7 @@ registerPage("workbench", async (view, { segs, params }) => {
       ui.el("div", { class: "flex items-center gap-space-sm" },
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
       ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "提示词模板"),
-      promptSelect,
+      skillSelect,
       ui.el("div", { class: "flex flex-wrap gap-1 pt-1 border-t border-border-feather/50" },
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/outline/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/outline/${workId}`; } }, "故事大纲"),
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/entities/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/entities/${workId}`; } }, "设定库"),
@@ -1577,7 +1579,7 @@ registerPage("workbench", async (view, { segs, params }) => {
       length: aiLength,
       candidates: aiCandidates,
       stream: true,
-      prompt_id: aiPromptId,
+      skill_id: aiSkillId,
     };
     abortCtrl = new AbortController();
     let resp;

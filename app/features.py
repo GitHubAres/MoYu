@@ -19,7 +19,7 @@ from app.db import get_db
 
 
 class _GenIn(BaseModel):
-    task: str
+    task: str = "continue"
     instruction: str = ""
     context: str = ""
     selection: str = ""
@@ -27,7 +27,7 @@ class _GenIn(BaseModel):
     candidates: int = 1
     stream: bool = False
     work_id: int | None = None
-    prompt_id: int | None = None
+    skill_id: int | None = None
 
 
 class _TestIn(BaseModel):
@@ -99,6 +99,117 @@ def _extract_json(text: str) -> dict | list:
     return json.loads(t)
 
 
+
+def build_skill_system_prompt(
+    skill_id: int | None = None,
+    task: str = "continue",
+    context: str = "",
+    selection: str = "",
+    instruction: str = "",
+    length: str = "medium",
+) -> tuple[str, dict]:
+    """
+    Agent Skill 系统提示词装配器：
+    1. 根据 skill_id 或 task 确定命中的 Skill 规范实体；
+    2. 统一替换占位符（{{context}}, {{selection}}, {{instruction}}）；
+    3. 渐进式内联 references/ 资源，标注清单 scripts/ & assets/；
+    4. 拼接长度规范，返回 (system_prompt, consumed_flags)。
+    """
+    db = get_db()
+    skill_row = None
+
+    if skill_id:
+        skill_row = db.execute("SELECT * FROM skills WHERE id = ?", (skill_id,)).fetchone()
+        if not skill_row:
+            raise HTTPException(status_code=400, detail=f"未找到指定的 Skill (id={skill_id})")
+        if not skill_row["enabled"]:
+            raise HTTPException(status_code=400, detail=f"指定的 Skill「{skill_row['title']}」已被禁用")
+    else:
+        # 兜底：根据 task 匹配默认 builtin Skill
+        cand_names = [f"default-{task}", "default-continue"]
+        for cn in cand_names:
+            skill_row = db.execute("SELECT * FROM skills WHERE name = ?", (cn,)).fetchone()
+            if skill_row:
+                break
+
+    if not skill_row:
+        # 极限兜底，使用内置常量
+        fallback_prompt = AIOrchestrator.BASIC_PROMPTS.get(task, AIOrchestrator.BASIC_PROMPTS["continue"])
+        fallback_prompt += "\n" + AIOrchestrator.LENGTH_HINTS.get(length, AIOrchestrator.LENGTH_HINTS["medium"])
+        return fallback_prompt, {"context": False, "selection": False, "instruction": False}
+
+    name = skill_row["name"]
+    title = skill_row["title"]
+    version = skill_row["version"]
+    raw_body = skill_row["body_md"] or ""
+
+    # 解析 frontmatter，剥离头部 YAML 保留 Markdown 正文
+    from app.api.skills import parse_skill_md_text
+    _, body_content = parse_skill_md_text(raw_body)
+    if not body_content.strip():
+        body_content = raw_body
+
+    consumed = {"context": False, "selection": False, "instruction": False}
+
+    # 占位符替换（解决原提示词死占位符问题）
+    if "{{context}}" in body_content:
+        body_content = body_content.replace("{{context}}", context)
+        consumed["context"] = True
+    if "{{selection}}" in body_content:
+        body_content = body_content.replace("{{selection}}", selection)
+        consumed["selection"] = True
+    if "{{instruction}}" in body_content:
+        body_content = body_content.replace("{{instruction}}", instruction)
+        consumed["instruction"] = True
+
+    sections = [
+        f"【技能】{title}（{name}@{version}）",
+        body_content.strip(),
+    ]
+
+    # 读取挂载资源文件
+    files = db.execute(
+        "SELECT path, content, size FROM skill_files WHERE skill_id = ? ORDER BY path ASC",
+        (skill_row["id"],),
+    ).fetchall()
+
+    ref_parts = []
+    other_parts = []
+    total_ref_chars = 0
+    MAX_SINGLE_REF = 3000
+    MAX_TOTAL_REF = 6000
+
+    for f in files:
+        fpath = f["path"]
+        fcontent = f["content"] or ""
+        if fpath.startswith("references/"):
+            if total_ref_chars >= MAX_TOTAL_REF:
+                ref_parts.append(f"- 📄 {fpath}（超出上下文内联容量上限，已省略）")
+                continue
+            allowed = min(MAX_SINGLE_REF, MAX_TOTAL_REF - total_ref_chars)
+            is_truncated = len(fcontent) > allowed
+            inlined_content = fcontent[:allowed]
+            total_ref_chars += len(inlined_content)
+            trunc_mark = " [内容过长已截断]" if is_truncated else ""
+            ref_parts.append(f"- 📄 参考文档: {fpath}{trunc_mark}\n```text\n{inlined_content}\n```")
+        elif fpath.startswith("scripts/"):
+            other_parts.append(f"- 💻 可执行脚本: {fpath}（模型环境当前只读提供逻辑说明）")
+        elif fpath.startswith("assets/"):
+            other_parts.append(f"- 🎨 辅助素材: {fpath}（相关创作资产模板）")
+
+    if ref_parts:
+        sections.append("【参考资源】\n" + "\n\n".join(ref_parts))
+    if other_parts:
+        sections.append("【附带资源清单】\n" + "\n".join(other_parts))
+
+    # 拼接长度提示
+    len_hint = AIOrchestrator.LENGTH_HINTS.get(length, AIOrchestrator.LENGTH_HINTS["medium"])
+    sections.append(f"【输出长度要求】\n{len_hint}")
+
+    final_sys_prompt = "\n\n".join(sections)
+    return final_sys_prompt, consumed
+
+
 class AIOrchestrator:
     """AI 写作功能实现。"""
 
@@ -119,28 +230,30 @@ class AIOrchestrator:
 
     async def generate(self, body: _GenIn):
         task = body.task if body.task in self.BASIC_PROMPTS else "continue"
-        sys_prompt = self.BASIC_PROMPTS[task]
-        # 若指定了自定义提示词模板，优先使用模板内容
-        if body.prompt_id:
-            row = get_db().execute("SELECT task_type, template FROM prompts WHERE id=?", (body.prompt_id,)).fetchone()
-            if row:
-                task = row["task_type"] if row["task_type"] in self.BASIC_PROMPTS else task
-                sys_prompt = row["template"]
+        sys_prompt, consumed = build_skill_system_prompt(
+            skill_id=body.skill_id,
+            task=task,
+            context=body.context,
+            selection=body.selection,
+            instruction=body.instruction,
+            length=body.length,
+        )
+
         cfg = get_ai_config()
         if not cfg.get("ai_api_key") or not cfg.get("ai_model"):
             raise HTTPException(400, "未配置 AI 接口，请先到系统设置页配置")
 
-        sys_prompt += "\n" + self.LENGTH_HINTS.get(body.length, self.LENGTH_HINTS["medium"])
         parts = []
-        if body.context:
+        if body.context and not consumed.get("context"):
             parts.append("【上下文】\n" + body.context)
-        if body.selection:
+        if body.selection and not consumed.get("selection"):
             parts.append("【选中文本】\n" + body.selection)
-        if body.instruction:
+        if body.instruction and not consumed.get("instruction"):
             parts.append("【写作要求】\n" + body.instruction)
+
         messages = [
             {"role": "system", "content": sys_prompt},
-            {"role": "user", "content": "\n\n".join(parts) or "请开始。"},
+            {"role": "user", "content": "\n\n".join(parts) or "请开始创作。"},
         ]
 
         body.candidates = max(1, min(body.candidates, 3))

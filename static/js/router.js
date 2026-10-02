@@ -6,8 +6,12 @@ const router = {
   register(name, renderFn) { this.pages[name] = renderFn; },
 
   parse() {
-    const hash = location.hash.slice(2) || "bookshelf"; // 去掉 '#/'
-    const [pathPart, queryPart] = hash.split("?");
+    let rawHash = location.hash.slice(2) || "bookshelf"; // 去掉 '#/'
+    if (rawHash === "prompts" || rawHash.startsWith("prompts/")) {
+      location.replace("#/skills" + rawHash.slice(7));
+      rawHash = "skills" + rawHash.slice(7);
+    }
+    const [pathPart, queryPart] = rawHash.split("?");
     const segs = pathPart.split("/").filter(Boolean);
     const params = new URLSearchParams(queryPart || "");
     return { name: segs[0] || "bookshelf", segs, params };
