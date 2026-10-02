@@ -202,7 +202,7 @@ def main():
 
             "--version-file", str(version_file),
 
-            "--icon", str(BASE / "build" / "icon.ico"),
+            *(["--icon", str(icon_path)] if (icon_path := (BASE / "static" / "icon.ico" if (BASE / "static" / "icon.ico").exists() else BASE / "build" / "icon.ico")).exists() else []),
 
             "--add-data", f"{st_data_dir};static",
 
