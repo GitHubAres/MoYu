@@ -54,10 +54,12 @@ registerPage("workbench", async (view, { segs, params }) => {
   const skillSelect = ui.el("select", {
     class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm",
   });
+  const TASK_SKILL_MAP = { condense: "shorten", polish: "rewrite" };
   function refreshPromptOptions() {
     skillSelect.innerHTML = "";
     skillSelect.append(ui.el("option", { value: "" }, "默认技能 (内置)"));
-    const matched = skills.filter((s) => !s.applies_to || s.applies_to === aiTask);
+    const skillTask = TASK_SKILL_MAP[aiTask] || aiTask;
+    const matched = skills.filter((s) => !s.applies_to || s.applies_to === skillTask);
     for (const s of matched) {
       const label = s.title + (s.source === "builtin" ? " [内置]" : "");
       skillSelect.append(ui.el("option", { value: s.id, selected: aiSkillId === s.id ? "selected" : null }, label));

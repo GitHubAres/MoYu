@@ -126,7 +126,10 @@ def build_skill_system_prompt(
             raise HTTPException(status_code=400, detail=f"指定的 Skill「{skill_row['title']}」已被禁用")
     else:
         # 兜底：根据 task 匹配默认 builtin Skill
-        cand_names = [f"default-{task}", "default-continue"]
+        # 前端任务名与技能 applies_to 命名存在历史差异，统一映射
+        TASK_SKILL_MAP = {"condense": "shorten", "polish": "rewrite"}
+        skill_task = TASK_SKILL_MAP.get(task, task)
+        cand_names = [f"default-{skill_task}", "default-continue"]
         for cn in cand_names:
             skill_row = db.execute("SELECT * FROM skills WHERE name = ?", (cn,)).fetchone()
             if skill_row:

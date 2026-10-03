@@ -10,11 +10,21 @@ import sqlite3
 
 import threading
 
+from datetime import datetime
+
 from pathlib import Path
 
 
 
 from .paths import DATA_DIR
+from .builtin_skill_data import (
+    STYLE_FINGERPRINT,
+    PROSE_CRAFT,
+    GENRE_PLAYBOOK,
+    EXPANSION_CRAFT,
+    REWRITE_DIMENSIONS,
+    COMPRESSION_FORMATS,
+)
 
 
 
@@ -581,7 +591,7 @@ name: default-continue
 description: 在长篇小说写作中顺接既有情节自然续写，保持人物口吻、叙事节奏与文风一致，适合日常推进故事时使用。
 ---
 
-你是一位长篇小说写作助手。请阅读以下上下文，顺着既有文势自然续写，保持人物的口吻与叙事节奏一致，不要复述已有内容。
+你是一位长篇小说续写助手。请阅读以下上下文与当前选区，顺着既有文势自然续写，保持人物口吻、叙事节奏与文风一致，不要复述已有内容。
 
 【上下文】
 {{context}}
@@ -592,7 +602,19 @@ description: 在长篇小说写作中顺接既有情节自然续写，保持人�
 【写作要求】
 {{instruction}}
 
+续写准则：
+1. 提取原文文风指纹：句长、对话密度、叙事距离、用词档次向原文靠拢。
+2. 零复述：不重述已有情节，第一句直接是新的动作、对话或感官输入。
+3. 有推进：这一段结束时，世界必须与开头不同——关系变了、信息变了、或处境变了。
+4. 留钩子：末尾制造一个新问题，而不是把话说完。
+5. 控 AI 腔：禁止排比抒情、"仿佛/不禁/五味杂陈"三连、总结式收尾。
+
 请直接输出续写的正文，不要输出解释。""",
+        "files": [
+            ("references/style-fingerprint.md", STYLE_FINGERPRINT),
+            ("references/prose-craft.md", PROSE_CRAFT),
+            ("references/genre-playbook.md", GENRE_PLAYBOOK),
+        ],
     },
     {
         "name": "default-expand",
@@ -605,7 +627,7 @@ name: default-expand
 description: 为选区内容充实环境描写、人物动作、心理刻画与感官细节，适合粗纲细化或重点高潮场景铺陈时使用。
 ---
 
-你是一位长篇小说写作助手。请将选区内容扩写得更丰满：补充环境、动作、心理与感官细节，不改变情节走向，保持原有文风。
+你是一位长篇小说扩写助手。请将选区内容扩写得更丰满：补充环境、动作、心理与感官细节，不改变情节走向，保持原有文风。
 
 【上下文】
 {{context}}
@@ -616,7 +638,17 @@ description: 为选区内容充实环境描写、人物动作、心理刻画与�
 【写作要求】
 {{instruction}}
 
+扩写准则：
+1. 信息只增不减：原文每一个信息点都必须在扩写稿中保留。
+2. 事件不增不减：不新增人物、不新增冲突、不新增转折、不改变结局。
+3. 设定不新增：不发明原文没有的规则、道具、地点、亲属关系。
+4. 密度可控：加的必须是"原文没写但确实存在的"，不是形容词堆砌。
+5. 节奏不塌：扩写会拖慢节奏，要给新内容安排起伏，一处铺开，一处收紧。
+
 请直接输出扩写后的正文，不要输出解释。""",
+        "files": [
+            ("references/expansion-craft.md", EXPANSION_CRAFT),
+        ],
     },
     {
         "name": "default-shorten",
@@ -629,7 +661,7 @@ name: default-shorten
 description: 压缩精炼冗余铺陈与拖沓情节，提取核心故事动线并保留有力意象，适合节奏紧凑化与篇幅精简时使用。
 ---
 
-你是一位长篇小说写作助手。请将选区内容缩写压缩，保留关键情节信息与最有力的意象，删去冗余铺陈，语言凝练。
+你是一位长篇小说缩写助手。请将选区内容缩写压缩，保留关键情节信息与最有力的意象，删去冗余铺陈，语言凝练。
 
 【上下文】
 {{context}}
@@ -640,7 +672,17 @@ description: 压缩精炼冗余铺陈与拖沓情节，提取核心故事动线�
 【写作要求】
 {{instruction}}
 
+缩写准则：
+1. 零新增：不补动机、不补过渡、不补主题。原文没写的，缩写稿也不写。
+2. 不改动事实与顺序：主干事件的先后与结局状态必须与原文一致。
+3. 人名与称呼一致：与原文完全相同，不改写、不简化、不简称。
+4. 不注水凑字数：目标字数超了就继续压，不要用抽象评论填充。
+5. 保留最有力意象：优先保留揭示人物或铺垫线索的细节。
+
 请直接输出缩写后的正文，不要输出解释。""",
+        "files": [
+            ("references/compression-formats.md", COMPRESSION_FORMATS),
+        ],
     },
     {
         "name": "default-rewrite",
@@ -653,18 +695,28 @@ name: default-rewrite
 description: 修正病句错别字、替换平淡俗套表达、优化叙事节奏与文学意蕴，适合草稿定稿前精修打磨时使用。
 ---
 
-你是一位长篇小说写作助手。请对选区文字进行改写润色：修正语病、替换平淡表达、调整句式节奏，但保留原意与叙事视角。
+你是一位长篇小说改写助手。请对选区文字进行改写：根据用户要求彻底改造原文的视角、文体、语言或内容，但保留核心事实与人物设定。
 
 【上下文】
 {{context}}
 
-【待润色选区】
+【待改写选区】
 {{selection}}
 
 【写作要求】
 {{instruction}}
 
-请直接输出润色后的正文，不要输出解释。""",
+改写准则：
+1. 改就要改彻底：换人称则全篇指代、内心描写归属、对话自称都要跟着改。
+2. 残留清零：改写后任何连续 12 字以上与原文相同的片段都要处理，除非属于关键台词或专有名词。
+3. 不合并任务：用户只要换人称，就不要顺手改文风。
+4. 不改不该改的：用户没要求改的维度保持原样。
+5. 控 AI 腔：无"仿佛/不禁/五味杂陈"、无排比抒情、无总结式升华。
+
+请直接输出改写后的正文，不要输出解释。""",
+        "files": [
+            ("references/rewrite-dimensions.md", REWRITE_DIMENSIONS),
+        ],
     },
     {
         "name": "default-outline",
@@ -714,6 +766,7 @@ description: 交叉对照全书设定库，严密审校战力体系、人物性�
 ]
 
 
+
 def migrate_and_seed_skills(conn: sqlite3.Connection | None = None):
     """首启自动迁移旧 prompts 到 skills 表，并初始化规范内置 Skill 种子。幂等执行。"""
     if conn is None:
@@ -723,7 +776,8 @@ def migrate_and_seed_skills(conn: sqlite3.Connection | None = None):
     migrated_row = conn.execute("SELECT value FROM app_settings WHERE key = 'skill_migration_done'").fetchone()
     already_done = migrated_row and str(migrated_row[0]).strip() == "1"
 
-    # 2. 插入或确保内置 Skill 种子就绪
+    # 2. 插入或确保内置 Skill 种子就绪（含参考资源文件）
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for s in BUILTIN_SKILLS:
         conn.execute("""
             INSERT INTO skills(name, title, description, body_md, version, enabled, applies_to, source, icon)
@@ -736,6 +790,18 @@ def migrate_and_seed_skills(conn: sqlite3.Connection | None = None):
                 source = 'builtin',
                 icon = excluded.icon
         """, (s["name"], s["title"], s["description"], s["body_md"], s["applies_to"], s["icon"]))
+
+        skill_id = conn.execute("SELECT id FROM skills WHERE name = ?", (s["name"],)).fetchone()[0]
+        for fpath, fcontent in s.get("files", []):
+            fsize = len(fcontent.encode("utf-8"))
+            conn.execute("""
+                INSERT INTO skill_files(skill_id, path, content, size, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(skill_id, path) DO UPDATE SET
+                    content = excluded.content,
+                    size = excluded.size,
+                    updated_at = excluded.updated_at
+            """, (skill_id, fpath, fcontent, fsize, now))
 
     # 3. 若未完成旧数据迁移，将 prompts 表内容平滑迁移至 skills 表
     if not already_done:
