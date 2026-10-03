@@ -343,7 +343,7 @@ class AIOrchestrator:
                 return {
                     "ok": False,
                     "code": "no_config",
-                    "message": "????AI ??????? Base URL ? API Key",
+                    "message": "请先在系统设置中配置 AI 的 Base URL 和 API Key",
                     "models": [],
                     "total": 0,
                     "cached": False,

@@ -1,6 +1,6 @@
-# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
-"""OpenAI 兼容接口客户端：非流式调用与 SSE 流式解析。"""
+"""OpenAI 兼容接口客户端：非流式对话与 SSE 流式对话。"""
 import json
 
 import httpx
@@ -11,7 +11,7 @@ TIMEOUT = 120.0
 
 
 class AIError(Exception):
-    """AI 调用失败（信息已友好化，可直接展示给用户）。"""
+    """AI 调用失败，信息友好化后可直接展示给用户。"""
 
 
 def get_ai_config() -> dict:
@@ -22,17 +22,17 @@ def get_ai_config() -> dict:
 
 def _friendly(e: Exception) -> AIError:
     if isinstance(e, httpx.ConnectError):
-        return AIError("无法连接 AI 接口，请检查 Base URL 是否正确、服务是否已启动")
+        return AIError("无法连接 AI 接口，请检查 Base URL 是否正确，网络是否畅通。")
     if isinstance(e, httpx.TimeoutException):
-        return AIError("AI 接口请求超时，请稍后重试")
+        return AIError("AI 接口请求超时，请稍后重试。")
     return AIError(f"AI 接口调用失败：{e}")
 
 
 def _check_status(resp: httpx.Response):
     if resp.status_code == 401:
-        raise AIError("API Key 无效或已过期（401）")
+        raise AIError("API Key 无效或已过期（401）。")
     if resp.status_code == 404:
-        raise AIError("接口路径不存在（404），请确认 Base URL 以 /v1 结尾")
+        raise AIError("接口路径不存在（404），请确认 Base URL 以 /v1 结尾。")
     if resp.status_code >= 400:
         raise AIError(f"AI 接口返回错误（{resp.status_code}）：{resp.text[:200]}")
 
@@ -64,7 +64,7 @@ async def chat(messages: list, cfg: dict, max_tokens: int | None = None):
 
 
 async def chat_stream(messages: list, cfg: dict, usage_box: dict):
-    """流式调用：异步产出 delta 文本；结束后把 total_tokens 写入 usage_box（可能缺省）。"""
+    """流式调用，异步产生 delta 文本；若有 total_tokens 写入 usage_box；兼容非流式返回兜底。"""
     payload = {
         "model": cfg["ai_model"],
         "messages": messages,
@@ -77,7 +77,7 @@ async def chat_stream(messages: list, cfg: dict, usage_box: dict):
                 if resp.status_code >= 400:
                     await resp.aread()
                     _check_status(resp)
-                # 部分兼容服务忽略 stream 参数直接返回 JSON，做个回退
+                # 部分兼容服务端不支持 stream 参数而直接返回 JSON，做兼容降级
                 if "text/event-stream" not in resp.headers.get("content-type", ""):
                     data = (await resp.aread()).decode("utf-8", "ignore")
                     try:
@@ -90,7 +90,7 @@ async def chat_stream(messages: list, cfg: dict, usage_box: dict):
                             yield text
                         return
                     except json.JSONDecodeError:
-                        raise AIError("AI 接口返回了无法解析的内容（非 SSE 也非 JSON）")
+                        raise AIError("AI 接口返回了无法解析的内容（非 SSE 也非 JSON）。")
                 async for line in resp.aiter_lines():
                     if not line.startswith("data:"):
                         continue
@@ -120,17 +120,17 @@ NON_CHAT_PATTERNS = ("embed", "rerank", "bge-", "whisper", "tts", "moderation",
 
 async def list_models(cfg: dict, *, refresh: bool = False,
                       cache_get=None, cache_set=None) -> dict:
-    """?? {ok, models, total, fetched_at, cached, source, message}?
+    """返回 {ok, models, total, fetched_at, cached, source, message}。
 
-    cache_get/cache_set ????????????????? settings ????
-    ???????? db ???????
+    cache_get/cache_set 接受可调用对象，避免直接依赖 settings 模块引发循环导入。
+    通常由上层注入读取与写入 db 的回调函数。
     """
     import datetime
 
     base_url = (cfg.get("ai_base_url") or "").rstrip("/")
     api_key = (cfg.get("ai_api_key") or "").strip()
 
-    # 1. ????? (refresh=False)
+    # 1. 优先读取缓存 (refresh=False)
     cached_data = None
     if not refresh and cache_get:
         try:
@@ -141,7 +141,7 @@ async def list_models(cfg: dict, *, refresh: bool = False,
                 c_fetched = c_json.get("fetched_at")
                 c_models = c_json.get("models")
                 if c_base == base_url and c_fetched and isinstance(c_models, list):
-                    # ????? 24 ???
+                    # 缓存有效期 24 小时
                     dt = datetime.datetime.fromisoformat(c_fetched)
                     now = datetime.datetime.now(datetime.timezone.utc)
                     if dt.tzinfo is None:
@@ -161,7 +161,7 @@ async def list_models(cfg: dict, *, refresh: bool = False,
         except Exception:
             pass
 
-    # 2. ?????
+    # 2. 请求远程模型列表
     try:
         async with _client(cfg) as c:
             resp = await c.get("/models", timeout=MODELS_TIMEOUT)
@@ -169,7 +169,7 @@ async def list_models(cfg: dict, *, refresh: bool = False,
                 return {
                     "ok": False,
                     "code": "auth",
-                    "message": "API Key ???????401?",
+                    "message": "API Key 无效或已过期（401）",
                     "models": [],
                     "total": 0,
                     "cached": False,
@@ -179,7 +179,7 @@ async def list_models(cfg: dict, *, refresh: bool = False,
                 return {
                     "ok": False,
                     "code": "unsupported",
-                    "message": "?????????????",
+                    "message": "服务商未提供模型列表接口（404）",
                     "models": [],
                     "total": 0,
                     "cached": False,
@@ -189,7 +189,7 @@ async def list_models(cfg: dict, *, refresh: bool = False,
                 return {
                     "ok": False,
                     "code": "network",
-                    "message": f"AI ???????{resp.status_code}??{resp.text[:200]}",
+                    "message": f"AI 接口请求失败：{resp.status_code}，{resp.text[:200]}",
                     "models": [],
                     "total": 0,
                     "cached": False,
@@ -208,10 +208,10 @@ async def list_models(cfg: dict, *, refresh: bool = False,
             "source": "remote",
         }
 
-    # 3. ?????
+    # 3. 解析模型列表
     raw_data = raw_json.get("data")
     if not isinstance(raw_data, list):
-        # ????????????
+        # 部分服务商直接返回列表，兼容两种格式
         if isinstance(raw_json, list):
             raw_data = raw_json
         else:
@@ -227,7 +227,7 @@ async def list_models(cfg: dict, *, refresh: bool = False,
             continue
         if mid in seen_ids:
             continue
-        # ???????
+        # 过滤非文本对话模型
         low_id = mid.lower()
         if any(pat in low_id for pat in NON_CHAT_PATTERNS):
             continue
@@ -237,18 +237,18 @@ async def list_models(cfg: dict, *, refresh: bool = False,
             owned_by = ""
         models.append({"id": mid, "owned_by": owned_by})
 
-    # ???owned_by ?? -> id ???? owned_by ???
+    # 排序：有 owned_by 优先 -> 按 owned_by 字母升序 -> 按 id 字母升序
     models.sort(key=lambda x: (1 if not x["owned_by"] else 0, x["owned_by"].lower(), x["id"].lower()))
 
     total = len(models)
     msg = ""
     if total > 500:
         models = models[:500]
-        msg = "????????? 500 ???"
+        msg = "模型数量过多，已截取前 500 个模型"
 
     fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-    # 4. ???
+    # 4. 写入缓存
     if cache_set:
         try:
             cache_payload = json.dumps({

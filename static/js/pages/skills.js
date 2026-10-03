@@ -402,7 +402,7 @@ registerPage("skills", async (view) => {
     });
 
     leftCol.append(
-      field("规范名称 (name)", nameInput, "必须符合小写字母、数字与连字符，≤64 字符"),
+      field("规范名称 (name)", nameInput, "仅支持小写字母、数字与连字符 -（例：chapter-polish，禁止下划线），≤64 字符"),
       field("展示标题 (title)", titleInput),
       field("触发依据与描述 (description)", descInput, "用于模型选择依据与功能自述"),
       field("适用任务类型 (applies_to)", appliesSelect),
@@ -523,6 +523,12 @@ registerPage("skills", async (view) => {
 
       if (!payload.name) {
         ui.toast("请填写规范名称", "err");
+        nameInput.focus();
+        return;
+      }
+      const nameRegex = /^[a-z0-9][a-z0-9-]{0,63}$/;
+      if (!nameRegex.test(payload.name)) {
+        ui.toast("规范名称格式不正确：仅支持小写字母、数字及连字符 -（不可使用下划线或大写）", "err");
         nameInput.focus();
         return;
       }

@@ -23,3 +23,12 @@ def test_custom_data_dir_env(tmp_path, monkeypatch):
     import importlib
     importlib.reload(paths)
     assert paths.DATA_DIR == custom_dir.resolve()
+def test_api_version_endpoint():
+    """验证版本端点 /api/version 返回 200 及当前应用版本号。"""
+    app = create_app()
+    client = TestClient(app)
+    res = client.get("/api/version")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["version"] == "1.7.3"
