@@ -114,6 +114,254 @@ registerPage("settings", async (view) => {
   aiKey.addEventListener("change", () => save({ ai_api_key: aiKey.value.trim() }));
   aiModel.addEventListener("change", () => save({ ai_model: aiModel.value.trim() }));
 
+  /* ---------- 3.1 AI ?????? (ModelPicker) ---------- */
+  function createModelPicker(inputEl, urlEl, keyEl, providerSel, onSelect) {
+    const wrap = ui.el("div", { class: "relative w-full" });
+    
+    // ?????????????????
+    const inputGroup = ui.el("div", { class: "relative flex items-center w-full" });
+    inputEl.className = inputCls + " pr-20";
+    
+    const browseBtn = ui.el("button", {
+      type: "button",
+      class: "absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container hover:bg-surface-container-high text-on-surface font-label-sm text-xs transition-colors cursor-pointer",
+      onclick: (e) => {
+        e.stopPropagation();
+        toggleDropdown();
+      }
+    }, ui.icon("travel_explore", "text-[16px]"), "??");
+
+    inputGroup.append(inputEl, browseBtn);
+    wrap.append(inputGroup);
+
+    // ??????
+    const dropdown = ui.el("div", {
+      class: "absolute left-0 top-full mt-1.5 w-full z-50 rounded-xl bg-surface-container-lowest border border-outline-variant/60 shadow-[0_8px_24px_rgba(27,42,56,0.15)] flex flex-col overflow-hidden max-h-80 text-xs animate-in fade-in zoom-in-95 duration-100",
+      style: "display: none;"
+    });
+    wrap.append(dropdown);
+
+    let isOpen = false;
+    let loading = false;
+    let modelsList = [];
+    let activeIndex = -1;
+    let currentSource = "remote";
+    let statusMessage = "";
+
+    function close() {
+      if (!isOpen) return;
+      isOpen = false;
+      dropdown.style.display = "none";
+      document.removeEventListener("click", onDocClick);
+      document.removeEventListener("keydown", onKeyDown);
+    }
+
+    function onDocClick(e) {
+      if (!wrap.contains(e.target)) close();
+    }
+
+    function onKeyDown(e) {
+      if (!isOpen) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (modelsList.length > 0) {
+          activeIndex = (activeIndex + 1) % modelsList.length;
+          renderItems();
+        }
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        if (modelsList.length > 0) {
+          activeIndex = (activeIndex - 1 + modelsList.length) % modelsList.length;
+          renderItems();
+        }
+      } else if (e.key === "Enter") {
+        if (activeIndex >= 0 && activeIndex < modelsList.length) {
+          e.preventDefault();
+          selectModel(modelsList[activeIndex].id);
+        }
+      }
+    }
+
+    async function toggleDropdown() {
+      if (isOpen) {
+        close();
+        return;
+      }
+      isOpen = true;
+      dropdown.style.display = "flex";
+      document.addEventListener("click", onDocClick);
+      document.addEventListener("keydown", onKeyDown);
+
+      // ????????? URL ? Key
+      await save({
+        ai_base_url: urlEl.value.trim(),
+        ai_api_key: keyEl.value.trim(),
+        ai_model: inputEl.value.trim()
+      });
+
+      await fetchModels(false);
+    }
+
+    async function fetchModels(forceRefresh = false) {
+      loading = true;
+      renderLoading();
+      try {
+        const res = await api.get(`/ai/models?refresh=${forceRefresh ? 1 : 0}`);
+        loading = false;
+        if (res.ok && res.models && res.models.length > 0) {
+          modelsList = res.models;
+          currentSource = res.source || "remote";
+          statusMessage = res.message || "";
+          // ???????????????????
+          const curVal = inputEl.value.trim();
+          const foundIdx = modelsList.findIndex(m => m.id === curVal);
+          if (foundIdx > 0) {
+            const item = modelsList.splice(foundIdx, 1)[0];
+            modelsList.unshift(item);
+          }
+          activeIndex = modelsList.findIndex(m => m.id === curVal);
+          if (activeIndex < 0) activeIndex = 0;
+          renderList();
+        } else {
+          // ?? L2?????
+          fallbackToPresets(res.message || "???????????");
+        }
+      } catch (err) {
+        loading = false;
+        fallbackToPresets(err.message || "????????");
+      }
+    }
+
+    function fallbackToPresets(errMsg) {
+      const p = AI_PROVIDERS.find(x => x.key === providerSel.value);
+      if (p && p.key !== "custom" && p.models) {
+        const rawPresets = p.models.split("/").map(s => s.trim()).filter(Boolean);
+        modelsList = rawPresets.map(id => ({ id, owned_by: p.name }));
+        currentSource = "preset";
+        statusMessage = "????????????????";
+        const curVal = inputEl.value.trim();
+        activeIndex = modelsList.findIndex(m => m.id === curVal);
+        renderList();
+      } else {
+        renderError(errMsg);
+      }
+    }
+
+    function renderLoading() {
+      dropdown.innerHTML = "";
+      dropdown.append(ui.el("div", { class: "p-4 flex items-center justify-center gap-2 text-on-surface-variant font-label-sm" },
+        ui.icon("progress_activity", "text-[18px] animate-spin text-primary"),
+        ui.el("span", {}, "????????????")
+      ));
+    }
+
+    function renderError(msg) {
+      dropdown.innerHTML = "";
+      const box = ui.el("div", { class: "p-3 space-y-2 text-center" });
+      box.append(
+        ui.el("div", { class: "text-error font-label-sm flex items-center justify-center gap-1" },
+          ui.icon("error_outline", "text-[16px]"),
+          ui.el("span", {}, msg)
+        ),
+        ui.el("div", { class: "flex items-center justify-center gap-2 pt-1" },
+          ui.el("button", {
+            type: "button",
+            class: "px-3 py-1 rounded bg-surface-container hover:bg-surface-container-high text-xs text-on-surface cursor-pointer",
+            onclick: () => fetchModels(true)
+          }, "????"),
+          ui.el("button", {
+            type: "button",
+            class: "px-3 py-1 rounded bg-primary text-on-primary text-xs cursor-pointer",
+            onclick: close
+          }, "????")
+        )
+      );
+      dropdown.append(box);
+    }
+
+    function selectModel(mId) {
+      inputEl.value = mId;
+      if (onSelect) onSelect(mId);
+      close();
+    }
+
+    function renderList() {
+      dropdown.innerHTML = "";
+
+      // ???????????
+      const header = ui.el("div", { class: "flex items-center justify-between px-3 py-1.5 bg-surface-container-low border-b border-outline-variant/40 shrink-0" });
+      const tipText = currentSource === "preset"
+        ? (statusMessage || "?????????")
+        : (currentSource === "cache" ? "??????24h???" : "????????");
+      header.append(
+        ui.el("span", { class: "text-[11px] text-outline truncate", title: tipText }, tipText),
+        ui.el("button", {
+          type: "button",
+          class: "p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer",
+          title: "????",
+          onclick: (e) => {
+            e.stopPropagation();
+            fetchModels(true);
+          }
+        }, ui.icon("refresh", "text-[14px]"))
+      );
+      dropdown.append(header);
+
+      const listBox = ui.el("div", { class: "flex-1 overflow-y-auto divide-y divide-outline-variant/30 py-1" });
+      dropdown.append(listBox);
+      renderItemsInto(listBox);
+    }
+
+    function renderItems() {
+      const listBox = dropdown.querySelector(".overflow-y-auto");
+      if (listBox) renderItemsInto(listBox);
+    }
+
+    function renderItemsInto(listBox) {
+      listBox.innerHTML = "";
+      const curVal = inputEl.value.trim();
+      modelsList.forEach((m, idx) => {
+        const isSelected = m.id === curVal;
+        const isActive = idx === activeIndex;
+        const itemRow = ui.el("div", {
+          class: `px-3 py-2 flex items-center justify-between cursor-pointer transition-colors ${
+            isActive ? "bg-surface-container-high" : (isSelected ? "bg-surface-container-low" : "hover:bg-surface-container")
+          }`,
+          onclick: (e) => {
+            e.stopPropagation();
+            selectModel(m.id);
+          },
+          onmouseenter: () => {
+            activeIndex = idx;
+            renderItems();
+          }
+        },
+          ui.el("div", { class: "flex items-center gap-2 overflow-hidden" },
+            isSelected ? ui.icon("check", "text-[16px] text-primary shrink-0") : ui.el("span", { class: "w-4 shrink-0" }),
+            ui.el("div", { class: "flex flex-col overflow-hidden" },
+              ui.el("span", { class: "font-mono font-medium text-on-surface truncate" }, m.id),
+              m.owned_by ? ui.el("span", { class: "text-[10px] text-outline truncate" }, m.owned_by) : null
+            )
+          )
+        );
+        if (isActive) {
+          setTimeout(() => itemRow.scrollIntoView({ block: "nearest" }), 0);
+        }
+        listBox.append(itemRow);
+      });
+    }
+
+    return wrap;
+  }
+
+  const modelPickerWrap = createModelPicker(aiModel, aiUrl, aiKey, providerSelect, (mId) => {
+    save({ ai_model: mId }, `??????${mId}`);
+  });
+
+
   const providerHint = ui.el("div", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "");
   const providerSelect = ui.el("select", { class: inputCls + " cursor-pointer" },
     AI_PROVIDERS.map((p) => ui.el("option", { value: p.key }, p.name)));
@@ -705,7 +953,7 @@ registerPage("settings", async (view) => {
         ui.el("div", { class: "flex flex-col gap-1.5" },
           ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "API Key"), aiKey),
         ui.el("div", { class: "flex flex-col gap-1.5" },
-          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "模型名"), aiModel)),
+          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "模型名"), modelPickerWrap)),
       ui.el("div", { class: "flex items-center gap-space-md" }, testBtn, testResult),
       routeCard,
       ui.el("div", { class: "p-space-lg rounded-xl bg-gradient-to-r from-surface-container-low to-surface-container-high/40 flex flex-col gap-1" },

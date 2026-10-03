@@ -111,3 +111,161 @@ async def chat_stream(messages: list, cfg: dict, usage_box: dict):
         raise
     except Exception as e:
         raise _friendly(e)
+
+
+MODELS_TIMEOUT = 15.0
+NON_CHAT_PATTERNS = ("embed", "rerank", "bge-", "whisper", "tts", "moderation",
+                     "dall-e", "omni-moderation", "text-moderation", "voice", "realtime")
+
+
+async def list_models(cfg: dict, *, refresh: bool = False,
+                      cache_get=None, cache_set=None) -> dict:
+    """?? {ok, models, total, fetched_at, cached, source, message}?
+
+    cache_get/cache_set ????????????????? settings ????
+    ???????? db ???????
+    """
+    import datetime
+
+    base_url = (cfg.get("ai_base_url") or "").rstrip("/")
+    api_key = (cfg.get("ai_api_key") or "").strip()
+
+    # 1. ????? (refresh=False)
+    cached_data = None
+    if not refresh and cache_get:
+        try:
+            raw_cache = cache_get("ai_models_cache")
+            if raw_cache:
+                c_json = json.loads(raw_cache) if isinstance(raw_cache, str) else raw_cache
+                c_base = c_json.get("base_url")
+                c_fetched = c_json.get("fetched_at")
+                c_models = c_json.get("models")
+                if c_base == base_url and c_fetched and isinstance(c_models, list):
+                    # ????? 24 ???
+                    dt = datetime.datetime.fromisoformat(c_fetched)
+                    now = datetime.datetime.now(datetime.timezone.utc)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=datetime.timezone.utc)
+                    if (now - dt).total_seconds() < 86400:
+                        return {
+                            "ok": True,
+                            "models": c_models,
+                            "total": len(c_models),
+                            "fetched_at": c_fetched,
+                            "cached": True,
+                            "source": "cache",
+                            "message": "",
+                        }
+                    else:
+                        cached_data = c_models
+        except Exception:
+            pass
+
+    # 2. ?????
+    try:
+        async with _client(cfg) as c:
+            resp = await c.get("/models", timeout=MODELS_TIMEOUT)
+            if resp.status_code == 401:
+                return {
+                    "ok": False,
+                    "code": "auth",
+                    "message": "API Key ???????401?",
+                    "models": [],
+                    "total": 0,
+                    "cached": False,
+                    "source": "remote",
+                }
+            if resp.status_code == 404:
+                return {
+                    "ok": False,
+                    "code": "unsupported",
+                    "message": "?????????????",
+                    "models": [],
+                    "total": 0,
+                    "cached": False,
+                    "source": "remote",
+                }
+            if resp.status_code >= 400:
+                return {
+                    "ok": False,
+                    "code": "network",
+                    "message": f"AI ???????{resp.status_code}??{resp.text[:200]}",
+                    "models": [],
+                    "total": 0,
+                    "cached": False,
+                    "source": "remote",
+                }
+            raw_json = resp.json()
+    except Exception as e:
+        friendly = _friendly(e)
+        return {
+            "ok": False,
+            "code": "network",
+            "message": str(friendly),
+            "models": [],
+            "total": 0,
+            "cached": False,
+            "source": "remote",
+        }
+
+    # 3. ?????
+    raw_data = raw_json.get("data")
+    if not isinstance(raw_data, list):
+        # ????????????
+        if isinstance(raw_json, list):
+            raw_data = raw_json
+        else:
+            raw_data = []
+
+    models = []
+    seen_ids = set()
+    for item in raw_data:
+        if not isinstance(item, dict):
+            continue
+        mid = item.get("id")
+        if not mid or not isinstance(mid, str):
+            continue
+        if mid in seen_ids:
+            continue
+        # ???????
+        low_id = mid.lower()
+        if any(pat in low_id for pat in NON_CHAT_PATTERNS):
+            continue
+        seen_ids.add(mid)
+        owned_by = item.get("owned_by") or ""
+        if not isinstance(owned_by, str):
+            owned_by = ""
+        models.append({"id": mid, "owned_by": owned_by})
+
+    # ???owned_by ?? -> id ???? owned_by ???
+    models.sort(key=lambda x: (1 if not x["owned_by"] else 0, x["owned_by"].lower(), x["id"].lower()))
+
+    total = len(models)
+    msg = ""
+    if total > 500:
+        models = models[:500]
+        msg = "????????? 500 ???"
+
+    fetched_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    # 4. ???
+    if cache_set:
+        try:
+            cache_payload = json.dumps({
+                "base_url": base_url,
+                "fetched_at": fetched_at,
+                "models": models
+            }, ensure_ascii=False)
+            cache_set("ai_models_cache", cache_payload)
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "models": models,
+        "total": total,
+        "fetched_at": fetched_at,
+        "cached": False,
+        "source": "remote",
+        "message": msg,
+    }

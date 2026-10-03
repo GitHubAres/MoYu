@@ -480,6 +480,7 @@ DEFAULT_SETTINGS = {
 
     "announcement_url": "https://github.com/GitHubAres/MoYu/releases/latest/download/announcement.json",
     "skill_migration_done": "0",
+    "ai_models_cache": "",
 
 }
 

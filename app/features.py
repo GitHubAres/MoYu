@@ -14,7 +14,7 @@ from pydantic import BaseModel
 import time
 
 from app.ai_tasks import create_task, fail_task, finish_task, start_task
-from app.ai_client import AIError, chat, chat_stream, get_ai_config
+from app.ai_client import AIError, chat, chat_stream, get_ai_config, list_models
 from app.db import get_db
 
 
@@ -335,6 +335,31 @@ class AIOrchestrator:
         @router.post("/test")
         async def test_connection(body: _TestIn | None = None):
             return await orchestrator.test_connection(body)
+
+        @router.get("/models")
+        async def list_models_route(refresh: int = 0):
+            cfg = get_ai_config()
+            if not (cfg.get("ai_base_url") or "").strip() or not (cfg.get("ai_api_key") or "").strip():
+                return {
+                    "ok": False,
+                    "code": "no_config",
+                    "message": "????AI ??????? Base URL ? API Key",
+                    "models": [],
+                    "total": 0,
+                    "cached": False,
+                    "source": "preset",
+                }
+
+            def cache_get(key: str):
+                row = get_db().execute("SELECT value FROM app_settings WHERE key = ?", (key,)).fetchone()
+                return row["value"] if row else None
+
+            def cache_set(key: str, val: str):
+                db = get_db()
+                db.execute("INSERT INTO app_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, val))
+                db.commit()
+
+            return await list_models(cfg, refresh=bool(refresh), cache_get=cache_get, cache_set=cache_set)
 
         return router
 
