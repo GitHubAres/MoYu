@@ -202,20 +202,6 @@ CREATE TABLE IF NOT EXISTS notes (
 
 );
 
-CREATE TABLE IF NOT EXISTS prompts (
-
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-    name TEXT NOT NULL,
-
-    task_type TEXT DEFAULT 'continue',
-
-    template TEXT NOT NULL,
-
-    builtin INTEGER DEFAULT 0
-
-);
-
 CREATE TABLE IF NOT EXISTS exports (
 
     id INTEGER PRIMARY KEY AUTOINCREMENT,

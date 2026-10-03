@@ -36,7 +36,7 @@ def client():
 
     from app.main import create_app
 
-    app = create_app()  # 内部再次 init_db()，并触发 api 模块导入（含 prompts 内置种子）
+    app = create_app()  # 内部再次 init_db()，并触发 api 模块导入
 
     # 导出/导入目录在模块导入时按真实 DATA_DIR 求值，这里重定向到临时目录
     import app.exporter as exporter

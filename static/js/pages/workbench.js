@@ -57,7 +57,7 @@ registerPage("workbench", async (view, { segs, params }) => {
   const TASK_SKILL_MAP = { condense: "shorten", polish: "rewrite" };
   function refreshPromptOptions() {
     skillSelect.innerHTML = "";
-    skillSelect.append(ui.el("option", { value: "" }, "默认技能 (内置)"));
+    skillSelect.append(ui.el("option", { value: "" }, "自动匹配内置技能（推荐）"));
     const skillTask = TASK_SKILL_MAP[aiTask] || aiTask;
     const matched = skills.filter((s) => !s.applies_to || s.applies_to === skillTask);
     for (const s of matched) {
@@ -975,6 +975,20 @@ registerPage("workbench", async (view, { segs, params }) => {
       () => aiCandidates, (v) => { aiCandidates = v; });
     candBtns = candSeg;
 
+    /* 长度/候选/写作技能：单一实例，随聊天/经典模式在抽屉与经典面板之间搬移挂载 */
+    const settingsBlock = ui.el("div", { class: "flex flex-col gap-2" },
+      ui.el("div", { class: "flex items-center gap-space-sm" },
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
+      ui.el("div", { class: "flex items-center gap-space-sm" },
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
+      ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "写作技能"),
+      skillSelect,
+      ui.el("div", { class: "flex items-center justify-between" },
+        ui.el("span", { class: "text-[11px] text-on-surface-variant" }, "未选择时按任务自动匹配内置技能"),
+        ui.el("a", { class: "text-[11px] text-primary hover:underline cursor-pointer", href: "#/skills", onclick: (e) => { e.preventDefault(); location.hash = "#/skills"; } }, "管理技能 →")));
+    const classicSettingsSlot = ui.el("div");
+    const drawerSettingsSlot = ui.el("div");
+
     const classicHeader = ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
       ui.el("div", { class: "flex items-center justify-between" },
         ui.el("div", { class: "flex items-center gap-2" },
@@ -1012,12 +1026,7 @@ registerPage("workbench", async (view, { segs, params }) => {
           ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "任务控制")),
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "任务"),
         taskSeg.wrap,
-        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "提示词模板"),
-        skillSelect,
-        ui.el("div", { class: "flex items-center gap-space-sm" },
-          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
-        ui.el("div", { class: "flex items-center gap-space-sm" },
-          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
+        classicSettingsSlot,
         instrInput,
         recentBox,
         genBtn, stopBtn,
@@ -1026,12 +1035,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     );
 
     const drawerSettingsBox = ui.el("div", { class: "flex flex-col gap-2 pt-2 border-t border-border-feather" },
-      ui.el("div", { class: "flex items-center gap-space-sm" },
-        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
-      ui.el("div", { class: "flex items-center gap-space-sm" },
-        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
-      ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "提示词模板"),
-      skillSelect,
+      drawerSettingsSlot,
       ui.el("div", { class: "flex flex-wrap gap-1 pt-1 border-t border-border-feather/50" },
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/outline/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/outline/${workId}`; } }, "故事大纲"),
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/entities/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/entities/${workId}`; } }, "设定库"),
@@ -1078,9 +1082,11 @@ registerPage("workbench", async (view, { segs, params }) => {
 
     function syncAiPanelMode() {
       if (isClassicCandidateMode) {
+        classicSettingsSlot.append(settingsBlock);
         classicBox.classList.remove("hidden");
         if (workbenchChatInstance) workbenchChatInstance.el.classList.add("hidden");
       } else {
+        drawerSettingsSlot.append(settingsBlock);
         classicBox.classList.add("hidden");
         if (workbenchChatInstance) workbenchChatInstance.el.classList.remove("hidden");
       }
