@@ -1,12 +1,15 @@
-﻿
+
 /* 响应式基础与防溢出 */
 html, body {
   margin: 0;
   padding: 0;
   width: 100%;
-  overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
 }
+/* WebView2/Edge 中 body 同时设置 overflow-x:hidden + overscroll-behavior:none 会导致滚轮事件被吞掉，
+   因此横向溢出控制只保留在 html，body 保持可见以恢复鼠标滚轮滚动。 */
+html { overflow-x: hidden; }
+body { overflow-x: visible; }
 img, video, canvas {
   max-width: 100%;
   height: auto;
@@ -40,7 +43,13 @@ img, video, canvas {
 /* 墨语MoYu 自定义样式（Tailwind 之外的补充） */
 
 html, body { margin: 0; padding: 0; }
-body { overscroll-behavior: none; }
+/* overscroll-behavior 仅在触控设备需要，桌面 WebView2 保持原生滚轮行为 */
+@media (hover: none) and (pointer: coarse) {
+  body { overscroll-behavior: none; }
+}
+
+/* 大标题字墨防裁切：Noto Serif SC 在 WebView2 中 40px 字墨会略超 52px line box */
+.font-display.text-display { padding-top: 0.05em; }
 
 /* 细滚动条（替换设计稿的隐藏滚动条，保证可用性） */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
