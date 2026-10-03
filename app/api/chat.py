@@ -1,4 +1,4 @@
-﻿# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
 """AI 修撰使多轮对话路由：会话管理、多轮历史装配、SSE 流式交互与采纳状态维护。"""
 import json
@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from app.ai_client import AIError, chat, chat_stream
 from app.ai_tasks import create_task, fail_task, finish_task, start_task
 from app.db import get_db
-from app.features import AIOrchestrator, build_skill_system_prompt, get_ai_config
+from app.features import AIOrchestrator, build_skill_system_prompt, get_ai_config, resolve_skill
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -177,6 +177,45 @@ async def send_chat_message(body: ChatIn):
         length=body.length,
     )
 
+    # 收集「修撰使思考过程」步骤信息（Agent 风格任务追踪）
+    ctx_count = len([x for x in body.context.split("\n\n----\n\n") if x.strip()]) if body.context.strip() else 0
+    sel_len = len(body.selection.strip())
+    len_label = {"short": "简", "medium": "中", "long": "长"}.get(body.length, "中")
+    parse_detail = f"{task_desc} · 篇幅{len_label}"
+    if sel_len:
+        parse_detail += f" · 选区 {sel_len} 字"
+    parse_detail += f" · 挂载上下文 {ctx_count} 项"
+
+    steps = [{"id": "parse", "title": "解析创作任务", "detail": parse_detail, "status": "done"}]
+
+    skill_row = resolve_skill(body.skill_id, task)
+    if skill_row:
+        source_label = {"builtin": "内置", "custom": "自定义", "migrated": "迁移", "imported": "导入"}.get(skill_row["source"], skill_row["source"])
+        steps.append({
+            "id": "skill",
+            "title": "匹配写作技能",
+            "detail": f"{skill_row['title']}（{skill_row['name']}@{skill_row['version']} · {source_label}）",
+            "status": "done",
+        })
+        ref_rows = db.execute(
+            "SELECT path FROM skill_files WHERE skill_id = ? AND path LIKE 'references/%' ORDER BY path ASC",
+            (skill_row["id"],),
+        ).fetchall()
+        if ref_rows:
+            names = [r["path"].split("/")[-1] for r in ref_rows]
+            shown = "、".join(names[:3]) + (" 等" if len(names) > 3 else "")
+            steps.append({
+                "id": "refs",
+                "title": "装载方法论参考",
+                "detail": f"{shown}（共 {len(names)} 份）",
+                "status": "done",
+            })
+    else:
+        steps.append({"id": "skill", "title": "匹配写作技能", "detail": "内置基础写作提示词", "status": "done"})
+
+    steps.append({"id": "prompt", "title": "装配系统提示词", "detail": f"约 {len(sys_prompt)} 字", "status": "done"})
+    steps.append({"id": "model", "title": f"连接模型 {cfg.get('ai_model', '')}", "detail": "流式通道就绪", "status": "done"})
+
     # 组装完整的 messages 数组
     messages = [{"role": "system", "content": sys_prompt}]
     for r in history_rows:
@@ -207,7 +246,8 @@ async def send_chat_message(body: ChatIn):
         try:
             reply_text, total_tokens = await chat(messages, cfg)
             elapsed = int((time.time() - start_time) * 1000)
-            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length}, ensure_ascii=False)
+            done_steps = [*steps, {"id": "generate", "title": "生成正文", "detail": f"输出 {len(reply_text)} 字 · 用时 {elapsed / 1000:.1f}s", "status": "done"}]
+            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length, "steps": done_steps}, ensure_ascii=False)
             cur_ai = db.execute(
                 """INSERT INTO chat_messages (session_id, role, content, task_type, meta_json, adopted)
                    VALUES (?, 'ai', ?, ?, ?, 0)""",
@@ -232,8 +272,13 @@ async def send_chat_message(body: ChatIn):
     async def event_stream():
         full_text = []
         total_tokens = 0
+        gen_step = {"id": "generate", "title": "生成正文", "detail": "流式输出中…", "status": "doing"}
+        run_steps = [*steps, gen_step]
         try:
             yield "data: " + json.dumps({"session_id": session_id, "task_id": task_id, "user_message_id": user_msg_id}, ensure_ascii=False) + "\n\n"
+            for st in steps:
+                yield "data: " + json.dumps({"step": st}, ensure_ascii=False) + "\n\n"
+            yield "data: " + json.dumps({"step": gen_step}, ensure_ascii=False) + "\n\n"
             yield "data: " + json.dumps({"candidate": 0, "start": True}, ensure_ascii=False) + "\n\n"
 
             async for delta in chat_stream(messages, cfg, {}):
@@ -243,9 +288,13 @@ async def send_chat_message(body: ChatIn):
             final_reply = "".join(full_text)
             elapsed = int((time.time() - start_time) * 1000)
 
-            # 写库记录 AI 回复
+            gen_step["status"] = "done"
+            gen_step["detail"] = f"输出 {len(final_reply)} 字 · 用时 {elapsed / 1000:.1f}s"
+            yield "data: " + json.dumps({"step": gen_step}, ensure_ascii=False) + "\n\n"
+
+            # 写库记录 AI 回复（meta 携带思考步骤供历史回放）
             thread_db = get_db()
-            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length}, ensure_ascii=False)
+            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length, "steps": run_steps}, ensure_ascii=False)
             cur_ai = thread_db.execute(
                 """INSERT INTO chat_messages (session_id, role, content, task_type, meta_json, adopted)
                    VALUES (?, 'ai', ?, ?, ?, 0)""",
@@ -259,9 +308,15 @@ async def send_chat_message(body: ChatIn):
             yield "data: " + json.dumps({"done": True, "message_id": ai_msg_id, "task_id": task_id}, ensure_ascii=False) + "\n\n"
         except AIError as e:
             fail_task(task_id, str(e), int((time.time() - start_time) * 1000))
+            gen_step["status"] = "error"
+            gen_step["detail"] = str(e)
+            yield "data: " + json.dumps({"step": gen_step}, ensure_ascii=False) + "\n\n"
             yield "data: " + json.dumps({"error": str(e), "task_id": task_id}, ensure_ascii=False) + "\n\n"
         except Exception as e:
             fail_task(task_id, f"生成失败：{e}", int((time.time() - start_time) * 1000))
+            gen_step["status"] = "error"
+            gen_step["detail"] = f"生成失败：{e}"
+            yield "data: " + json.dumps({"step": gen_step}, ensure_ascii=False) + "\n\n"
             yield "data: " + json.dumps({"error": f"生成失败：{e}", "task_id": task_id}, ensure_ascii=False) + "\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")

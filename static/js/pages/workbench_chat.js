@@ -1,4 +1,4 @@
-﻿/* 墨语 MoYu · AI 修撰使 多轮对话聊天窗口 (v1.3.0) */
+/* 墨语 MoYu · AI 修撰使 多轮对话聊天窗口 (v1.3.0) */
 
 window.WorkbenchChat = (() => {
   /**
@@ -297,6 +297,82 @@ window.WorkbenchChat = (() => {
       check: "检查",
     };
 
+    /* ---------- 修撰使思考过程（Agent 风格步骤追踪） ---------- */
+
+    const STEP_STATUS_STYLE = {
+      doing: { icon: "progress_activity", cls: "text-primary animate-spin" },
+      done:  { icon: "check_circle",      cls: "text-primary" },
+      error: { icon: "error",             cls: "text-error" },
+    };
+
+    function buildStepsBox(autoExpanded) {
+      const listEl = ui.el("div", { class: "flex flex-col gap-1 pt-1.5 mt-1 border-t border-border-feather/50" });
+      const summaryText = ui.el("span", { class: "font-label-sm text-[12px] text-on-surface-variant whitespace-nowrap overflow-hidden text-ellipsis" }, "思考过程");
+      const arrow = ui.icon("keyboard_arrow_down", "text-[16px] text-on-surface-variant transition-transform shrink-0");
+      const summaryRow = ui.el("div", {
+        class: "flex items-center gap-1.5 cursor-pointer select-none",
+        onclick: () => {
+          const willShow = listEl.classList.contains("hidden");
+          listEl.classList.toggle("hidden", !willShow);
+          arrow.style.transform = willShow ? "rotate(180deg)" : "rotate(0deg)";
+        },
+      }, ui.icon("psychology", "text-[14px] text-primary"), summaryText, arrow);
+      const box = ui.el("div", {
+        class: "mb-2 px-2.5 py-1.5 rounded-lg bg-surface-container-low/70 border border-border-feather/60",
+      }, summaryRow, listEl);
+
+      const stepEls = {};
+      let stepCount = 0;
+
+      if (!autoExpanded) {
+        listEl.classList.add("hidden");
+      } else {
+        arrow.style.transform = "rotate(180deg)";
+      }
+
+      box._upsertStep = (st) => {
+        if (!st || !st.id) return;
+        let row = stepEls[st.id];
+        if (!row) {
+          const iconEl = ui.icon("progress_activity", "text-[14px] mt-px shrink-0 text-primary animate-spin");
+          const titleEl = ui.el("span", { class: "font-medium text-on-surface" }, st.title || st.id);
+          const detailEl = ui.el("span", { class: "text-on-surface-variant break-words" }, st.detail || "");
+          row = {
+            iconEl, detailEl,
+            el: ui.el("div", { class: "flex items-start gap-1.5 text-[12px] leading-relaxed" },
+              iconEl,
+              ui.el("div", { class: "flex flex-col min-w-0" }, titleEl, detailEl)),
+          };
+          stepEls[st.id] = row;
+          listEl.append(row.el);
+          stepCount += 1;
+        }
+        const style = STEP_STATUS_STYLE[st.status] || STEP_STATUS_STYLE.done;
+        row.iconEl.textContent = style.icon;
+        row.iconEl.className = `material-symbols-outlined text-[14px] mt-px shrink-0 ${style.cls}`;
+        row.detailEl.textContent = st.detail || "";
+        if (st.status === "doing") {
+          summaryText.textContent = `思考过程 · ${st.title || ""}…`;
+        }
+      };
+
+      box._finalize = (result) => {
+        if (stepCount === 0) {
+          box.classList.add("hidden");
+          return;
+        }
+        listEl.classList.add("hidden");
+        arrow.style.transform = "rotate(0deg)";
+        if (result === "error") {
+          summaryText.textContent = `思考过程 · 生成中断（${stepCount} 步）`;
+        } else {
+          summaryText.textContent = `已完成思考 · ${stepCount} 步`;
+        }
+      };
+
+      return box;
+    }
+
     function createMessageBubble(msg) {
       const isUser = msg.role === "user";
 
@@ -335,6 +411,16 @@ window.WorkbenchChat = (() => {
       const card = ui.el("div", {
         class: "flex flex-col p-3 rounded-2xl rounded-tl-xs bg-surface-container-lowest border border-border-feather shadow-xs mr-4 transition-shadow",
       }, aiHeader, contentBox, actionsBox);
+
+      // 历史消息回放思考过程（折叠态）
+      let historySteps = null;
+      try { historySteps = JSON.parse(msg.meta_json || "{}").steps || null; } catch (_) { /* 旧消息无 meta */ }
+      if (Array.isArray(historySteps) && historySteps.length) {
+        const stepsBox = buildStepsBox(false);
+        historySteps.forEach((st) => stepsBox._upsertStep(st));
+        stepsBox._finalize(historySteps.some((s) => s.status === "error") ? "error" : "done");
+        card.insertBefore(stepsBox, contentBox);
+      }
 
       card._msg = msg;
       card._contentBox = contentBox;
@@ -518,6 +604,8 @@ window.WorkbenchChat = (() => {
       };
       const aiCard = createMessageBubble(tempAiMsg);
       aiCard._contentBox.classList.add("streaming-caret");
+      const stepsBox = buildStepsBox(true);
+      aiCard.insertBefore(stepsBox, aiCard._contentBox);
       msgListEl.append(aiCard);
       scrollToBottom();
 
@@ -576,6 +664,11 @@ window.WorkbenchChat = (() => {
 
             if (evt.session_id) currentSessionId = evt.session_id;
 
+            if (evt.step) {
+              stepsBox._upsertStep(evt.step);
+              scrollToBottom();
+            }
+
             if (evt.delta !== undefined) {
               fullContent += evt.delta;
               tempAiMsg.content = fullContent;
@@ -586,18 +679,21 @@ window.WorkbenchChat = (() => {
             if (evt.done) {
               if (evt.message_id) tempAiMsg.id = evt.message_id;
               aiCard._contentBox.classList.remove("streaming-caret");
+              stepsBox._finalize("done");
               updateBubbleActions(aiCard);
             }
 
             if (evt.error) {
               ui.toast(evt.error, "err");
               aiCard._contentBox.classList.remove("streaming-caret");
+              stepsBox._finalize("error");
             }
           }
         }
 
         // 流式正常结束
         aiCard._contentBox.classList.remove("streaming-caret");
+        stepsBox._finalize("done");
         tempAiMsg.content = fullContent;
         messages.push(tempAiMsg);
         updateBubbleActions(aiCard);
@@ -606,6 +702,7 @@ window.WorkbenchChat = (() => {
           ui.toast("生成中断: " + e.message, "err");
         }
         aiCard._contentBox.classList.remove("streaming-caret");
+        stepsBox._finalize("error");
         if (!tempAiMsg.content) {
           aiCard.remove();
         } else {

@@ -94,21 +94,8 @@ def _extract_json(text: str) -> dict | list:
 
 
 
-def build_skill_system_prompt(
-    skill_id: int | None = None,
-    task: str = "continue",
-    context: str = "",
-    selection: str = "",
-    instruction: str = "",
-    length: str = "medium",
-) -> tuple[str, dict]:
-    """
-    Agent Skill 系统提示词装配器：
-    1. 根据 skill_id 或 task 确定命中的 Skill 规范实体；
-    2. 统一替换占位符（{{context}}, {{selection}}, {{instruction}}）；
-    3. 渐进式内联 references/ 资源，标注清单 scripts/ & assets/；
-    4. 拼接长度规范，返回 (system_prompt, consumed_flags)。
-    """
+def resolve_skill(skill_id: int | None, task: str):
+    """按 skill_id 或任务名解析命中的 Skill 记录；未命中返回 None（调用方走内置兜底）。"""
     db = get_db()
     skill_row = None
 
@@ -128,6 +115,27 @@ def build_skill_system_prompt(
             skill_row = db.execute("SELECT * FROM skills WHERE name = ?", (cn,)).fetchone()
             if skill_row:
                 break
+
+    return skill_row
+
+
+def build_skill_system_prompt(
+    skill_id: int | None = None,
+    task: str = "continue",
+    context: str = "",
+    selection: str = "",
+    instruction: str = "",
+    length: str = "medium",
+) -> tuple[str, dict]:
+    """
+    Agent Skill 系统提示词装配器：
+    1. 根据 skill_id 或 task 确定命中的 Skill 规范实体；
+    2. 统一替换占位符（{{context}}, {{selection}}, {{instruction}}）；
+    3. 渐进式内联 references/ 资源，标注清单 scripts/ & assets/；
+    4. 拼接长度规范，返回 (system_prompt, consumed_flags)。
+    """
+    db = get_db()
+    skill_row = resolve_skill(skill_id, task)
 
     if not skill_row:
         # 极限兜底，使用内置常量

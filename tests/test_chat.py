@@ -1,4 +1,4 @@
-﻿# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
 """AI 修撰使多轮对话功能单元测试：会话管理、多轮历史检索、消息持久化与采纳更新。"""
 import json
@@ -214,11 +214,22 @@ def test_chat_stream_mode(client):
         assert "夜" in text
         assert "深" in text
         assert "done" in text
+        # 验证修撰使思考过程步骤事件（Agent 风格任务追踪）
+        assert '"step"' in text
+        assert "解析创作任务" in text
+        assert "匹配写作技能" in text
+        assert "装配系统提示词" in text
+        assert "连接模型" in text
+        assert "生成正文" in text
 
     # 验证落库
     hist = client.get(f"/api/chat?chapter_id={chapter['id']}").json()
     ai_msg = [m for m in hist["messages"] if m["role"] == "ai"][0]
     assert ai_msg["content"] == "夜深沉。"
+    # meta 中持久化思考步骤，供历史消息折叠回放
+    meta = json.loads(ai_msg["meta_json"])
+    assert isinstance(meta.get("steps"), list) and len(meta["steps"]) >= 4
+    assert meta["steps"][-1]["id"] == "generate" and meta["steps"][-1]["status"] == "done"
 
 
 def test_chat_isolated_between_chapters(client):
