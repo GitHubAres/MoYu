@@ -159,7 +159,7 @@ window.WorkbenchChat = (() => {
     ];
 
     const taskChipEls = {};
-    const taskChipsBar = ui.el("div", { class: "flex items-center gap-1.5 pb-1 overflow-x-auto" });
+    const taskChipsBar = ui.el("div", { class: "flex flex-wrap items-center gap-1.5 pb-1" });
 
     taskChips.forEach((tc) => {
       const chip = ui.el("button", {
@@ -173,6 +173,67 @@ window.WorkbenchChat = (() => {
       taskChipsBar.append(chip);
     });
 
+    /* 当前任务的技能选择菜单（数据来自 workbench.js 的 aiSkillBridge，按任务绑定） */
+    const skillMenuLabel = ui.el("span", { class: "max-w-[64px] truncate" }, "自动");
+    const skillMenuBox = ui.el("div", {
+      class: "hidden absolute right-0 bottom-full mb-1 w-52 max-h-60 overflow-y-auto rounded-xl bg-surface-container-lowest border border-border-feather shadow-[0_8px_28px_rgba(6,21,35,0.14)] p-1 z-30 flex-col gap-0.5",
+    });
+    const skillMenuBtn = ui.el("button", {
+      class: "flex items-center gap-0.5 px-2 py-1 rounded-lg text-[12px] font-label-sm cursor-pointer transition-all border shrink-0 bg-surface-container hover:bg-surface-container-high text-on-surface-variant border-transparent",
+      title: "为当前任务选择写作技能",
+      onclick: (e) => { e.stopPropagation(); toggleSkillMenu(); },
+    }, ui.icon("tune", "text-[14px] text-primary"), skillMenuLabel, ui.icon("keyboard_arrow_up", "text-[14px]"));
+    const skillMenuWrap = ui.el("div", { class: "relative ml-auto shrink-0" }, skillMenuBtn, skillMenuBox);
+    taskChipsBar.append(skillMenuWrap);
+
+    function updateSkillMenuLabel() {
+      const bridge = window.aiSkillBridge;
+      if (!bridge) { skillMenuWrap.classList.add("hidden"); return; }
+      skillMenuWrap.classList.remove("hidden");
+      const id = bridge.get(activeTask);
+      const s = id ? bridge.listForTask(activeTask).find((x) => x.id === id) : null;
+      skillMenuLabel.textContent = s ? s.title : "自动";
+      skillMenuBtn.title = s ? `当前任务技能：${s.title}` : "自动匹配内置技能（点击更换）";
+    }
+
+    function closeSkillMenu() {
+      if (!skillMenuBox.isConnected) {
+        document.removeEventListener("click", closeSkillMenu);
+        return;
+      }
+      skillMenuBox.classList.add("hidden");
+      skillMenuBox.classList.remove("flex");
+    }
+
+    function toggleSkillMenu() {
+      if (!skillMenuBox.classList.contains("hidden")) { closeSkillMenu(); return; }
+      const bridge = window.aiSkillBridge;
+      if (!bridge) return;
+      skillMenuBox.innerHTML = "";
+      const current = bridge.get(activeTask);
+      const mkItem = (id, label, hint) => ui.el("button", {
+        class: "flex items-center gap-1.5 w-full text-left px-2 py-1.5 rounded-lg hover:bg-surface-container text-[12px] text-on-surface cursor-pointer",
+        onclick: (e) => {
+          e.stopPropagation();
+          bridge.set(activeTask, id);
+          updateSkillMenuLabel();
+          closeSkillMenu();
+        },
+      },
+        ui.icon(id === current ? "check_circle" : "radio_button_unchecked", `text-[14px] shrink-0 ${id === current ? "text-primary" : "text-outline-variant"}`),
+        ui.el("span", { class: "truncate" }, label),
+        hint && ui.el("span", { class: "ml-auto text-[10px] text-on-surface-variant shrink-0" }, hint));
+      skillMenuBox.append(mkItem(null, "自动匹配内置技能", "推荐"));
+      const list = bridge.listForTask(activeTask);
+      list.forEach((s) => skillMenuBox.append(mkItem(s.id, s.title, s.source === "builtin" ? "内置" : "自定义")));
+      if (!list.length) {
+        skillMenuBox.append(ui.el("div", { class: "px-2 py-1 text-[11px] text-on-surface-variant" }, "当前任务暂无其他可用技能"));
+      }
+      skillMenuBox.classList.remove("hidden");
+      skillMenuBox.classList.add("flex");
+    }
+    document.addEventListener("click", closeSkillMenu);
+
     function setActiveTask(task) {
       activeTask = task;
       taskChips.forEach((tc) => {
@@ -183,6 +244,9 @@ window.WorkbenchChat = (() => {
           el.className = "px-2.5 py-1 rounded-lg text-[12px] font-label-sm cursor-pointer transition-all shrink-0 bg-surface-container hover:bg-surface-container-high text-on-surface-variant border-transparent";
         }
       });
+      if (window.aiSkillBridge) window.aiSkillBridge.syncWindow(task);
+      closeSkillMenu();
+      updateSkillMenuLabel();
     }
     setActiveTask("continue");
 

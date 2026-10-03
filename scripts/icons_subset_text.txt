@@ -57,6 +57,8 @@ imagesmode
 info
 ink_pen
 key_off
+keyboard_arrow_down
+keyboard_arrow_up
 lightbulb
 link
 link_off
@@ -77,6 +79,7 @@ progress_activity
 psychology
 public
 publish
+radio_button_unchecked
 refresh
 rule_folder
 save
