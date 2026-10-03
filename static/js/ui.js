@@ -87,7 +87,7 @@ const ui = {
     });
   },
 
-  /* ???????ui.modal(title, content, actions = [], options = {}) */
+  /* 通用模态弹窗：ui.modal(title, content, actions = [], options = {}) */
   modal(title, content, actions = [], options = {}) {
     const root = document.getElementById("modal-root");
     const close = () => overlay.remove();

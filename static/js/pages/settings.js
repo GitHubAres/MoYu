@@ -114,11 +114,12 @@ registerPage("settings", async (view) => {
   aiKey.addEventListener("change", () => save({ ai_api_key: aiKey.value.trim() }));
   aiModel.addEventListener("change", () => save({ ai_model: aiModel.value.trim() }));
 
-  /* ---------- 3.1 AI ?????? (ModelPicker) ---------- */
+
+  /* ---------- 3.1 AI 模型选扏组件 (ModelPicker) ---------- */
   function createModelPicker(inputEl, urlEl, keyEl, providerSel, onSelect) {
     const wrap = ui.el("div", { class: "relative w-full" });
     
-    // ?????????????????
+    // 输入容器：包含输入框与右侧浏览按钮
     const inputGroup = ui.el("div", { class: "relative flex items-center w-full" });
     inputEl.className = inputCls + " pr-20";
     
@@ -129,12 +130,12 @@ registerPage("settings", async (view) => {
         e.stopPropagation();
         toggleDropdown();
       }
-    }, ui.icon("travel_explore", "text-[16px]"), "??");
+    }, ui.icon("travel_explore", "text-[16px]"), "浏览");
 
     inputGroup.append(inputEl, browseBtn);
     wrap.append(inputGroup);
 
-    // ??????
+    // 下拉面板容器
     const dropdown = ui.el("div", {
       class: "absolute left-0 top-full mt-1.5 w-full z-50 rounded-xl bg-surface-container-lowest border border-outline-variant/60 shadow-[0_8px_24px_rgba(27,42,56,0.15)] flex flex-col overflow-hidden max-h-80 text-xs animate-in fade-in zoom-in-95 duration-100",
       style: "display: none;"
@@ -195,7 +196,7 @@ registerPage("settings", async (view) => {
       document.addEventListener("click", onDocClick);
       document.addEventListener("keydown", onKeyDown);
 
-      // ????????? URL ? Key
+      // 先保存可能刚输入的 URL 或 Key
       await save({
         ai_base_url: urlEl.value.trim(),
         ai_api_key: keyEl.value.trim(),
@@ -215,7 +216,7 @@ registerPage("settings", async (view) => {
           modelsList = res.models;
           currentSource = res.source || "remote";
           statusMessage = res.message || "";
-          // ???????????????????
+          // 如果当前输入框的模型在列表中，置顶高亮
           const curVal = inputEl.value.trim();
           const foundIdx = modelsList.findIndex(m => m.id === curVal);
           if (foundIdx > 0) {
@@ -226,12 +227,12 @@ registerPage("settings", async (view) => {
           if (activeIndex < 0) activeIndex = 0;
           renderList();
         } else {
-          // ?? L2?????
-          fallbackToPresets(res.message || "???????????");
+          // 降级 L2：静态预设
+          fallbackToPresets(res.message || "未能从上游获取模型列表");
         }
       } catch (err) {
         loading = false;
-        fallbackToPresets(err.message || "????????");
+        fallbackToPresets(err.message || "请求模型列表失败");
       }
     }
 
@@ -241,7 +242,7 @@ registerPage("settings", async (view) => {
         const rawPresets = p.models.split("/").map(s => s.trim()).filter(Boolean);
         modelsList = rawPresets.map(id => ({ id, owned_by: p.name }));
         currentSource = "preset";
-        statusMessage = "????????????????";
+        statusMessage = "无法获取上游列表，已显示常用模型";
         const curVal = inputEl.value.trim();
         activeIndex = modelsList.findIndex(m => m.id === curVal);
         renderList();
@@ -254,7 +255,7 @@ registerPage("settings", async (view) => {
       dropdown.innerHTML = "";
       dropdown.append(ui.el("div", { class: "p-4 flex items-center justify-center gap-2 text-on-surface-variant font-label-sm" },
         ui.icon("progress_activity", "text-[18px] animate-spin text-primary"),
-        ui.el("span", {}, "????????????")
+        ui.el("span", {}, "正在从上游拉取模型清单…")
       ));
     }
 
@@ -271,12 +272,12 @@ registerPage("settings", async (view) => {
             type: "button",
             class: "px-3 py-1 rounded bg-surface-container hover:bg-surface-container-high text-xs text-on-surface cursor-pointer",
             onclick: () => fetchModels(true)
-          }, "????"),
+          }, "强制刷新"),
           ui.el("button", {
             type: "button",
             class: "px-3 py-1 rounded bg-primary text-on-primary text-xs cursor-pointer",
             onclick: close
-          }, "????")
+          }, "关闭手填")
         )
       );
       dropdown.append(box);
@@ -291,17 +292,17 @@ registerPage("settings", async (view) => {
     function renderList() {
       dropdown.innerHTML = "";
 
-      // ???????????
+      // 顶部信息栏与刷新小按钮
       const header = ui.el("div", { class: "flex items-center justify-between px-3 py-1.5 bg-surface-container-low border-b border-outline-variant/40 shrink-0" });
       const tipText = currentSource === "preset"
-        ? (statusMessage || "?????????")
-        : (currentSource === "cache" ? "??????24h???" : "????????");
+        ? (statusMessage || "已显示常用预设模型")
+        : (currentSource === "cache" ? "已使用缓存（24h有效）" : "上游实时模型清单");
       header.append(
         ui.el("span", { class: "text-[11px] text-outline truncate", title: tipText }, tipText),
         ui.el("button", {
           type: "button",
           class: "p-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors cursor-pointer",
-          title: "????",
+          title: "强制刷新",
           onclick: (e) => {
             e.stopPropagation();
             fetchModels(true);
@@ -357,8 +358,6 @@ registerPage("settings", async (view) => {
     return wrap;
   }
 
-
-
   const providerHint = ui.el("div", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "");
   const providerSelect = ui.el("select", { class: inputCls + " cursor-pointer" },
     AI_PROVIDERS.map((p) => ui.el("option", { value: p.key }, p.name)));
@@ -388,9 +387,8 @@ registerPage("settings", async (view) => {
   renderProviderHint();
 
   const modelPickerWrap = createModelPicker(aiModel, aiUrl, aiKey, providerSelect, (mId) => {
-    save({ ai_model: mId }, `??????${mId}`);
+    save({ ai_model: mId }, `已切换模型：${mId}`);
   });
-
 
   const testResult = ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "尚未测试");
   const testBtn = ui.el("button", {
