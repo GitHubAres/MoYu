@@ -1,5 +1,5 @@
 # ?? MoYu - Copyright (c) 2026 ???MoYu???? ? MIT
 # Licensed under the MIT License. See LICENSE.
 """???????"""
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 APP_VERSION = __version__

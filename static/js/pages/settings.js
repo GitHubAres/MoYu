@@ -357,9 +357,6 @@ registerPage("settings", async (view) => {
     return wrap;
   }
 
-  const modelPickerWrap = createModelPicker(aiModel, aiUrl, aiKey, providerSelect, (mId) => {
-    save({ ai_model: mId }, `??????${mId}`);
-  });
 
 
   const providerHint = ui.el("div", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "");
@@ -389,6 +386,11 @@ registerPage("settings", async (view) => {
   const matched = AI_PROVIDERS.find((p) => p.key !== "custom" && p.base_url === (settings.ai_base_url || "").trim());
   providerSelect.value = matched ? matched.key : "custom";
   renderProviderHint();
+
+  const modelPickerWrap = createModelPicker(aiModel, aiUrl, aiKey, providerSelect, (mId) => {
+    save({ ai_model: mId }, `??????${mId}`);
+  });
+
 
   const testResult = ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "尚未测试");
   const testBtn = ui.el("button", {
