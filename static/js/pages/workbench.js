@@ -57,7 +57,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     custom:    { label: "设定", icon: "bookmark", badge: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" },
   };
 
-  const TASK_SKILL_MAP = { condense: "shorten", polish: "rewrite" };
+  const TASK_SKILL_MAP = { condense: "shorten", polish: "rewrite", analyze: "analysis" };
   function skillIdForTask(task) {
     const id = aiSkillMap[task];
     return id ? Number(id) : null;
@@ -961,7 +961,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     window.aiLengthPreference = aiLength;
     window.aiActiveSkillId = skillIdForTask(aiTask);
 
-    const taskSeg = seg([["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "改写"]],
+    const taskSeg = seg([["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "改写"], ["analyze", "分析"]],
       () => aiTask, (v) => {
         aiTask = v;
         window.aiSkillBridge.syncWindow(v);

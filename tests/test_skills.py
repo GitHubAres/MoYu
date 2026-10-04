@@ -331,3 +331,40 @@ def test_numeric_length_in_prompt():
     prompt_text, _ = build_skill_system_prompt(
         skill_id=None, task="continue", context="", selection="", instruction="", length="2000")
     assert "2000 字" in prompt_text
+
+
+def test_builtin_skills_v1710(client):
+    """v1.7.10：新增 default-analysis / de-ai-tone 内置技能，大纲与设定检查覆盖为方法论参考版。"""
+    db = get_db()
+    rows = {r["name"]: r for r in db.execute("SELECT * FROM skills WHERE source='builtin'")}
+    assert "default-analysis" in rows
+    assert rows["default-analysis"]["applies_to"] == "analysis"
+    assert "de-ai-tone" in rows
+    assert rows["de-ai-tone"]["applies_to"] == "rewrite"
+    for name, ref in [
+        ("default-outline", "references/structure-models.md"),
+        ("default-audit", "references/consistency-taxonomy.md"),
+        ("default-analysis", "references/analysis-rubric.md"),
+        ("de-ai-tone", "references/ai-tone-catalog.md"),
+    ]:
+        f = db.execute(
+            "SELECT content FROM skill_files WHERE skill_id=? AND path=?",
+            (rows[name]["id"], ref),
+        ).fetchone()
+        assert f is not None, f"{name} 缺少挂载文件 {ref}"
+        assert len(f["content"]) > 1000
+
+
+def test_analyze_task_resolves_default_analysis(client):
+    """analyze 任务不传 skill_id 时，经映射兜底命中 default-analysis 内置技能。"""
+    prompt_text, _ = build_skill_system_prompt(skill_id=None, task="analyze")
+    assert "default-analysis" in prompt_text
+    assert "分析·十维体检" in prompt_text
+
+
+def test_analysis_rubric_fully_inlined(client):
+    """参考文档内联容量提升后，评分量表完整装载（尾部文本可见、无截断标记）。"""
+    prompt_text, _ = build_skill_system_prompt(skill_id=None, task="analyze")
+    assert "references/analysis-rubric.md" in prompt_text
+    assert "用户要的是判断，不是过程" in prompt_text
+    assert "[内容过长已截断]" not in prompt_text

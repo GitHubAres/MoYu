@@ -108,7 +108,7 @@ def resolve_skill(skill_id: int | None, task: str):
     else:
         # 兜底：根据 task 匹配默认 builtin Skill
         # 前端任务名与技能 applies_to 命名存在历史差异，统一映射
-        TASK_SKILL_MAP = {"condense": "shorten", "polish": "rewrite"}
+        TASK_SKILL_MAP = {"condense": "shorten", "polish": "rewrite", "analyze": "analysis"}
         skill_task = TASK_SKILL_MAP.get(task, task)
         cand_names = [f"default-{skill_task}", "default-continue"]
         for cn in cand_names:
@@ -181,8 +181,8 @@ def build_skill_system_prompt(
     ref_parts = []
     other_parts = []
     total_ref_chars = 0
-    MAX_SINGLE_REF = 3000
-    MAX_TOTAL_REF = 6000
+    MAX_SINGLE_REF = 12000
+    MAX_TOTAL_REF = 16000
 
     for f in files:
         fpath = f["path"]
@@ -225,6 +225,7 @@ class AIOrchestrator:
         "polish": "你是中文小说润色助手。请改写润色给定文本，只输出润色后的正文。",
         "outline": "你是小说大纲助手。请根据要求生成简洁的分章大纲。",
         "check": "你是小说设定检查助手。请检查正文与设定是否矛盾，列出问题。",
+        "analyze": "你是中文小说分析与评价助手。请按用户指令对作品进行结构化分析评价，只输出分析报告，不改写正文。",
     }
 
     LENGTH_HINTS = {

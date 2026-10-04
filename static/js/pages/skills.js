@@ -47,6 +47,7 @@ registerPage("skills", async (view) => {
     ["rewrite", "改写润色"],
     ["outline", "大纲生成"],
     ["audit", "设定检查"],
+    ["analysis", "分析"],
   ];
   const TASK_LABEL = {
     "": "通用",
@@ -57,6 +58,7 @@ registerPage("skills", async (view) => {
     rewrite: "改写润色",
     outline: "大纲生成",
     audit: "设定检查",
+    analysis: "分析",
   };
 
   const SOURCE_BADGES = {

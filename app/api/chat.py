@@ -135,6 +135,7 @@ async def send_chat_message(body: ChatIn):
         "polish": "改写润色正文",
         "outline": "大纲构思推演",
         "check": "一致性检查",
+        "analyze": "分析评价作品",
     }.get(body.task, "创作")
     display_content = user_prompt_text or f"请对选区或当前章节进行{task_desc}"
 

@@ -11,7 +11,7 @@ registerPage("tasks", async (view) => {
 
   const typeSel = ui.el("select", { class: "px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-md text-body-md" });
   typeSel.append(ui.el("option", { value: "" }, "全部类型"));
-  for (const t of [["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "润色"], ["audit", "一键审查"], ["img_cover", "封面出图"], ["img_illustration", "插图出图"], ["alchemy_analyze", "拆书蒸馏"], ["alchemy_extract_lore", "资料融汇"], ["alchemy_brew", "开炉推演"]]) {
+  for (const t of [["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"], ["polish", "润色"], ["analyze", "分析"], ["audit", "一键审查"], ["img_cover", "封面出图"], ["img_illustration", "插图出图"], ["alchemy_analyze", "拆书蒸馏"], ["alchemy_extract_lore", "资料融汇"], ["alchemy_brew", "开炉推演"]]) {
     typeSel.append(ui.el("option", { value: t[0] }, t[1]));
   }
 

@@ -39,7 +39,7 @@ window.WorkbenchChat = (() => {
     let messages = [];
     let isGenerating = false;
     let abortCtrl = null;
-    let activeTask = "continue"; // continue | expand | condense | polish
+    let activeTask = "continue"; // continue | expand | condense | polish | analyze
 
     /* ---------- DOM 结构搭建 ---------- */
 
@@ -156,6 +156,7 @@ window.WorkbenchChat = (() => {
       { id: "expand",   label: "扩写" },
       { id: "condense", label: "缩写" },
       { id: "polish",   label: "改写" },
+      { id: "analyze",  label: "分析" },
     ];
 
     const taskChipEls = {};
@@ -359,6 +360,7 @@ window.WorkbenchChat = (() => {
       polish: "改写",
       outline: "大纲",
       check: "检查",
+      analyze: "分析",
     };
 
     /* ---------- 修撰使思考过程（Agent 风格步骤追踪） ---------- */

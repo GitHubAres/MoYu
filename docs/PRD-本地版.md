@@ -3,7 +3,7 @@
 - 版本：v1.2.3（以代码实际功能为准）
 - 日期：2026-09-29
 - 依据：依据当前代码库（`app/` 与 `static/js/pages/`）实际已实现功能全面盘点重写
-- 范围：**本地单机部署、单用户**、Windows 轻量原生应用窗口（WebView2 驱动，无黑框控制台，点叉即退；亦支持 --browser 外部浏览器访问），最终交付物为 PyInstaller 单 exe（墨语MoYu-v1.7.9-win64.exe）
+- 范围：**本地单机部署、单用户**、Windows 轻量原生应用窗口（WebView2 驱动，无黑框控制台，点叉即退；亦支持 --browser 外部浏览器访问），最终交付物为 PyInstaller 单 exe（墨语MoYu-v1.7.10-win64.exe）
 - 技术形态：Python FastAPI + SQLite + 原生 JavaScript SPA 单页应用，AI 走用户自配置的 OpenAI 兼容 API
 
 ---
@@ -151,5 +151,5 @@
 
 1. **零外部数据库**：严格基于标准 `sqlite3` 本地文件驱动，所有新字段通过 `db.py` 增量迁移脚本管理。
 2. **纯前端无编译**：前端全部使用现代原生 JavaScript（ES Modules / 原生 DOM 操作），Tailwind CSS 在浏览器端运行时解析，杜绝 npm 构建打包门槛。
-3. **打包一体化**：Windows 最终发布形态统一为 `墨语MoYu-v1.7.9-win64.exe` 单文件绿色版，开箱即用，自动生成 exe 同级 `data/` 目录保存用户数据。
+3. **打包一体化**：Windows 最终发布形态统一为 `墨语MoYu-v1.7.10-win64.exe` 单文件绿色版，开箱即用，自动生成 exe 同级 `data/` 目录保存用户数据。
 4. **单实例守护**：内置 8321 端口单实例检测，若已存在运行实例则直接调起浏览器打开页面，避免多开冲突。

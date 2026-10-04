@@ -1,4 +1,4 @@
-﻿/* 系统设置页（对应设计稿 _10，本地版裁剪：去掉云端同步/隐私项，加 AI 配置与备份） */
+/* 系统设置页（对应设计稿 _10，本地版裁剪：去掉云端同步/隐私项，加 AI 配置与备份） */
 registerPage("settings", async (view) => {
   ui.setCrumb("系统设置");
 
@@ -424,7 +424,7 @@ registerPage("settings", async (view) => {
   /* 任务级模型覆盖：各写作任务可单独指定 Base URL 与模型名，留空跟随上方主配置 */
   const AI_TASKS = [
     ["continue", "续写"], ["expand", "扩写"], ["condense", "缩写"],
-    ["polish", "润色"], ["outline", "大纲"], ["check", "设定核查"],
+    ["polish", "润色"], ["outline", "大纲"], ["check", "设定核查"], ["analyze", "分析"],
   ];
   const routeBody = ui.el("div", { class: "flex flex-col gap-space-md px-space-md pb-space-md", style: "display:none" },
     AI_TASKS.map(([task, label]) => {
