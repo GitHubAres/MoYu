@@ -53,7 +53,7 @@ def upload_changed_files():
             print(f"Uploaded: {remote_file}")
 
     # Root files
-    for rf in ["run.py", "requirements.txt"]:
+    for rf in ["run.py", "requirements.txt", "static/index.html"]:
         if os.path.exists(rf):
             sftp.put(rf, f"{remote_base}/{rf}")
 

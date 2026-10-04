@@ -110,7 +110,26 @@ const ui = {
         ),
         ui.el("div", { class: "flex-1 min-h-0 overflow-y-auto" }, content),
         actions && actions.length > 0
-          ? ui.el("div", { class: "flex items-center justify-end gap-2 pt-2 border-t border-outline-variant/40 shrink-0" }, ...actions)
+          ? ui.el("div", { class: "flex items-center justify-end gap-2 pt-2 border-t border-outline-variant/40 shrink-0" },
+              ...actions.map((a) => {
+                if (!a) return null;
+                if (a instanceof Node) return a;
+                const isPrimary = a.primary || false;
+                const isDanger = a.danger || false;
+                const cls = isPrimary
+                  ? "px-5 py-1.5 rounded-full bg-primary text-on-primary font-medium hover:bg-primary-container text-xs shadow-sm"
+                  : isDanger
+                  ? "px-4 py-1.5 rounded-full bg-error text-on-error hover:bg-error/90 text-xs"
+                  : "px-4 py-1.5 rounded-full bg-surface-container text-on-surface hover:bg-surface-container-high text-xs";
+                return ui.el("button", {
+                  class: cls,
+                  onclick: async (e) => {
+                    if (a.onClick) await a.onClick(e);
+                    close();
+                  },
+                }, a.text || "确定");
+              }).filter(Boolean)
+            )
           : null
       )
     );

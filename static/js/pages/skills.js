@@ -48,6 +48,11 @@ registerPage("skills", async (view) => {
     ["outline", "大纲生成"],
     ["audit", "设定检查"],
     ["analysis", "分析"],
+    ["premise", "立项"],
+    ["world", "世界观"],
+    ["cast", "人物"],
+    ["scene", "细纲"],
+    ["forge", "全流程"],
   ];
   const TASK_LABEL = {
     "": "通用",
@@ -59,6 +64,11 @@ registerPage("skills", async (view) => {
     outline: "大纲生成",
     audit: "设定检查",
     analysis: "分析",
+    premise: "立项",
+    world: "世界观",
+    cast: "人物",
+    scene: "细纲",
+    forge: "全流程",
   };
 
   const SOURCE_BADGES = {
