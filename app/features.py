@@ -140,7 +140,7 @@ def build_skill_system_prompt(
     if not skill_row:
         # 极限兜底，使用内置常量
         fallback_prompt = AIOrchestrator.BASIC_PROMPTS.get(task, AIOrchestrator.BASIC_PROMPTS["continue"])
-        fallback_prompt += "\n" + AIOrchestrator.LENGTH_HINTS.get(length, AIOrchestrator.LENGTH_HINTS["medium"])
+        fallback_prompt += "\n" + AIOrchestrator.length_hint(length)
         return fallback_prompt, {"context": False, "selection": False, "instruction": False}
 
     name = skill_row["name"]
@@ -208,7 +208,7 @@ def build_skill_system_prompt(
         sections.append("【附带资源清单】\n" + "\n".join(other_parts))
 
     # 拼接长度提示
-    len_hint = AIOrchestrator.LENGTH_HINTS.get(length, AIOrchestrator.LENGTH_HINTS["medium"])
+    len_hint = AIOrchestrator.length_hint(length)
     sections.append(f"【输出长度要求】\n{len_hint}")
 
     final_sys_prompt = "\n\n".join(sections)
@@ -232,6 +232,16 @@ class AIOrchestrator:
         "medium": "控制在 300~500 字。",
         "long": "800 字以上。",
     }
+
+    @staticmethod
+    def length_hint(length: str) -> str:
+        """长度档位 → 提示语。数字档位（如 "2000"）直接生成字数要求，兼容旧 short/medium/long。"""
+        s = str(length or "").strip()
+        if s.isdigit():
+            n = int(s)
+            if n > 0:
+                return f"控制在 {n} 字左右（允许小幅浮动，围绕该字数组织篇幅）。"
+        return AIOrchestrator.LENGTH_HINTS.get(s, AIOrchestrator.LENGTH_HINTS["medium"])
 
     async def generate(self, body: _GenIn):
         task = body.task if body.task in self.BASIC_PROMPTS else "continue"

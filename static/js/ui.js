@@ -9,6 +9,7 @@ const ui = {
         else if (k.startsWith("on") && typeof v === "function")
           node.addEventListener(k.slice(2), v);
         else if (k === "html") node.innerHTML = v;
+        else if (k === "value") node.value = v;
         else if (v !== null && v !== undefined) node.setAttribute(k, v);
       }
     }

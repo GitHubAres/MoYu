@@ -180,7 +180,7 @@ async def send_chat_message(body: ChatIn):
     # 收集「修撰使思考过程」步骤信息（Agent 风格任务追踪）
     ctx_count = len([x for x in body.context.split("\n\n----\n\n") if x.strip()]) if body.context.strip() else 0
     sel_len = len(body.selection.strip())
-    len_label = {"short": "简", "medium": "中", "long": "长"}.get(body.length, "中")
+    len_label = {"short": "简", "medium": "中", "long": "长"}.get(body.length, f"{body.length}字" if str(body.length).isdigit() else "中")
     parse_detail = f"{task_desc} · 篇幅{len_label}"
     if sel_len:
         parse_detail += f" · 选区 {sel_len} 字"

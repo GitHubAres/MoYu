@@ -1,4 +1,4 @@
-﻿/* API 客户端封装 */
+/* API 客户端封装 */
 const api = {
   async req(method, url, body, customOpts = {}) {
     const opts = { method, headers: {}, ...customOpts };
@@ -35,6 +35,8 @@ const api = {
   },
   get: (u, opts) => api.req("GET", u, undefined, opts),
   post: (u, b, opts) => api.req("POST", u, b ?? {}, opts),
+  put: (u, b, opts) => api.req("PUT", u, b ?? {}, opts),
   patch: (u, b, opts) => api.req("PATCH", u, b, opts),
   del: (u, opts) => api.req("DELETE", u, undefined, opts),
+  delete: (u, opts) => api.req("DELETE", u, undefined, opts),
 };

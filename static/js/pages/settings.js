@@ -337,7 +337,15 @@ registerPage("settings", async (view) => {
           },
           onmouseenter: () => {
             activeIndex = idx;
-            renderItems();
+            const box = dropdown.querySelector(".overflow-y-auto");
+            if (box) {
+              Array.from(box.children).forEach((rowEl, i) => {
+                const mSel = modelsList[i] && modelsList[i].id === curVal;
+                rowEl.className = `px-3 py-2 flex items-center justify-between cursor-pointer transition-colors ${
+                  i === activeIndex ? "bg-surface-container-high" : (mSel ? "bg-surface-container-low" : "hover:bg-surface-container")
+                }`;
+              });
+            }
           }
         },
           ui.el("div", { class: "flex items-center gap-2 overflow-hidden" },
@@ -645,6 +653,65 @@ registerPage("settings", async (view) => {
     class: "flex items-center gap-1.5 px-space-md py-2 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-all font-label-md text-label-md shadow-sm",
     href: "/api/settings/backup",
   }, ui.icon("database", "text-[18px]"), "导出整库备份 (moyu.db)");
+
+  /* 数据目录自定义（v1.7.9）：查看当前目录、设置自定义路径并可迁移现有数据，重启后生效 */
+  let dataDirInfo = null;
+  try { dataDirInfo = await api.get("/settings/data-dir"); } catch (_) {}
+  const dataDirCurrentLabel = ui.el("span", { class: "font-mono text-[12px] text-on-surface-variant break-all" },
+    `当前生效目录：${dataDirInfo ? dataDirInfo.current : "获取失败"}`);
+  const dataDirStatus = ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "");
+  const dataDirInput = ui.el("input", {
+    type: "text",
+    class: "flex-1 min-w-[220px] px-space-md py-2 rounded-lg bg-surface-container-lowest text-on-surface font-mono text-[12px] focus:outline-none focus:ring-1 focus:ring-secondary",
+    placeholder: "输入绝对路径，如 D:\\moyu-data",
+  });
+  if (dataDirInfo && dataDirInfo.custom) dataDirInput.value = dataDirInfo.custom;
+  const dataDirMigrateChk = ui.el("input", { type: "checkbox", class: "accent-secondary w-4 h-4" });
+  dataDirMigrateChk.checked = true;
+  const dataDirSaveBtn = ui.el("button", {
+    class: "px-space-md py-2 rounded-lg bg-primary text-on-primary hover:bg-primary-container transition-all font-label-md text-label-md shadow-sm",
+    onclick: async () => {
+      const path = dataDirInput.value.trim();
+      if (!path) { ui.toast("请输入数据目录的绝对路径", "err"); return; }
+      dataDirSaveBtn.disabled = true;
+      dataDirStatus.textContent = "保存中…";
+      try {
+        const r = await api.post("/settings/data-dir", { path, migrate: dataDirMigrateChk.checked });
+        let msg = "已保存，重启应用后生效";
+        if (r.migrated && r.migrated.length) msg += `；已迁移 ${r.migrated.join("、")}`;
+        if (r.skipped && r.skipped.length) msg += `；目标已存在跳过 ${r.skipped.join("、")}`;
+        dataDirStatus.textContent = msg;
+        ui.toast("数据目录已更新，重启后生效", "ok");
+      } catch (e) {
+        dataDirStatus.textContent = e.message;
+        ui.toast(e.message, "err");
+      }
+      dataDirSaveBtn.disabled = false;
+    },
+  }, "保存目录");
+  const dataDirResetBtn = ui.el("button", {
+    class: "px-space-md py-2 rounded-lg bg-surface-container text-on-surface-variant hover:bg-surface-container-high transition-all font-label-md text-label-md",
+    onclick: async () => {
+      const ok = await ui.confirm("恢复默认目录", "取消自定义数据目录，恢复为应用目录下的 data/（已复制到新目录的数据不会自动搬回），重启后生效。", "恢复默认");
+      if (!ok) return;
+      try {
+        await api.delete("/settings/data-dir");
+        dataDirInput.value = "";
+        dataDirStatus.textContent = "已恢复默认，重启应用后生效";
+        ui.toast("已恢复默认数据目录", "ok");
+      } catch (e) { ui.toast(e.message, "err"); }
+    },
+  }, "恢复默认");
+  const dataDirBlock = ui.el("div", { class: "flex flex-col gap-2 p-space-md rounded-xl bg-surface-container-low" },
+    ui.el("span", { class: "font-label-md text-label-md text-on-surface font-medium" }, "自定义数据目录"),
+    dataDirCurrentLabel,
+    dataDirInfo && dataDirInfo.env_override
+      ? ui.el("span", { class: "font-body-sm text-body-sm text-error" }, "当前由环境变量 MOYU_DATA_DIR 指定数据目录，此处设置不会生效。")
+      : null,
+    ui.el("div", { class: "flex items-center gap-space-sm flex-wrap" }, dataDirInput, dataDirSaveBtn, dataDirResetBtn),
+    ui.el("label", { class: "flex items-center gap-2 font-body-sm text-body-sm text-on-surface-variant cursor-pointer" },
+      dataDirMigrateChk, "保存时将现有数据（数据库、导出与导入文件）复制到新目录"),
+    dataDirStatus);
 
 
   /* ---------- 6. 软件自动更新（v1.4.0） ---------- */
@@ -1005,7 +1072,8 @@ registerPage("settings", async (view) => {
         ui.el("span", {}, "全部数据（作品、章节、设定、导出记录）保存在应用目录下的 data/ 文件夹："),
         ui.el("span", { class: "font-mono text-[12px] text-primary" }, "data/moyu.db（整库）· data/exports/（导出文件）· data/imports/（导入暂存）"),
         ui.el("span", {}, "备份即复制 data/ 文件夹，或点击下方按钮直接下载数据库文件。")),
-      ui.el("div", {}, backupBtn)),
+      ui.el("div", { class: "flex flex-wrap items-center gap-space-md" }, backupBtn),
+      dataDirBlock),
 
     section("keyboard", "快捷键速查", "以各页面按钮与提示为准，以下为当前版本已实现的快捷操作。",
       ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-space-md" },

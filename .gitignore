@@ -13,6 +13,7 @@ release/
 
 # 运行时数据（含用户作品与 API Key，绝不入库）
 data/
+moyu_config.json
 
 
 *.pem

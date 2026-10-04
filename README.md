@@ -7,7 +7,7 @@
 **一支笔、一炉丹、一盏灯——部署在本地或私有 VPS、数据不出机的一站式 AI 长篇创作工作台。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.7.8-D9483B)](https://github.com/GitHubAres/MoYu/releases)
+[![Version](https://img.shields.io/badge/version-v1.7.9-D9483B)](https://github.com/GitHubAres/MoYu/releases)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-green)](https://www.python.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)]()
 [![Data](https://img.shields.io/badge/data-100%25%20本地私有-orange)]()
@@ -60,6 +60,7 @@
 
 | 版本 | 日期 | 亮点 |
 |---|---|---|
+| **v1.7.9** | 2026-10-04 | 生成长度「简/中/长」升级为字数档（1000/2000/3000 字 + 自定义字数，全任务链路生效）；修复 Skill 市场删除报错、参考文档编辑空白、模型名下拉点击不填充；数据目录支持自定义路径与一键迁移；快速记录悬浮按钮可拖动摆放 |
 | **v1.7.8** | 2026-10-04 | 写作技能选择迁移至聊天输入区：任务标签（续写/扩写/缩写/改写）旁新增技能菜单，按任务各自绑定并记忆，默认自动匹配内置技能；移除精调选项中的全局技能下拉 |
 | **v1.7.7** | 2026-10-03 | 修撰使思考过程：AI 生成时对话框实时展示 Agent 风格步骤追踪（解析任务 → 匹配技能 → 装载参考 → 装配提示词 → 连接模型 → 流式生成），完成后折叠回放 |
 | **v1.7.6** | 2026-10-03 | 「修撰使精调选项」与 Skill 体系文案统一：「提示词模板」更名「写作技能」；修复经典多候选面板长度/候选/技能控件被抽屉抢占的预存 bug；清除旧提示词体系死代码 |
@@ -69,17 +70,17 @@
 | **v1.7.1** | 2026-10-03 | 修复设置页模型选择器初始化时序（TDZ）导致的偶发白屏 |
 | **v1.7.0** | 2026-10-03 | **AI 模型配置自动识别**：一键拉取上游模型清单，下拉搜索点选，24h 缓存，优雅降级 |
 
-> 完整迭代记录见 [`docs/`](docs/) 目录下的各版本开发笔记（v1.1.0 → v1.7.8）。
+> 完整迭代记录见 [`docs/`](docs/) 目录下的各版本开发笔记（v1.1.0 → v1.7.9）。
 
 ## 🚀 安装与运行
 
 ### 方式 A：Windows 原生单文件桌面端（无需环境）
 
-1. 从 [Releases](../../releases) 下载 `墨语MoYu-v1.7.8-win64.exe`
+1. 从 [Releases](../../releases) 下载 `墨语MoYu-v1.7.9-win64.exe`
 2. **双击运行**：直接打开沉浸式轻量原生窗口（依托系统内置 WebView2 运行，无黑框命令行，双击秒开）
 3. **关闭退出**：点击窗口右上角"关闭"按钮（×），程序自动优雅停止后台服务并退出，绝不留存后台僵尸进程
 4. **单实例保护**：重复双击 exe 不会发生端口争用冲突，会自动唤起激活已有运行中的墨语
-5. **浏览器回退模式**：命令行运行 `墨语MoYu-v1.7.8-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
+5. **浏览器回退模式**：命令行运行 `墨语MoYu-v1.7.9-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
 
 ### 方式 B：Linux VPS / 私有服务器 Docker 部署（一键上线）
 
@@ -111,7 +112,7 @@ python run.py                    # 启动本地开发服务：http://127.0.0.1:8
 ```bash
 python -m pytest -q          # 105 项 API、响应式、编码守护与部署健康检查回归测试全绿
 
-python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v1.7.8-win64.exe
+python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v1.7.9-win64.exe
 python build_exe.py --onedir # 文件夹形态（便于调试与启动优化）
 ```
 

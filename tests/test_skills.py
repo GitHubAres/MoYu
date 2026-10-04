@@ -313,3 +313,21 @@ def test_skill_migration_idempotent():
     migrate_and_seed_skills(db)
     cnt2 = db.execute("SELECT COUNT(*) FROM skills").fetchone()[0]
     assert cnt1 == cnt2
+
+def test_length_hint_numeric_and_legacy():
+    """v1.7.9：长度档位支持具体字数（如 "2000"），并兼容旧 short/medium/long 键。"""
+    from app.features import AIOrchestrator
+    assert "2000 字" in AIOrchestrator.length_hint("2000")
+    assert "1500 字" in AIOrchestrator.length_hint("1500")
+    assert AIOrchestrator.length_hint("short") == AIOrchestrator.LENGTH_HINTS["short"]
+    assert AIOrchestrator.length_hint("long") == AIOrchestrator.LENGTH_HINTS["long"]
+    # 空值与非法值回退 medium
+    assert AIOrchestrator.length_hint("") == AIOrchestrator.LENGTH_HINTS["medium"]
+    assert AIOrchestrator.length_hint("abc") == AIOrchestrator.LENGTH_HINTS["medium"]
+
+
+def test_numeric_length_in_prompt():
+    """字数档位直接进入系统提示词的输出长度要求段。"""
+    prompt_text, _ = build_skill_system_prompt(
+        skill_id=None, task="continue", context="", selection="", instruction="", length="2000")
+    assert "2000 字" in prompt_text

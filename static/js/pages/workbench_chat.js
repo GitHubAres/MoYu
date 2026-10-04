@@ -682,7 +682,7 @@ window.WorkbenchChat = (() => {
         task: taskType,
         selection: selText,
         context: contextText,
-        length: window.aiLengthPreference || "medium",
+        length: window.aiLengthPreference || "2000",
         skill_id: window.aiActiveSkillId || null,
         stream: true,
       };

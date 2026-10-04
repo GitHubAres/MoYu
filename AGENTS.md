@@ -2,7 +2,7 @@
 
 ## 1. 项目简介
 
-墨语是本地优先的 AI 长篇小说写作工作台：Python FastAPI + SQLite + 原生 JavaScript 单页应用，可用 PyInstaller 打包为 Windows 纯轻量原生桌面应用（墨语MoYu-v1.7.8-win64.exe），依托 Windows 10/11 内置 WebView2 内核，无控制台黑框闪烁，点叉即退，关闭窗体自动退出后台服务；亦支持 --browser 回退至外部浏览器运行模式。作品与设置默认存储在本机 data/；使用外部 AI 时，用户选择的正文和上下文会发送给其配置的服务商。
+墨语是本地优先的 AI 长篇小说写作工作台：Python FastAPI + SQLite + 原生 JavaScript 单页应用，可用 PyInstaller 打包为 Windows 纯轻量原生桌面应用（墨语MoYu-v1.7.9-win64.exe），依托 Windows 10/11 内置 WebView2 内核，无控制台黑框闪烁，点叉即退，关闭窗体自动退出后台服务；亦支持 --browser 回退至外部浏览器运行模式。作品与设置默认存储在本机 data/；使用外部 AI 时，用户选择的正文和上下文会发送给其配置的服务商。
 
 **内容安全原则：** AI 生成内容必须先预览，经用户确认后才写入作品；任何路径都不得静默改写或覆盖正文。
 
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 python scripts/fetch_vendor.py   # 首次运行或更新前端依赖时需要联网
 python run.py                    # 启动本地服务：http://127.0.0.1:8321
 python -m pytest -q              # 105 项 API & 桌面端生命周期回归测试
-python build_exe.py              # 构建单文件 exe（墨语MoYu-v1.7.8-win64.exe）
+python build_exe.py              # 构建单文件 exe（墨语MoYu-v1.7.9-win64.exe）
 python build_exe.py --onedir     # 文件夹形态
 `
 
@@ -98,7 +98,7 @@ elease/ 中的产物。
 
 当 AI 或协作者进入本仓库执行任务时，必须严格按以下顺序读档建立上下文：
 1. **AGENTS.md**（入口与全局规范，了解全局约定、设计语言与版本迭代规约）
-2. **最新版本开发说明与进度产物**（首要确认：当前版本号、已完成功能与待办事项，见 docs/v1.7.8-development-notes.md 与 docs/development-plan.md）
+2. **最新版本开发说明与进度产物**（首要确认：当前版本号、已完成功能与待办事项，见 docs/v1.7.9-development-notes.md 与 docs/development-plan.md）
 3. **README.md**（产品定位与开发操作指南）
 4. **docs/PRD-本地版.md**（真实业务功能基准，以代码实际功能为准）
 5. **docs/KimiCode防抄袭改造移交报告.md**（仅历史考古时查阅）
@@ -113,7 +113,7 @@ elease/ 中的产物。
    - 每次开发并发布新版本时，必须对当前版本的规范体系进行同步打包与归档。
    - 规范打包包括：更新 AGENTS.md、README.md、docs/PRD-本地版.md 及对应版本的架构设计，确保文档表述与实际代码实现 100% 同步。
 2. **新增开发说明产物**：
-   - 每次版本更新，必须在 docs/ 目录下新增或归档一份对应的开发说明产物（命名规范为 docs/vX.Y.Z-development-notes.md，例如当前 docs/v1.7.8-development-notes.md）。
+   - 每次版本更新，必须在 docs/ 目录下新增或归档一份对应的开发说明产物（命名规范为 docs/vX.Y.Z-development-notes.md，例如当前 docs/v1.7.9-development-notes.md）。
    - 该产物必须明确记载：
      - 当前版本号与更新日期
      - 新增/修复的具体功能模块与路由

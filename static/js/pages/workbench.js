@@ -22,7 +22,11 @@ registerPage("workbench", async (view, { segs, params }) => {
   let prevWords = 0, todayAdded = 0;
   let selRange = null, selText = "";      // 编辑器内最近一次有效选区
   let abortCtrl = null, generating = false;
-  let aiTask = "continue", aiLength = "medium", aiCandidates = 1;
+  let aiTask = "continue", aiLength = "2000", aiCandidates = 1;
+  try {
+    const savedLen = localStorage.getItem("moyu_ai_length");
+    if (savedLen && /^\d+$/.test(savedLen) && Number(savedLen) > 0) aiLength = savedLen;
+  } catch (_) { /* 忽略损坏的本地偏好 */ }
   // 每个任务标签各自绑定的 Skill（null=自动匹配内置技能），localStorage 持久化
   let aiSkillMap = {};
   try { aiSkillMap = JSON.parse(localStorage.getItem("moyu_task_skill_map") || "{}"); } catch (_) { aiSkillMap = {}; }
@@ -965,12 +969,30 @@ registerPage("workbench", async (view, { segs, params }) => {
       });
     taskBtns = taskSeg;
 
-    const lenSeg = seg([["short", "简"], ["medium", "中"], ["long", "长"]],
+    const lenCustomInput = ui.el("input", {
+      type: "number", min: "100", max: "20000", step: "100",
+      class: "w-24 px-2 py-1 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm outline-none focus:ring-1 focus:ring-primary",
+      placeholder: "自定义字数",
+      title: "自定义生成长度（100~20000 字），输入后自动生效",
+    });
+    const lenSeg = seg([["1000", "1000字"], ["2000", "2000字"], ["3000", "3000字"]],
       () => aiLength, (v) => {
         aiLength = v;
         window.aiLengthPreference = v;
+        lenCustomInput.value = "";
+        try { localStorage.setItem("moyu_ai_length", v); } catch (_) {}
       });
     lenBtns = lenSeg;
+    lenCustomInput.addEventListener("input", () => {
+      const n = parseInt(lenCustomInput.value, 10);
+      if (Number.isFinite(n) && n > 0) {
+        aiLength = String(n);
+        window.aiLengthPreference = aiLength;
+        try { localStorage.setItem("moyu_ai_length", aiLength); } catch (_) {}
+        lenSeg.sync();
+      }
+    });
+    if (!["1000", "2000", "3000"].includes(aiLength)) lenCustomInput.value = aiLength;
 
     const candSeg = seg([[1, "1"], [2, "2"], [3, "3"]],
       () => aiCandidates, (v) => { aiCandidates = v; });
@@ -979,7 +1001,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     /* 长度/候选：单一实例，随聊天/经典模式在抽屉与经典面板之间搬移挂载（写作技能已迁移至任务标签旁菜单，按任务绑定） */
     const settingsBlock = ui.el("div", { class: "flex flex-col gap-2" },
       ui.el("div", { class: "flex items-center gap-space-sm" },
-        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap),
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "长度"), lenSeg.wrap, lenCustomInput),
       ui.el("div", { class: "flex items-center gap-space-sm" },
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant shrink-0" }, "候选"), candSeg.wrap),
       ui.el("div", { class: "flex items-center justify-between" },
