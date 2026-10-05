@@ -99,7 +99,8 @@ def extract_structured_assets_from_text(text: str) -> dict:
                     conflict = cols[2] if len(cols) > 2 else ""
                     label = surface.split()[0] if surface else (conflict.split()[0] if conflict else "关联")
                     label = re.sub(r'[\s/]+.*$', '', label)[:15] or "关联"
-                    if src and dst and src != dst and len(src) <= 20 and len(dst) <= 20:
+                    # 过滤表头及长句子
+                    if src and dst and src != dst and len(src) <= 12 and len(dst) <= 12 and not any(bad in (src+dst) for bad in ["矩阵", "拓扑", "架构", "报告", "闭环", "地基", "规则", "计划", "实处", "耗时"]):
                         rel_key = f"{src}->{dst}:{label}"
                         if rel_key not in seen_relations:
                             seen_relations.add(rel_key)
@@ -125,7 +126,7 @@ def extract_structured_assets_from_text(text: str) -> dict:
                 alias = m_alias.group(2).strip() if m_alias else ""
                 name = clean_str(name)
 
-                if name and len(name) <= 20 and name not in seen_entities and not any(k in name for k in ["表头", "属性", "---"]):
+                if name and len(name) <= 20 and name not in seen_entities and not any(k in name for k in ["表头", "属性", "---"]) and not re.match(r'^[0-9一二三四五六七八九十]+[、.\s]*$', name) and not name.endswith(("分区", "接口", "矩阵", "简介", "计划表")):
                     seen_entities.add(name)
                     tags = ["主要角色"]
                     if role:
@@ -170,9 +171,9 @@ def extract_structured_assets_from_text(text: str) -> dict:
         if mc:
             raw_cname = mc.group(1).strip()
             alias = mc.group(2) or ""
-            if not any(k in raw_cname for k in ["规则", "设定", "卷", "章", "场景", "关系", "核心", "一、", "二、", "三、", "四、", "五、", "方向", "方案"]):
+            if not any(k in raw_cname for k in ["规则", "设定", "卷", "章", "场景", "关系", "核心", "一、", "二、", "三、", "四、", "五、", "方向", "方案", "简介", "计划", "分区", "接口"]):
                 cname = clean_str(raw_cname)
-                if len(cname) >= 2 and len(cname) <= 20 and cname not in seen_entities:
+                if len(cname) >= 2 and len(cname) <= 20 and cname not in seen_entities and not re.match(r'^[0-9一二三四五六七八九十]+[、.\s]*$', cname):
                     seen_entities.add(cname)
                     sub_desc = []
                     for nxt in lines[i+1:i+8]:
@@ -222,7 +223,7 @@ def extract_structured_assets_from_text(text: str) -> dict:
             src = clean_str(g[0] or g[1] or "")
             dst = clean_str(g[2] or g[3] or "")
             rel_label = clean_str(g[4] or g[5] or g[6] or "关联")
-            if src and dst and src != dst and len(src) <= 20 and len(dst) <= 20 and len(rel_label) <= 30:
+            if src and dst and src != dst and len(src) <= 12 and len(dst) <= 12 and len(rel_label) <= 20 and not any(bad in (src+dst) for bad in ["矩阵", "拓扑", "架构", "报告", "闭环", "地基", "规则", "计划", "实处", "耗时"]):
                 rel_key = f"{src}->{dst}:{rel_label}"
                 if rel_key not in seen_relations:
                     seen_relations.add(rel_key)
