@@ -753,3 +753,84 @@ def test_builtin_workflows_skill_ids_resolved(client):
             for s in detail["steps"]:
                 assert s["skill_id"] is not None
                 assert s["skill_title"] != ""
+
+
+# -*- coding: utf-8 -*-
+def test_sync_workflow_assets(client):
+    # 1. 创建一部测试作品
+    resp = client.post("/api/works", json={"title": "资产同步测试作品"})
+    assert resp.status_code == 201
+    work_id = resp.json()["id"]
+
+    # 2. 模拟一个运行中的工作流
+    # 创建工作流
+    wf_res = client.post("/api/workflows", json={
+        "name": "资产同步工作流",
+        "steps": [
+            {"title": "立项与设定", "input_mode": "none", "requires_review": 1}
+        ]
+    })
+    wf_id = wf_res.json()["id"]
+
+    client.patch("/api/settings", json={"values": {"ai_api_key": "mock-key", "ai_model": "mock-model"}})
+    run_res = client.post(f"/api/workflows/{wf_id}/runs", json={"work_id": work_id})
+    assert run_res.status_code == 201, run_res.text
+    run_id = run_res.json()["run_id"]
+
+    # 模拟步骤输出文本
+    step_output = """
+    #### 方向 1：【古典仙侠】林渊（性格孤僻）
+    * 【道具】断渊残剑（品阶残缺）
+    * 【势力】青云宗：领袖宗门
+    * 林渊 -> 青云宗 (叛出宗门)
+
+    ### 规则一：死者因果律
+    因果代偿不可避免。
+
+    第1卷：绝处逢生
+    第1章：江上捞尸
+    """
+    from app.db import get_db
+    db = get_db()
+    db.execute("UPDATE workflow_run_steps SET output=?, status='awaiting_review' WHERE run_id=? AND step_seq=0", (step_output, run_id))
+    db.commit()
+
+    # 3. 测试自动提取接口
+    ext_res = client.get(f"/api/workflows/runs/{run_id}/steps/0/extracted-assets")
+    assert ext_res.status_code == 200
+    assets = ext_res.json()["assets"]
+    assert len(assets["entities"]) >= 3
+    assert len(assets["relations"]) >= 1
+    assert len(assets["outline_nodes"]) >= 2
+    assert len(assets["notes"]) >= 1
+
+    # 4. 测试同步入库接口
+    sync_res = client.post(f"/api/workflows/runs/{run_id}/steps/0/sync-assets", json=assets)
+    assert sync_res.status_code == 200
+    summary = sync_res.json()["summary"]
+    assert summary["entities_added"] >= 3
+    assert summary["relations_added"] >= 1
+    assert summary["outlines_added"] >= 2
+    assert summary["notes_added"] >= 1
+
+    # 5. 校验数据库各表是否真正写入！
+    ents = db.execute("SELECT name, category FROM entities WHERE work_id=?", (work_id,)).fetchall()
+    ent_names = [e["name"] for e in ents]
+    assert "林渊" in ent_names
+    assert "断渊残剑" in ent_names
+    assert "青云宗" in ent_names
+
+    rels = db.execute("SELECT label FROM entity_relations WHERE work_id=?", (work_id,)).fetchall()
+    assert len(rels) >= 1
+    assert rels[0]["label"] == "叛出宗门"
+
+    outlines = db.execute("SELECT title, parent_id FROM outline_nodes WHERE work_id=?", (work_id,)).fetchall()
+    out_titles = [o["title"] for o in outlines]
+    assert "第1卷 绝处逢生" in out_titles
+    assert "第1章 江上捞尸" in out_titles
+
+    notes = db.execute("SELECT content FROM notes WHERE work_id=?", (work_id,)).fetchall()
+    assert len(notes) >= 1
+    assert "死者因果律" in notes[0]["content"]
+
+    print("ALL 5 ASSET SYNC INVARIANTS VERIFIED!")

@@ -7,6 +7,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app import workflow_engine
+from app.workflow_assets import (
+    SyncAssetsIn,
+    extract_structured_assets_from_text,
+    sync_assets_to_database,
+)
 from app.ai_client import get_ai_config
 from app.db import get_db
 
@@ -238,6 +243,33 @@ async def retry_run(run_id: int):
     workflow_engine.resume_run(run_id)
     return {"ok": True, "status": "running", "from_step": failed}
 
+
+
+# ---------- 创作资产提取与全功能规范同步 ----------
+
+@router.get("/runs/{run_id}/steps/{seq}/extracted-assets")
+def get_extracted_assets(run_id: int, seq: int):
+    """从指定步骤的输出内容中自动抽取结构化资产 (实体/关系/大纲/世界观资料)"""
+    db = get_db()
+    rs = db.execute("SELECT output FROM workflow_run_steps WHERE run_id = ? AND step_seq = ?", (run_id, seq)).fetchone()
+    if not rs:
+        raise HTTPException(404, "工作流步骤不存在")
+    return {"ok": True, "assets": extract_structured_assets_from_text(rs["output"] or "")}
+
+
+@router.post("/runs/{run_id}/steps/{seq}/sync-assets")
+def sync_step_assets(run_id: int, seq: int, body: SyncAssetsIn):
+    """将选定的创作资产规范写入墨语系统 (万相谱/图谱/大纲树/资料便签/正文)"""
+    db = get_db()
+    run = db.execute("SELECT * FROM workflow_runs WHERE id = ?", (run_id,)).fetchone()
+    if not run:
+        raise HTTPException(404, "工作流运行实例不存在")
+    work_id = run["work_id"]
+    if not work_id:
+        raise HTTPException(400, "该工作流未关联具体作品，无法规范同步到作品资产库")
+
+    summary = sync_assets_to_database(db, work_id, body, run_id=run_id, seq=seq)
+    return {"ok": True, "summary": summary}
 
 # ---------- 工作流定义 ----------
 

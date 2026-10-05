@@ -466,6 +466,183 @@ async function renderRun(view, runId) {
   }
 
 
+
+  async function showAssetSyncModal(runId, stepSeq, initialAssets, onDone) {
+    let assets = initialAssets;
+    if (!assets) {
+      try {
+        const res = await api.get(`/workflows/runs/${runId}/steps/${stepSeq}/extracted-assets`);
+        assets = res.assets || { entities: [], relations: [], outline_nodes: [], notes: [] };
+      } catch (e) {
+        ui.toast("提取创作资产失败：" + e.message, "err");
+        return;
+      }
+    }
+
+    const totalCount = (assets.entities || []).length + (assets.relations || []).length +
+                       (assets.outline_nodes || []).length + (assets.notes || []).length;
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 bg-scrim/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    });
+
+    const box = ui.el("div", {
+      class: "bg-surface text-on-surface rounded-2xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-outline-variant",
+    });
+
+    const header = ui.el("div", { class: "flex items-center justify-between p-4 border-b border-outline-variant bg-surface-container-low" },
+      ui.el("div", { class: "flex items-center gap-2" },
+        ui.icon("inventory_2", "text-primary text-[22px]"),
+        ui.el("h3", { class: "font-headline-sm text-headline-sm font-semibold text-primary" }, "规范同步至墨语资产库"),
+        ui.el("span", { class: "px-2 py-0.5 rounded-full bg-primary/10 text-primary font-label-sm text-label-sm" }, `识别到 ${totalCount} 项`)),
+      ui.el("button", {
+        class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant",
+        onclick: () => overlay.remove(),
+      }, ui.icon("close", "text-[20px]")));
+
+    const body = ui.el("div", { class: "p-4 overflow-y-auto flex flex-col gap-4 font-body-sm text-body-sm" });
+
+    if (totalCount === 0) {
+      body.append(ui.el("div", { class: "text-center py-8 text-on-surface-variant font-label-md" }, "当前文本中未识别到明确的结构化资产（人物/道具/地点/关系/大纲/世界观）"));
+    }
+
+    // 1. 万相谱实体
+    const entChecks = [];
+    if ((assets.entities || []).length > 0) {
+      const entGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("group", "text-[16px]"), `万相谱实体 (${assets.entities.length}个)`));
+      const grid = ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-2 gap-2" });
+      assets.entities.forEach((ent, i) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
+        entChecks.push({ cb, data: ent });
+        const catMap = { character: "人物", item: "道具", location: "地点", faction: "势力" };
+        const label = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
+          cb,
+          ui.el("div", { class: "flex flex-col min-w-0" },
+            ui.el("div", { class: "flex items-center gap-1 font-label-sm text-label-sm font-medium" },
+              ui.el("span", { class: "text-primary truncate" }, ent.name),
+              ui.el("span", { class: "px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant text-[11px]" }, catMap[ent.category] || ent.category)),
+            ent.content ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2" }, ent.content) : null));
+        grid.append(label);
+      });
+      entGroup.append(grid);
+      body.append(entGroup);
+    }
+
+    // 2. 万相图谱关系
+    const relChecks = [];
+    if ((assets.relations || []).length > 0) {
+      const relGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("hub", "text-[16px]"), `万相图谱关系 (${assets.relations.length}条)`));
+      const list = ui.el("div", { class: "flex flex-col gap-1.5" });
+      assets.relations.forEach((rel) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
+        relChecks.push({ cb, data: rel });
+        const item = ui.el("label", { class: "flex items-center gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
+          cb,
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface font-medium" }, rel.from_name),
+          ui.icon("arrow_forward", "text-[14px] text-on-surface-variant"),
+          ui.el("span", { class: "px-1.5 py-0.5 rounded bg-primary/10 text-primary font-label-sm text-label-sm" }, rel.label),
+          ui.icon("arrow_forward", "text-[14px] text-on-surface-variant"),
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface font-medium" }, rel.to_name));
+        list.append(item);
+      });
+      relGroup.append(list);
+      body.append(relGroup);
+    }
+
+    // 3. 故事大纲节点
+    const outlineChecks = [];
+    if ((assets.outline_nodes || []).length > 0) {
+      const outGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("format_list_bulleted", "text-[16px]"), `故事大纲 (${assets.outline_nodes.length}个节点)`));
+      const list = ui.el("div", { class: "flex flex-col gap-1.5" });
+      assets.outline_nodes.forEach((node) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
+        outlineChecks.push({ cb, data: node });
+        const item = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
+          cb,
+          ui.el("div", { class: "flex flex-col min-w-0" },
+            ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-medium" },
+              ui.icon(node.is_volume ? "folder" : "description", "text-[14px] text-primary"),
+              ui.el("span", { class: "text-on-surface font-semibold" }, node.title)),
+            node.synopsis ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-1" }, node.synopsis) : null));
+        list.append(item);
+      });
+      outGroup.append(list);
+      body.append(outGroup);
+    }
+
+    // 4. 世界观资料便签
+    const noteChecks = [];
+    if ((assets.notes || []).length > 0) {
+      const noteGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("public", "text-[16px]"), `世界观与法则资料 (${assets.notes.length}条)`));
+      const list = ui.el("div", { class: "flex flex-col gap-1.5" });
+      assets.notes.forEach((note) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
+        noteChecks.push({ cb, data: note });
+        const item = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
+          cb,
+          ui.el("div", { class: "flex flex-col min-w-0" },
+            ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, note.title),
+            ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 whitespace-pre-wrap" }, note.content)));
+        list.append(item);
+      });
+      noteGroup.append(list);
+      body.append(noteGroup);
+    }
+
+    const footer = ui.el("div", { class: "flex items-center justify-between p-4 border-t border-outline-variant bg-surface-container-low" },
+      ui.el("div", { class: "flex gap-2" },
+        ui.el("button", {
+          class: "px-2.5 py-1 text-[13px] rounded text-on-surface-variant hover:bg-surface-container",
+          onclick: () => {
+            [...entChecks, ...relChecks, ...outlineChecks, ...noteChecks].forEach(c => c.cb.checked = true);
+          },
+        }, "全选"),
+        ui.el("button", {
+          class: "px-2.5 py-1 text-[13px] rounded text-on-surface-variant hover:bg-surface-container",
+          onclick: () => {
+            [...entChecks, ...relChecks, ...outlineChecks, ...noteChecks].forEach(c => c.cb.checked = false);
+          },
+        }, "反选")),
+      ui.el("div", { class: "flex gap-2" },
+        ui.el("button", {
+          class: "px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm",
+          onclick: () => overlay.remove(),
+        }, "取消"),
+        ui.el("button", {
+          class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-medium hover:opacity-90 flex items-center gap-1.5",
+          onclick: async () => {
+            const payload = {
+              entities: entChecks.filter(c => c.cb.checked).map(c => c.data),
+              relations: relChecks.filter(c => c.cb.checked).map(c => c.data),
+              outline_nodes: outlineChecks.filter(c => c.cb.checked).map(c => c.data),
+              notes: noteChecks.filter(c => c.cb.checked).map(c => c.data),
+            };
+            try {
+              const res = await api.post(`/workflows/runs/${runId}/steps/${stepSeq}/sync-assets`, payload);
+              const sm = res.summary || {};
+              ui.toast(`资产已同步！实体+${sm.entities_added || 0}，关系+${sm.relations_added || 0}，大纲+${sm.outlines_added || 0}，资料+${sm.notes_added || 0}`, "ok");
+              overlay.remove();
+              if (onDone) await onDone();
+            } catch (e) {
+              ui.toast("同步失败：" + e.message, "err");
+            }
+          },
+        }, ui.icon("check_circle", "text-[16px]"), "确认同步到作品")));
+
+    box.append(header, body, footer);
+    overlay.append(box);
+    document.body.append(overlay);
+  }
+
   function parseWorkflowOptions(text) {
     if (!text || typeof text !== "string") return [];
     const lines = text.split("\n");
@@ -575,6 +752,16 @@ async function renderRun(view, runId) {
     }
 
     if (waiting && editingSeq !== s.step_seq) {
+      // 资产规范同步入口栏
+      card.append(ui.el("div", { class: "flex items-center justify-between p-2.5 rounded-lg bg-secondary-container/20 border border-secondary/30 mb-1" },
+        ui.el("div", { class: "flex items-center gap-2 font-label-sm text-label-sm text-on-surface" },
+          ui.icon("account_tree", "text-primary text-[18px]"),
+          ui.el("span", { class: "font-semibold text-primary" }, "资产联动："),
+          ui.el("span", { class: "text-on-surface-variant" }, "将本步骤生成的世界观、人物、道具、大纲等规范导入到各功能模块")),
+        ui.el("button", {
+          class: "flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 transition-opacity",
+          onclick: () => showAssetSyncModal(runId, s.step_seq, null, null),
+        }, ui.icon("inventory_2", "text-[16px]"), "规范同步至作品库")));
       card.append(ui.el("div", { class: "flex flex-wrap gap-2" },
         ui.el("button", {
           class: "px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90",
