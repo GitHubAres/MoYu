@@ -470,7 +470,8 @@ async function renderRun(view, runId) {
     if (!text || typeof text !== "string") return [];
     const lines = text.split("\n");
     const optionHeaders = [];
-    const headerRe = /^\s*(?:[#*>\-\s]*【(?:方案|选项)\s*([0-9一二三四五六七八九十A-Za-z]+)】|[#*>\-\s]*(?:方案|选项|Option)\s*([0-9一二三四五六七八九十A-Za-z]+)[：:\s]|(?:\*{2}|#{2,4})\s*(?:方案|选项|Option)\s*([0-9一二三四五六七八九十A-Za-z]+).*)/;
+    // 覆盖：方案1/方向1/选项A/候选填法A/【方案一】/【方向1】等常见多方案输出
+    const headerRe = /^\s*(?:[#*>\-\s]*【(?:方案|选项|方向|路线)\s*([0-9一二三四五六七八九十A-Za-z]+)】|[#*>\-\s]*(?:方案|选项|方向|路线|Option)\s*([0-9一二三四五六七八九十A-Za-z]+)[：:\s]|(?:\*{2}|#{2,4})\s*(?:方案|选项|方向|路线|Option)\s*([0-9一二三四五六七八九十A-Za-z]+).*|[-*]\s+\*\*([A-Za-z0-9一二三四五六七八九十]+)[\s\w（）()]*\*\*[：:])/;
 
     lines.forEach((line, idx) => {
       const m = line.match(headerRe);
