@@ -729,22 +729,36 @@ async function renderRun(view, runId) {
           ui.el("div", { class: "flex flex-col gap-1 mb-2" },
             ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, opt.title),
             ui.el("div", { class: "font-body-sm text-body-sm text-on-surface-variant line-clamp-3 whitespace-pre-wrap" }, opt.content)),
-          ui.el("button", {
-            class: "self-end flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 transition-opacity",
-            onclick: async () => {
-              try {
-                await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
-                  action: "edit",
-                  content: opt.content,
-                  note: `选用「${opt.title}」`,
+          ui.el("div", { class: "flex items-center gap-1.5 self-end" },
+            ui.el("button", {
+              class: "flex items-center gap-1 px-2.5 py-1 rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm hover:opacity-90 transition-opacity",
+              onclick: () => {
+                showAssetSyncModal(runId, s.step_seq, null, async () => {
+                  await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
+                    action: "edit",
+                    content: opt.content,
+                    note: `选用「${opt.title}」并同步资产`,
+                  });
+                  tick();
                 });
-                ui.toast(`已选用「${opt.title}」继续工作流`, "ok");
-                tick();
-              } catch (e) {
-                ui.toast(e.message, "err");
-              }
-            },
-          }, ui.icon("check", "text-[14px]"), "选用此方案继续"));
+              },
+            }, ui.icon("inventory_2", "text-[14px]"), "选用并同步资产"),
+            ui.el("button", {
+              class: "flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 transition-opacity",
+              onclick: async () => {
+                try {
+                  await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
+                    action: "edit",
+                    content: opt.content,
+                    note: `选用「${opt.title}」`,
+                  });
+                  ui.toast(`已选用「${opt.title}」继续工作流`, "ok");
+                  tick();
+                } catch (e) {
+                  ui.toast(e.message, "err");
+                }
+              },
+            }, ui.icon("check", "text-[14px]"), "选用此方案继续")));
         optGrid.append(optCard);
       });
       optContainer.append(optGrid);
@@ -764,12 +778,21 @@ async function renderRun(view, runId) {
         }, ui.icon("inventory_2", "text-[16px]"), "规范同步至作品库")));
       card.append(ui.el("div", { class: "flex flex-wrap gap-2" },
         ui.el("button", {
-          class: "px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90",
+          class: "flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90",
+          onclick: () => {
+            showAssetSyncModal(runId, s.step_seq, null, async () => {
+              await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, { action: "approve" });
+              tick();
+            });
+          },
+        }, ui.icon("inventory_2", "text-[16px]"), "采纳并同步至作品库 (推荐)"),
+        ui.el("button", {
+          class: "px-3 py-1.5 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm hover:bg-surface-container-high",
           onclick: async () => {
             try { await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, { action: "approve" }); tick(); }
             catch (e) { ui.toast(e.message, "err"); }
           },
-        }, "采纳并继续"),
+        }, "仅采纳继续"),
         ui.el("button", {
           class: "px-3 py-1.5 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm hover:bg-surface-container-high",
           onclick: () => { editingSeq = s.step_seq; tick(); },
