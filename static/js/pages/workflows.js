@@ -465,6 +465,38 @@ async function renderRun(view, runId) {
     (run.steps || []).forEach((s) => stepsBox.append(renderRunStep(run, s)));
   }
 
+
+  function parseWorkflowOptions(text) {
+    if (!text || typeof text !== "string") return [];
+    const lines = text.split("\n");
+    const optionHeaders = [];
+    const headerRe = /^\s*(?:[#*>\-\s]*【(?:方案|选项)\s*([0-9一二三四五六七八九十A-Za-z]+)】|[#*>\-\s]*(?:方案|选项|Option)\s*([0-9一二三四五六七八九十A-Za-z]+)[：:\s]|(?:\*{2}|#{2,4})\s*(?:方案|选项|Option)\s*([0-9一二三四五六七八九十A-Za-z]+).*)/;
+
+    lines.forEach((line, idx) => {
+      const m = line.match(headerRe);
+      if (m) {
+        optionHeaders.push({ index: idx, title: line.trim().replace(/^[#*>\-\s]+|[#*>\-\s]+$/g, "") });
+      }
+    });
+
+    if (optionHeaders.length < 2) return [];
+
+    const options = [];
+    for (let i = 0; i < optionHeaders.length; i++) {
+      const cur = optionHeaders[i];
+      const next = optionHeaders[i + 1];
+      const startIdx = cur.index;
+      const endIdx = next ? next.index : lines.length;
+      const optLines = lines.slice(startIdx, endIdx);
+      const content = optLines.join("\n").trim();
+      options.push({
+        title: cur.title || `方案 ${i + 1}`,
+        content,
+      });
+    }
+    return options;
+  }
+
   function renderRunStep(run, s) {
     const st = WF_STEP_STATUS[s.status] || { label: s.status, cls: "bg-surface-container-high text-on-surface-variant" };
     const waiting = s.status === "awaiting_review";
@@ -505,6 +537,40 @@ async function renderRun(view, runId) {
         }, s.output);
         card.append(pre);
       }
+    }
+
+    const detectedOptions = waiting ? parseWorkflowOptions(s.output) : [];
+    if (waiting && editingSeq !== s.step_seq && detectedOptions.length >= 2) {
+      const optContainer = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-md text-label-md text-primary font-semibold" },
+          ui.icon("alt_route", "text-[18px]"), `检测到 AI 提供了 ${detectedOptions.length} 个备选方案，可一键采纳对应方案进入下一步：`));
+
+      const optGrid = ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-2" });
+      detectedOptions.forEach((opt, oIdx) => {
+        const optCard = ui.el("div", { class: "flex flex-col justify-between p-2.5 rounded-lg bg-surface border border-outline-variant/60 shadow-xs hover:border-primary transition-all" },
+          ui.el("div", { class: "flex flex-col gap-1 mb-2" },
+            ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, opt.title),
+            ui.el("div", { class: "font-body-sm text-body-sm text-on-surface-variant line-clamp-3 whitespace-pre-wrap" }, opt.content)),
+          ui.el("button", {
+            class: "self-end flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 transition-opacity",
+            onclick: async () => {
+              try {
+                await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
+                  action: "edit",
+                  content: opt.content,
+                  note: `选用「${opt.title}」`,
+                });
+                ui.toast(`已选用「${opt.title}」继续工作流`, "ok");
+                tick();
+              } catch (e) {
+                ui.toast(e.message, "err");
+              }
+            },
+          }, ui.icon("check", "text-[14px]"), "选用此方案继续"));
+        optGrid.append(optCard);
+      });
+      optContainer.append(optGrid);
+      card.append(optContainer);
     }
 
     if (waiting && editingSeq !== s.step_seq) {

@@ -71,7 +71,13 @@ async def chat(messages: list, cfg: dict, max_tokens: int | None = None, timeout
         async with _client(cfg, timeout=timeout) as c:
             resp = await c.post("/chat/completions", json=payload)
             _check_status(resp)
-            data = resp.json()
+            raw_text = resp.text.strip()
+            if not raw_text:
+                raise AIError(f"AI 接口返回空内容（HTTP {resp.status_code}），请检查模型名 '{cfg.get('ai_model')}' 在网关/上游中是否有效，或确认配额与权限")
+            try:
+                data = resp.json()
+            except Exception:
+                raise AIError(f"AI 接口未返回有效 JSON（HTTP {resp.status_code}）：{raw_text[:200]}")
     except AIError:
         raise
     except Exception as e:

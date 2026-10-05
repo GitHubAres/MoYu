@@ -333,7 +333,8 @@ class AIOrchestrator:
         if not cfg.get("ai_base_url") or not cfg.get("ai_api_key"):
             return {"ok": False, "message": "尚未填写 Base URL 或 API Key"}
         try:
-            await chat([{"role": "user", "content": "hi"}], cfg, max_tokens=1)
+            # 部分上游/网关或带思考过程(reasoning)的模型在 max_tokens=1 时无法产出 token 会返回空或异常，此处调整为宽松的测试上限
+            await chat([{"role": "user", "content": "hi"}], cfg, max_tokens=64)
             return {"ok": True, "message": "连接成功"}
         except AIError as e:
             return {"ok": False, "message": str(e)}
