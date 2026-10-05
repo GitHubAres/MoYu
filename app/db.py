@@ -522,6 +522,7 @@ DEFAULT_SETTINGS = {
     "ai_api_key": "",
 
     "ai_model": "",
+    "ai_timeout": "300",
 
     "version_keep_auto": "30",
 

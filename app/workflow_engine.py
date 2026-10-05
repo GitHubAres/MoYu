@@ -10,7 +10,7 @@ import asyncio
 import re
 import time
 
-from app.ai_client import chat, get_ai_config
+from app.ai_client import chat, get_ai_config, get_ai_timeout
 from app.ai_tasks import create_task, fail_task, finish_task, start_task
 from app.db import get_db
 from app.features import build_skill_system_prompt
@@ -145,11 +145,16 @@ async def _execute(run_id: int):
                     parts.append("【上下文】\n" + context)
                 if instruction and not consumed.get("instruction"):
                     parts.append("【写作要求】\n" + instruction)
+                # 写作工作流多为长篇小说草稿生成、长章精修或世界观设定等任务，
+                # 需充分的等待窗口，默认放宽至 600 秒（10分钟），或取用户设置中更大的配置
+                wf_timeout = max(get_ai_timeout(cfg, fallback=600.0), 300.0)
+                step_cfg = dict(cfg)
+                step_cfg["ai_timeout"] = wf_timeout
                 messages = [
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": "\n\n".join(parts) or "请开始。"},
                 ]
-                text, tokens = await chat(messages, cfg)
+                text, tokens = await chat(messages, step_cfg)
                 elapsed = int((time.time() - t0) * 1000)
                 tokens = tokens if isinstance(tokens, int) else 0
                 finish_task(task_id, {"text": text[:MAX_OUTPUT_CHARS]},

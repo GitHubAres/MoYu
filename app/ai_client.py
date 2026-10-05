@@ -7,11 +7,27 @@ import httpx
 
 from .db import get_db
 
-TIMEOUT = 120.0
+DEFAULT_TIMEOUT = 300.0
+TIMEOUT = DEFAULT_TIMEOUT  # 兼容旧代码引用
 
 
 class AIError(Exception):
     """AI 调用失败，信息友好化后可直接展示给用户。"""
+
+
+def get_ai_timeout(cfg: dict | None = None, fallback: float = DEFAULT_TIMEOUT) -> float:
+    """获取当前配置的 AI 超时秒数（默认 300 秒，最低 10 秒）。"""
+    if cfg is None:
+        cfg = get_ai_config()
+    raw = cfg.get("ai_timeout")
+    if raw is not None and str(raw).strip():
+        try:
+            val = float(raw)
+            if val >= 10.0:
+                return val
+        except (ValueError, TypeError):
+            pass
+    return fallback
 
 
 def get_ai_config() -> dict:
@@ -24,7 +40,7 @@ def _friendly(e: Exception) -> AIError:
     if isinstance(e, httpx.ConnectError):
         return AIError("无法连接 AI 接口，请检查 Base URL 是否正确，网络是否畅通。")
     if isinstance(e, httpx.TimeoutException):
-        return AIError("AI 接口请求超时，请稍后重试。")
+        return AIError("AI 接口响应超时，请在系统设置中调大超时时间或稍后重试。")
     return AIError(f"AI 接口调用失败：{e}")
 
 
@@ -37,20 +53,22 @@ def _check_status(resp: httpx.Response):
         raise AIError(f"AI 接口返回错误（{resp.status_code}）：{resp.text[:200]}")
 
 
-def _client(cfg: dict) -> httpx.AsyncClient:
+def _client(cfg: dict, timeout: float | None = None) -> httpx.AsyncClient:
+    t = timeout if timeout is not None else get_ai_timeout(cfg)
+    timeout_obj = httpx.Timeout(t, connect=30.0)
     return httpx.AsyncClient(
         base_url=(cfg.get("ai_base_url") or "").rstrip("/"),
         headers={"Authorization": f"Bearer {cfg.get('ai_api_key', '')}"},
-        timeout=TIMEOUT)
+        timeout=timeout_obj)
 
 
-async def chat(messages: list, cfg: dict, max_tokens: int | None = None):
+async def chat(messages: list, cfg: dict, max_tokens: int | None = None, timeout: float | None = None, **kwargs):
     """非流式调用，返回 (文本, total_tokens|None)。"""
     payload = {"model": cfg["ai_model"], "messages": messages, "stream": False}
     if max_tokens:
         payload["max_tokens"] = max_tokens
     try:
-        async with _client(cfg) as c:
+        async with _client(cfg, timeout=timeout) as c:
             resp = await c.post("/chat/completions", json=payload)
             _check_status(resp)
             data = resp.json()
@@ -63,7 +81,7 @@ async def chat(messages: list, cfg: dict, max_tokens: int | None = None):
     return text, (data.get("usage") or {}).get("total_tokens")
 
 
-async def chat_stream(messages: list, cfg: dict, usage_box: dict):
+async def chat_stream(messages: list, cfg: dict, usage_box: dict, timeout: float | None = None):
     """流式调用，异步产生 delta 文本；若有 total_tokens 写入 usage_box；兼容非流式返回兜底。"""
     payload = {
         "model": cfg["ai_model"],
@@ -72,7 +90,7 @@ async def chat_stream(messages: list, cfg: dict, usage_box: dict):
         "stream_options": {"include_usage": True},
     }
     try:
-        async with _client(cfg) as c:
+        async with _client(cfg, timeout=timeout) as c:
             async with c.stream("POST", "/chat/completions", json=payload) as resp:
                 if resp.status_code >= 400:
                     await resp.aread()

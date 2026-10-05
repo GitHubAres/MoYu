@@ -114,6 +114,17 @@ registerPage("settings", async (view) => {
   aiKey.addEventListener("change", () => save({ ai_api_key: aiKey.value.trim() }));
   aiModel.addEventListener("change", () => save({ ai_model: aiModel.value.trim() }));
 
+  const aiTimeout = ui.el("input", {
+    type: "number", min: "30", max: "3600", step: "10",
+    class: inputCls, placeholder: "300（默认300秒）",
+    value: settings.ai_timeout || "300",
+  });
+  aiTimeout.addEventListener("change", () => {
+    const val = Math.max(30, Math.min(3600, Number(aiTimeout.value) || 300));
+    aiTimeout.value = String(val);
+    save({ ai_timeout: String(val) }, "AI 响应超时已更新");
+  });
+
 
   /* ---------- 3.1 AI 模型选扏组件 (ModelPicker) ---------- */
   function createModelPicker(inputEl, urlEl, keyEl, providerSel, onSelect) {
@@ -406,7 +417,7 @@ registerPage("settings", async (view) => {
       testResult.textContent = "正在测试连接…";
       testResult.className = "font-label-sm text-label-sm text-on-surface-variant";
       try {
-        await save({ ai_base_url: aiUrl.value.trim(), ai_api_key: aiKey.value.trim(), ai_model: aiModel.value.trim() }, "配置已保存");
+        await save({ ai_base_url: aiUrl.value.trim(), ai_api_key: aiKey.value.trim(), ai_model: aiModel.value.trim(), ai_timeout: aiTimeout.value.trim() || "300" }, "配置已保存");
         const r = await api.post("/ai/test");
         testResult.textContent = r.message || (r.ok ? "连接成功" : "连接失败");
         testResult.className = `font-label-sm text-label-sm ${r.ok ? "text-emerald-700" : "text-error"}`;
@@ -1014,13 +1025,17 @@ registerPage("settings", async (view) => {
         ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "服务商"),
         providerSelect,
         providerHint),
-      ui.el("div", { class: "grid grid-cols-1 md:grid-cols-3 gap-space-md" },
-        ui.el("div", { class: "flex flex-col gap-1.5" },
+      ui.el("div", { class: "grid grid-cols-1 md:grid-cols-4 gap-space-md" },
+        ui.el("div", { class: "flex flex-col gap-1.5 md:col-span-1" },
           ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "Base URL"), aiUrl),
-        ui.el("div", { class: "flex flex-col gap-1.5" },
+        ui.el("div", { class: "flex flex-col gap-1.5 md:col-span-1" },
           ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "API Key"), aiKey),
-        ui.el("div", { class: "flex flex-col gap-1.5" },
-          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "模型名"), modelPickerWrap)),
+        ui.el("div", { class: "flex flex-col gap-1.5 md:col-span-1" },
+          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "模型名"), modelPickerWrap),
+        ui.el("div", { class: "flex flex-col gap-1.5 md:col-span-1" },
+          ui.el("label", { class: "font-label-md text-label-md text-on-surface-variant font-medium" }, "响应超时（秒）"), aiTimeout)),
+      ui.el("p", { class: "font-label-sm text-label-sm text-outline -mt-2" },
+        "默认 300 秒（5分钟）；写作工作流长篇生成默认最高放宽至 600 秒（10分钟），避免长文本或慢速模型意外中断。"),
       ui.el("div", { class: "flex items-center gap-space-md" }, testBtn, testResult),
       routeCard,
       ui.el("div", { class: "p-space-lg rounded-xl bg-gradient-to-r from-surface-container-low to-surface-container-high/40 flex flex-col gap-1" },
