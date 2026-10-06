@@ -281,8 +281,6 @@ CREATE TABLE IF NOT EXISTS timeline_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chapters_volume ON chapters(volume_id, sort_order);
-CREATE INDEX IF NOT EXISTS idx_timeline_outline_node ON timeline_events(outline_node_id);
-CREATE INDEX IF NOT EXISTS idx_foreshadows_outline_node ON foreshadows(outline_node_id);
 
 CREATE INDEX IF NOT EXISTS idx_versions_chapter ON chapter_versions(chapter_id, id DESC);
 
