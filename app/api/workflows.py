@@ -57,6 +57,7 @@ class StepsReplaceIn(BaseModel):
 class RunStartIn(BaseModel):
     work_id: int
     chapter_id: Optional[int] = None
+    outline_node_id: Optional[int] = None
 
 
 class ReviewIn(BaseModel):
@@ -131,6 +132,11 @@ def _run_detail(db, run_id: int) -> dict:
     out["finished_steps"] = done
     out["workflow_name"] = wf["name"] if wf else ""
     out["workflow_icon"] = wf["icon"] if wf else "account_tree"
+    if dict(run).get("outline_node_id"):
+        nd = db.execute("SELECT title FROM outline_nodes WHERE id = ?", (run["outline_node_id"],)).fetchone()
+        out["outline_node_title"] = nd["title"] if nd else ""
+    else:
+        out["outline_node_title"] = ""
     return out
 
 
@@ -448,13 +454,20 @@ async def start_run(wf_id: int, body: RunStartIn):
         ).fetchone()
         if not ch:
             raise HTTPException(400, "章节不存在或不属于该作品")
+    if body.outline_node_id is not None:
+        nd = db.execute(
+            "SELECT id FROM outline_nodes WHERE id = ? AND work_id = ?",
+            (body.outline_node_id, body.work_id),
+        ).fetchone()
+        if not nd:
+            raise HTTPException(400, "大纲节点不存在或不属于该作品")
     cfg = get_ai_config()
     if not cfg.get("ai_api_key") or not cfg.get("ai_model"):
         raise HTTPException(400, "未配置 AI 接口，请先到系统设置页配置")
 
     cur = db.execute(
-        "INSERT INTO workflow_runs(workflow_id, work_id, chapter_id, status) VALUES (?, ?, ?, 'pending')",
-        (wf_id, body.work_id, body.chapter_id),
+        "INSERT INTO workflow_runs(workflow_id, work_id, chapter_id, outline_node_id, status) VALUES (?, ?, ?, ?, 'pending')",
+        (wf_id, body.work_id, body.chapter_id, body.outline_node_id),
     )
     run_id = cur.lastrowid
     for s in steps:

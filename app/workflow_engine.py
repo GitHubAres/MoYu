@@ -1,3 +1,4 @@
+from app.services.context_service import assemble_workflow_context
 # 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
 """写作工作流运行器：纯编排薄引擎。
@@ -53,20 +54,27 @@ def _render_instruction(template: str, outputs: dict[int, str]) -> str:
     return _STEP_REF_RE.sub(_sub, template or "")
 
 
-def _build_step_context(step, outputs: dict[int, str], chapter_text: str) -> str:
+def _build_step_context(db, run, step, outputs: dict[int, str], chapter_text: str) -> str:
     mode = step["input_mode"] or "chapter"
-    parts = []
-    if mode in ("chapter", "merge") and chapter_text:
-        parts.append("【本章正文】\n" + chapter_text)
+    prev_step_text = ""
     if mode in ("prev_output", "merge"):
         ref_seq = step["prev_step_seq"]
         if ref_seq is None:
             earlier = [s for s in outputs if s < step["seq"]]
             ref_seq = max(earlier) if earlier else None
-        prev = outputs.get(ref_seq, "") if ref_seq is not None else ""
-        if prev:
-            parts.append(f"【前序步骤输出（第 {ref_seq} 步）】\n" + _truncate_prev(prev))
-    return "\n\n".join(parts)
+        prev_raw = outputs.get(ref_seq, "") if ref_seq is not None else ""
+        if prev_raw:
+            prev_step_text = f"（第 {ref_seq} 步输出）\n" + _truncate_prev(prev_raw)
+
+    return assemble_workflow_context(
+        db=db,
+        work_id=run["work_id"],
+        chapter_id=dict(run).get("chapter_id"),
+        outline_node_id=dict(run).get("outline_node_id"),
+        chapter_text=chapter_text,
+        prev_step_text=prev_step_text,
+        input_mode=mode,
+    )
 
 
 def _set_run(db, run_id: int, **fields):
@@ -120,7 +128,7 @@ async def _execute(run_id: int):
             _set_run_step(db, run_id, seq, status="running")
 
             outputs = _approved_outputs(db, run_id)
-            context = _build_step_context(step, outputs, chapter_text)
+            context = _build_step_context(db, run, step, outputs, chapter_text)
             instruction = _render_instruction(step["instruction"], outputs)
 
             task_id = create_task(run["work_id"], "workflow_step",

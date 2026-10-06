@@ -479,6 +479,7 @@ CREATE TABLE IF NOT EXISTS workflow_runs (
     workflow_id  INTEGER NOT NULL REFERENCES workflows(id),
     work_id      INTEGER REFERENCES works(id) ON DELETE CASCADE,
     chapter_id   INTEGER,
+    outline_node_id INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL,
     status       TEXT DEFAULT 'pending',      -- pending|running|awaiting_review|done|failed|cancelled
     current_step INTEGER DEFAULT 0,
     error_msg    TEXT DEFAULT '',
@@ -640,6 +641,7 @@ def init_db():
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_timeline_outline_node ON timeline_events(outline_node_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_foreshadows_outline_node ON foreshadows(outline_node_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_workflow_runs_outline_node ON workflow_runs(outline_node_id)")
 
     for k, v in DEFAULT_SETTINGS.items():
 

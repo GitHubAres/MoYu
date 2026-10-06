@@ -87,6 +87,13 @@ registerPage("workbench", async (view, { segs, params }) => {
     location.hash = "#/bookshelf";
     return;
   }
+    if (window.store && window.store.events) {
+      window.store.events.onPage("workbench", "plot:changed", async (ev) => {
+        if (!ev || !ev.workId || ev.workId === workId) {
+          try { outlineNodes = await api.get(`/works/${workId}/outline`); } catch (_) {}
+        }
+      });
+    }
 
   /* 作品没有任何章节时自动创建 卷一/第一章 */
   if (!tree.length) {

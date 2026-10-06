@@ -839,6 +839,12 @@ registerPage("outline", async (view, { segs, query }) => {
 
   renderTree();
   renderDetail();
+
+  if (window.store && window.store.events) {
+    window.store.events.onPage("outline", "plot:changed", (ev) => {
+      if (ev && ev.workId === workId) reload();
+    });
+  }
 });
 
 /* 无 workId 时：作品选择列表 */

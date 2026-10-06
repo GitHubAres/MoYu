@@ -14,10 +14,18 @@ class AssetWorkInfoIn(BaseModel):
     intro: Optional[str] = None
 
 
+class AssetTimelineEventIn(BaseModel):
+    time_label: str = ""
+    event: str
+    characters: str = ""
+    outline_node_id: Optional[int] = None
+
+
 class AssetForeshadowIn(BaseModel):
     title: str
     content: str = ""
     status: str = "planted"
+    outline_node_id: Optional[int] = None
 
 
 class AssetEntityIn(BaseModel):
@@ -38,6 +46,7 @@ class AssetOutlineIn(BaseModel):
     title: str
     synopsis: str = ""
     is_volume: bool = False
+    parent_id: Optional[int] = None
 
 
 class AssetNoteIn(BaseModel):
@@ -52,6 +61,7 @@ class SyncAssetsIn(BaseModel):
     relations: list[AssetRelationIn] = []
     outline_nodes: list[AssetOutlineIn] = []
     foreshadows: list[AssetForeshadowIn] = []
+    timeline_events: list[AssetTimelineEventIn] = []
     notes: list[AssetNoteIn] = []
     apply_to_chapter: bool = False
     chapter_content: Optional[str] = None
@@ -72,11 +82,11 @@ def extract_structured_assets_from_text(text: str) -> dict:
         "relations": [],
         "outline_nodes": [],
         "foreshadows": [],
+        "timeline_events": [],
         "notes": [],
     }
     if not text or not text.strip():
         return assets
-
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
     category_map = {
@@ -126,6 +136,7 @@ def extract_structured_assets_from_text(text: str) -> dict:
     # 1. 结构化 Markdown 表格提取 (核心人物欲望矩阵表、关系网拓扑表、伏笔表等)
     table_headers = None
     foreshadow_headers = None
+    timeline_headers = None
     cat_headers = None
     for line in lines:
         if line.startswith("|") and line.endswith("|"):
@@ -146,6 +157,11 @@ def extract_structured_assets_from_text(text: str) -> dict:
             # 检测是否为伏笔表表头
             if any(k in cols[0] for k in ["伏笔", "线索", "暗线", "钩子"]):
                 foreshadow_headers = cols
+                continue
+
+            # 检测是否为时间线表表头
+            if any(k in cols[0] for k in ["时间", "时间线", "编年", "时期", "节点"]) or (len(cols) > 1 and any(k in cols[1] for k in ["时间", "事件"])):
+                timeline_headers = cols
                 continue
 
             # 检测是否为 势力/地点/道具/法则 表头
@@ -174,6 +190,27 @@ def extract_structured_assets_from_text(text: str) -> dict:
                         "title": f_title,
                         "content": "\n".join(desc_parts),
                         "status": "planted",
+                    })
+                continue
+
+            # 提取时间线表格数据
+            if timeline_headers and any(k in timeline_headers[0] for k in ["时间", "时间线", "编年", "时期", "节点"]):
+                time_val = clean_str(cols[0])
+                event_val = clean_str(cols[1]) if len(cols) > 1 else ""
+                char_val = clean_str(cols[2]) if len(cols) > 2 else ""
+                for idx, h in enumerate(timeline_headers):
+                    if idx < len(cols):
+                        if any(k in h for k in ["事件", "剧情", "内容"]):
+                            event_val = clean_str(cols[idx])
+                        elif any(k in h for k in ["人物", "角色"]):
+                            char_val = clean_str(cols[idx])
+                        elif any(k in h for k in ["时间", "节点", "时期"]):
+                            time_val = clean_str(cols[idx])
+                if event_val and not any(k in event_val for k in ["表头", "---", "事件"]):
+                    assets["timeline_events"].append({
+                        "time_label": time_val if time_val not in ["表头", "---", "时间"] else "未定时间",
+                        "event": event_val,
+                        "characters": char_val,
                     })
                 continue
 
@@ -256,17 +293,53 @@ def extract_structured_assets_from_text(text: str) -> dict:
     ent_pattern_c = re.compile(r'^[#*>\-\s]*(?:方向|方案|选项)\s*\d+[:：\s]+[【\[]([^】\]]+)[】\]]\s*(?:《[^》]+》)?\s*([^\s(（:：—–\-]+)')
 
     for i, line in enumerate(lines):
-        # 模式: 伏笔条目识别
-        fs_m = re.match(r'^[#*>\-\s]*[【\[](?:伏笔|暗线|线索)[】\]]\s*[:：]?\s*([^\n]+)', line) or re.match(r'^[#*>\-\s]*\*\*(?:伏笔|暗线|线索)\*\*\s*[:：]\s*([^\n]+)', line)
+        # timeline event recognition
+        tl_m = (
+            re.match(r'^[#*>\-\s]*[【\[]?(?:\u65f6\u95f4\u7ebf\u4e8b\u4ef6|\u65f6\u95f4\u7ebf|\u5267\u60c5\u4e8b\u4ef6|\u7f16\u5e74\u4e8b\u4ef6)[】\]]?\s*[:\uff1a]?\s*(.*)$', line)
+            or re.match(r'^[#*>\-\s]*\*\*(?:\u65f6\u95f4\u7ebf\u4e8b\u4ef6|\u65f6\u95f4\u7ebf|\u5267\u60c5\u4e8b\u4ef6|\u7f16\u5e74\u4e8b\u4ef6)\*\*\s*[:\uff1a]?\s*(.*)$', line)
+        )
+        if tl_m and any(k in line for k in ['\u65f6\u95f4', '\u4e8b\u4ef6', '\u5267\u60c5']):
+            raw_body = tl_m.group(1).strip()
+            if raw_body:
+                m_time = re.search(r'(?:\u65f6\u95f4|\u65f6\u95f4\u8282\u70b9|\u65f6\u671f)[:\uff1a]\s*([^\uff1b;\uff0c,\n|]+)', raw_body)
+                time_label = clean_str(m_time.group(1)) if m_time else ''
+                m_chars = re.search(r'(?:\u4eba\u7269|\u89d2\u8272|\u6d89\u53ca\u4eba\u7269|\u6d89\u53ca\u89d2\u8272)[:\uff1a]\s*([^\uff1b;\n|)]+)', raw_body)
+                characters = clean_str(m_chars.group(1)) if m_chars else ''
+                m_event = re.search(r'(?:\u4e8b\u4ef6|\u5185\u5bb9|\u5267\u60c5)[:\uff1a]\s*(.*?)(?:[\uff1b;|\n]|(?:[\uff0c,]\s*(?:\u4eba\u7269|\u89d2\u8272)[:\uff1a])|\)|$)', raw_body)
+                if m_event and clean_str(m_event.group(1)):
+                    event = clean_str(m_event.group(1))
+                else:
+                    rem = raw_body
+                    if m_time:
+                        rem = rem.replace(m_time.group(0), '')
+                    if m_chars:
+                        rem = rem.replace(m_chars.group(0), '')
+                    rem = re.sub(r'^[#*>\-\s:\uff1a|\uff1b;,\uff0c()\uff08\uff09]+', '', rem).strip()
+                    rem = re.sub(r'[\s:\uff1a|\uff1b;,\uff0c()\uff08\uff09]+$', '', rem).strip()
+                    event = clean_str(rem)
+                if event:
+                    assets['timeline_events'].append({
+                        'time_label': time_label or '\u672a\u5b9a\u65f6\u95f4',
+                        'event': event,
+                        'characters': characters,
+                    })
+            continue
+
+        # foreshadow item
+        fs_m = (
+            re.match(r'^[#*>\-\s]*[【\[](?:\u4f0f\u7b14|\u6697\u7ebf|\u7ebf\u7d22|\u4f0f\u7b14\u7ebf\u7d22)[】\]]\s*[:\uff1a]?\s*([^\n]+)', line)
+            or re.match(r'^[#*>\-\s]*\*\*(?:\u4f0f\u7b14|\u6697\u7ebf|\u7ebf\u7d22|\u4f0f\u7b14\u7ebf\u7d22)\*\*\s*[:\uff1a]?\s*([^\n]+)', line)
+            or re.match(r'^[#*>\-\s]*(?:\u4f0f\u7b14|\u6697\u7ebf|\u7ebf\u7d22|\u4f0f\u7b14\u7ebf\u7d22)\s*[:\uff1a]\s*([^\n]+)', line)
+        )
         if fs_m:
             fs_text = clean_str(fs_m.group(1))
-            parts = re.split(r'[:：—–\-]+', fs_text, maxsplit=1)
+            parts = re.split(r'[:\uff1a—–\-]+', fs_text, maxsplit=1)
             f_title = parts[0].strip()[:30]
             f_content = parts[1].strip() if len(parts) > 1 else fs_text
-            assets["foreshadows"].append({
-                "title": f_title,
-                "content": f_content,
-                "status": "planted",
+            assets['foreshadows'].append({
+                'title': f_title,
+                'content': f_content,
+                'status': 'planted',
             })
             continue
 
@@ -437,6 +510,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         "relations_added": 0,
         "outlines_added": 0,
         "foreshadows_added": 0,
+        "timeline_events_added": 0,
         "notes_added": 0,
         "chapter_synced": False,
     }
@@ -523,44 +597,24 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
             )
             summary["relations_added"] += 1
 
-    # 3. 故事大纲同步
-    current_vol_id = None
-    for node in body.outline_nodes:
-        title = node.title.strip()
-        synopsis = node.synopsis.strip()
-        if not title:
-            continue
-        dup = db.execute("SELECT id FROM outline_nodes WHERE work_id=? AND title=?", (work_id, title)).fetchone()
-        if dup:
-            if node.is_volume:
-                current_vol_id = dup["id"]
-            continue
-        parent_id = None if node.is_volume else current_vol_id
-        sort_order = db.execute(
-            "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM outline_nodes WHERE work_id=? AND parent_id IS ?",
-            (work_id, parent_id),
-        ).fetchone()[0]
-        cur = db.execute(
-            "INSERT INTO outline_nodes (work_id, parent_id, title, synopsis, status, sort_order) VALUES (?, ?, ?, ?, 'pending', ?)",
-            (work_id, parent_id, title, synopsis, sort_order),
-        )
-        if node.is_volume:
-            current_vol_id = cur.lastrowid
-        summary["outlines_added"] += 1
+    # 3. 三位一体剧情脉络同步 (大纲 / 时间线 / 伏笔)，统一委托 plot_service
+    from app.services.plot_service import batch_sync_triad_assets
+    run_meta = db.execute("SELECT chapter_id, outline_node_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()
+    target_outline_id = run_meta["outline_node_id"] if run_meta else None
+    target_chap_id = run_meta["chapter_id"] if run_meta else None
 
-    # 3.5. 伏笔计划表同步 (foreshadows 表)
-    for fs in body.foreshadows:
-        title = fs.title.strip()
-        content = fs.content.strip()
-        if not title:
-            continue
-        dup = db.execute("SELECT id FROM foreshadows WHERE work_id=? AND title=?", (work_id, title)).fetchone()
-        if not dup:
-            db.execute(
-                "INSERT INTO foreshadows (work_id, title, content, status) VALUES (?, ?, ?, ?)",
-                (work_id, title, content, fs.status or "planted"),
-            )
-            summary["foreshadows_added"] += 1
+    triad_stats = batch_sync_triad_assets(
+        db=db,
+        work_id=work_id,
+        timeline_events=[(e.model_dump() if hasattr(e, "model_dump") else e.dict()) for e in body.timeline_events],
+        foreshadows=[(f.model_dump() if hasattr(f, "model_dump") else f.dict()) for f in body.foreshadows],
+        outline_nodes=[(o.model_dump() if hasattr(o, "model_dump") else o.dict()) for o in body.outline_nodes],
+        default_outline_node_id=target_outline_id,
+        default_chapter_id=target_chap_id,
+    )
+    summary["outlines_added"] += triad_stats["outline_nodes_added"]
+    summary["foreshadows_added"] += triad_stats["foreshadows_added"]
+    summary["timeline_events_added"] += triad_stats["timeline_events_added"]
 
     # 4. 世界观资料便签同步
     for note in body.notes:

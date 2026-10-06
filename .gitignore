@@ -31,3 +31,6 @@ Thumbs.db
 *.log
 *.spec
 temp_*.py
+
+# 营销与宣传视频生成工程
+video-production/

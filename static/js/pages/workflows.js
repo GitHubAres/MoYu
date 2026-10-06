@@ -169,22 +169,36 @@ async function renderList(view) {
     works.forEach((w) => workSel.append(ui.el("option", { value: w.id }, w.title)));
     const chSel = ui.el("select", { class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm" });
 
-    async function fillChapters() {
+    const outlineSel = ui.el("select", { class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm" });
+
+    async function fillContextTargets() {
       chSel.innerHTML = "";
       chSel.append(ui.el("option", { value: "" }, "（不指定章节）"));
+      outlineSel.innerHTML = "";
+      outlineSel.append(ui.el("option", { value: "" }, "（不指定大纲节点）"));
       try {
-        const tree = await api.get(`/works/${workSel.value}/tree`);
+        const [tree, oTree] = await Promise.all([
+          api.get(`/works/${workSel.value}/tree`).catch(() => []),
+          api.get(`/works/${workSel.value}/outline`).catch(() => []),
+        ]);
         (tree || []).forEach((vol) => (vol.chapters || []).forEach((ch) => {
           chSel.append(ui.el("option", { value: ch.id }, `${vol.title} / ${ch.title}`));
         }));
+        (function walk(nodes, prefix) {
+          (nodes || []).forEach((n) => {
+            outlineSel.append(ui.el("option", { value: n.id }, `${prefix}${n.title}`));
+            if (n.children) walk(n.children, prefix + "  └ ");
+          });
+        })(oTree, "");
       } catch (_) {}
     }
-    workSel.addEventListener("change", fillChapters);
-    await fillChapters();
+    workSel.addEventListener("change", fillContextTargets);
+    await fillContextTargets();
 
     const content = ui.el("div", { class: "flex flex-col gap-3" },
       ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "选择作品"), workSel,
-      ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "选择章节（作为运行上下文）"), chSel);
+      ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "选择目标大纲节点（自动装载细纲与伏笔脉络）"), outlineSel,
+      ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "选择章节正文（可选前情上下文）"), chSel);
 
     ui.modal(`运行 · ${wf.name}`, content, [
       ui.el("button", {
@@ -198,6 +212,7 @@ async function renderList(view) {
             const res = await api.post(`/workflows/${wf.id}/runs`, {
               work_id: Number(workSel.value),
               chapter_id: chSel.value ? Number(chSel.value) : null,
+              outline_node_id: outlineSel.value ? Number(outlineSel.value) : null,
             });
             document.getElementById("modal-root").innerHTML = "";
             location.hash = `#/workflows/run/${res.run_id}`;
@@ -659,6 +674,30 @@ async function renderRun(view, runId) {
       body.append(outGroup);
     }
 
+    // 3.5 剧情时间线事件 (三位一体)
+    const timelineChecks = [];
+    if ((assets.timeline_events || []).length > 0) {
+      const teGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("timeline", "text-[16px] text-secondary"), `剧情时间线事件 (${assets.timeline_events.length}条)`));
+      const list = ui.el("div", { class: "flex flex-col gap-1.5" });
+      assets.timeline_events.forEach((ev) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
+        timelineChecks.push({ cb, data: ev });
+        const item = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
+          cb,
+          ui.el("div", { class: "flex flex-col min-w-0" },
+            ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-medium" },
+              ui.icon("schedule", "text-[13px] text-secondary"),
+              ui.el("span", { class: "text-secondary font-semibold" }, ev.time_label || "未定时间")),
+            ui.el("span", { class: "text-on-surface text-[12px] line-clamp-2 mt-0.5" }, ev.event),
+            ev.characters ? ui.el("span", { class: "text-on-surface-variant text-[11px]" }, "人物：" + ev.characters) : null));
+        list.append(item);
+      });
+      teGroup.append(list);
+      body.append(teGroup);
+    }
+
     // 4. 伏笔计划表
     const foreshadowChecks = [];
     if ((assets.foreshadows || []).length > 0) {
@@ -733,6 +772,7 @@ async function renderRun(view, runId) {
               entities: entChecks.filter(c => c.cb.checked).map(c => c.data),
               relations: relChecks.filter(c => c.cb.checked).map(c => c.data),
               outline_nodes: outlineChecks.filter(c => c.cb.checked).map(c => c.data),
+              timeline_events: timelineChecks.filter(c => c.cb.checked).map(c => c.data),
               foreshadows: foreshadowChecks.filter(c => c.cb.checked).map(c => c.data),
               notes: noteChecks.filter(c => c.cb.checked).map(c => c.data),
             };
@@ -751,8 +791,12 @@ async function renderRun(view, runId) {
               if (sm.entities_added) tips.push(`万相谱实体+${sm.entities_added}`);
               if (sm.relations_added) tips.push(`关系+${sm.relations_added}`);
               if (sm.outlines_added) tips.push(`大纲+${sm.outlines_added}`);
+              if (sm.timeline_events_added) tips.push(`时间线+${sm.timeline_events_added}`);
               if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
               if (sm.notes_added) tips.push(`设定+${sm.notes_added}`);
+              if (window.store && window.store.plot && run && run.work_id) {
+                window.store.plot.notifyChanged(run.work_id);
+              }
               ui.toast("规范同步成功！" + (tips.join("，") || "已同步"), "ok");
               overlay.remove();
               if (onDone) await onDone();

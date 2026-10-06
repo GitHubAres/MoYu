@@ -10,6 +10,13 @@ registerPage("board", async (view, { segs }) => {
   const NEXT = { planted: ["pending", "arrow_forward", "标记为待回收"], pending: ["resolved", "task_alt", "标记为已回收"], resolved: ["planted", "undo", "重新打开"] };
 
   if (!workId) return pickWork();
+  if (window.store && window.store.events) {
+    window.store.events.onPage('board', 'plot:changed', (ev) => {
+      if (!ev || !ev.workId || ev.workId === workId) {
+        router.dispatch();
+      }
+    });
+  }
   return renderBoard();
 
   async function pickWork() {

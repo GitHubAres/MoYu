@@ -65,6 +65,12 @@ registerPage("timeline", async (view, { segs }) => {
         ui.el("label", { class: "flex items-center gap-2 font-label-sm text-label-sm text-on-surface-variant z-10 mt-1" }, "当前作品", workSelect)),
       timelineBox));
 
+  if (window.store && window.store.events) {
+    window.store.events.onPage("timeline", "plot:changed", (ev) => {
+      if (ev && ev.workId === workId) reload();
+    });
+  }
+
   async function reload() {
     try { events = await api.get(`/works/${workId}/timeline`); }
     catch (e) { ui.toast(e.message, "err"); return; }
