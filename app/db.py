@@ -618,6 +618,8 @@ MIGRATIONS = {
 
     "foreshadows": [("outline_node_id", "INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL")],
 
+    "workflow_runs": [("outline_node_id", "INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL")],
+
 }
 
 
