@@ -282,6 +282,7 @@ def test_workbench_chat_frontend_assets():
     assert 'startNewSession' in content
     assert 'min-h-[44px]' in content
     assert 'updateSelectionQuote' in content
+    assert 'selQuoteBox' in content
     assert 'updateContextCount' in content
     assert 'streaming-caret' in content
     assert 'onAdopt' in content

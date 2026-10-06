@@ -247,6 +247,39 @@ window.WorkbenchChat = (() => {
     const controlsWrap = ui.el("div", { class: "flex items-center gap-1 ml-auto shrink-0" }, lenSelect, candSelect, skillMenuWrap);
     const topControlRow = ui.el("div", { class: "flex items-center justify-between gap-1.5 pb-1 flex-wrap" }, taskChipsBar, controlsWrap);
 
+    // 选区引用提示条
+    const selQuoteBox = ui.el("div", {
+      class: "hidden items-center justify-between gap-1 px-2.5 py-1 mb-1 rounded-lg bg-surface-container text-on-surface-variant font-label-sm text-[12px] border border-border-feather",
+    },
+      ui.el("div", { class: "flex items-center gap-1 min-w-0" },
+        ui.icon("format_quote", "text-[15px] text-primary shrink-0"),
+        ui.el("span", { class: "truncate" }, "已引用选区 "),
+        ui.el("span", { class: "font-semibold text-primary sel-count" }, "0"),
+        ui.el("span", {}, " 字")),
+      ui.el("button", {
+        class: "w-5 h-5 flex items-center justify-center rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface cursor-pointer shrink-0",
+        title: "取消引用该选区",
+        onclick: () => {
+          if (clearSelection) clearSelection();
+          updateSelectionQuote();
+        },
+      }, ui.icon("close", "text-[14px]"))
+    );
+
+    function updateSelectionQuote() {
+      const sel = getSelection ? getSelection() : null;
+      if (sel && sel.text && sel.text.trim()) {
+        const count = sel.text.trim().length;
+        const countEl = selQuoteBox.querySelector(".sel-count");
+        if (countEl) countEl.textContent = String(count);
+        selQuoteBox.classList.remove("hidden");
+        selQuoteBox.classList.add("flex");
+      } else {
+        selQuoteBox.classList.add("hidden");
+        selQuoteBox.classList.remove("flex");
+      }
+    }
+
     const inputArea = ui.el("textarea", {
       class: "w-full max-h-32 min-h-[44px] py-2 px-3 rounded-xl bg-surface-container-low border border-border-feather focus:border-primary focus:bg-surface-container-lowest outline-none font-body-sm text-body-sm resize-none leading-relaxed transition-all placeholder:text-outline-variant",
       rows: "2",
@@ -271,6 +304,8 @@ window.WorkbenchChat = (() => {
         handleSend();
       }
     });
+
+    setActiveTask("continue");
 
     // 输入区容器
     const inputBar = ui.el("div", {
