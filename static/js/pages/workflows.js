@@ -461,26 +461,64 @@ async function renderRun(view, runId) {
           }, "从失败处重跑")
         : null);
 
+    if (run.status === "done") {
+      const summaryBanner = ui.el("div", {
+        class: "p-4 rounded-2xl bg-primary/10 border border-primary/30 flex flex-col md:flex-row items-center justify-between gap-3 mt-1",
+      },
+        ui.el("div", { class: "flex items-center gap-3" },
+          ui.icon("verified", "text-primary text-[32px] shrink-0"),
+          ui.el("div", {},
+            ui.el("div", { class: "font-headline-sm text-headline-sm font-semibold text-primary" }, "🎉 写作工作流已圆满完成！"),
+            ui.el("div", { class: "font-body-sm text-body-sm text-on-surface-variant mt-0.5" }, "全流程产出的故事立项、万相谱角色、关系网、分卷大纲、伏笔计划均可一键汇总导入。"))),
+        ui.el("div", { class: "flex flex-wrap items-center gap-2 shrink-0" },
+          ui.el("button", {
+            class: "px-4 py-2 rounded-xl bg-primary text-on-primary font-label-md text-label-md font-medium shadow-md hover:opacity-90 flex items-center gap-1.5 transition-all",
+            onclick: async () => {
+              try {
+                const res = await api.get(`/workflows/runs/${runId}/summary-assets`);
+                showAssetSyncModal(runId, 0, res.assets, null, "🎉 全流程汇总资产规范同步");
+              } catch (e) {
+                ui.toast("获取汇总资产失败：" + e.message, "err");
+              }
+            },
+          }, ui.icon("inventory_2", "text-[18px]"), "全功能一键同步至作品库"),
+          run.work_id ? ui.el("a", {
+            href: `#/entities/${run.work_id}`,
+            class: "px-3 py-2 rounded-xl bg-surface-container text-on-surface font-label-sm text-label-sm hover:bg-surface-container-high flex items-center gap-1",
+          }, ui.icon("group", "text-[16px]"), "查看万相谱") : null,
+          run.work_id ? ui.el("a", {
+            href: `#/outline/${run.work_id}`,
+            class: "px-3 py-2 rounded-xl bg-surface-container text-on-surface font-label-sm text-label-sm hover:bg-surface-container-high flex items-center gap-1",
+          }, ui.icon("format_list_bulleted", "text-[16px]"), "查看大纲") : null));
+      headCard.append(summaryBanner);
+    }
+
     stepsBox.innerHTML = "";
     (run.steps || []).forEach((s) => stepsBox.append(renderRunStep(run, s)));
   }
 
 
 
-  async function showAssetSyncModal(runId, stepSeq, initialAssets, onDone) {
+  async function showAssetSyncModal(runId, stepSeq, initialAssets, onDone, customTitle) {
     let assets = initialAssets;
     if (!assets) {
       try {
         const res = await api.get(`/workflows/runs/${runId}/steps/${stepSeq}/extracted-assets`);
-        assets = res.assets || { entities: [], relations: [], outline_nodes: [], notes: [] };
+        assets = res.assets || { work_info: {}, entities: [], relations: [], outline_nodes: [], foreshadows: [], notes: [] };
       } catch (e) {
         ui.toast("提取创作资产失败：" + e.message, "err");
         return;
       }
     }
 
-    const totalCount = (assets.entities || []).length + (assets.relations || []).length +
-                       (assets.outline_nodes || []).length + (assets.notes || []).length;
+    const workInfo = assets.work_info || {};
+    const hasWorkInfo = !!(workInfo.title || workInfo.genre || workInfo.intro);
+    const totalCount = (hasWorkInfo ? 1 : 0) +
+                       (assets.entities || []).length +
+                       (assets.relations || []).length +
+                       (assets.outline_nodes || []).length +
+                       (assets.foreshadows || []).length +
+                       (assets.notes || []).length;
 
     const overlay = ui.el("div", {
       class: "fixed inset-0 bg-scrim/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in",
@@ -488,13 +526,13 @@ async function renderRun(view, runId) {
     });
 
     const box = ui.el("div", {
-      class: "bg-surface text-on-surface rounded-2xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-outline-variant",
+      class: "bg-surface text-on-surface rounded-2xl shadow-xl max-w-2xl w-full max-h-[88vh] flex flex-col overflow-hidden border border-outline-variant",
     });
 
     const header = ui.el("div", { class: "flex items-center justify-between p-4 border-b border-outline-variant bg-surface-container-low" },
       ui.el("div", { class: "flex items-center gap-2" },
         ui.icon("inventory_2", "text-primary text-[22px]"),
-        ui.el("h3", { class: "font-headline-sm text-headline-sm font-semibold text-primary" }, "规范同步至墨语资产库"),
+        ui.el("h3", { class: "font-headline-sm text-headline-sm font-semibold text-primary" }, customTitle || "规范同步至墨语资产库"),
         ui.el("span", { class: "px-2 py-0.5 rounded-full bg-primary/10 text-primary font-label-sm text-label-sm" }, `识别到 ${totalCount} 项`)),
       ui.el("button", {
         class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant",
@@ -504,7 +542,51 @@ async function renderRun(view, runId) {
     const body = ui.el("div", { class: "p-4 overflow-y-auto flex flex-col gap-4 font-body-sm text-body-sm" });
 
     if (totalCount === 0) {
-      body.append(ui.el("div", { class: "text-center py-8 text-on-surface-variant font-label-md" }, "当前文本中未识别到明确的结构化资产（人物/道具/地点/关系/大纲/世界观）"));
+      body.append(ui.el("div", { class: "text-center py-8 text-on-surface-variant font-label-md" }, "当前文本中未识别到明确的结构化资产（立项/人物/道具/地点/关系/大纲/伏笔/世界观）"));
+    }
+
+    // 0. 故事立项 (作品基础信息配置)
+    let syncWorkInfoCb = null;
+    let workTitleInput = null;
+    let workGenreInput = null;
+    let workIntroInput = null;
+    if (hasWorkInfo || customTitle) {
+      syncWorkInfoCb = ui.el("input", { type: "checkbox", checked: hasWorkInfo, class: "rounded border-outline text-primary mt-0.5" });
+      workTitleInput = ui.el("input", {
+        type: "text",
+        class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant focus:border-primary text-body-sm text-on-surface outline-none",
+        placeholder: "作品书名，如《逆命天尊》",
+        value: workInfo.title || "",
+      });
+      workGenreInput = ui.el("input", {
+        type: "text",
+        class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant focus:border-primary text-body-sm text-on-surface outline-none",
+        placeholder: "题材类型，如 古典仙侠 / 悬疑修真",
+        value: workInfo.genre || "",
+      });
+      workIntroInput = ui.el("textarea", {
+        class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant focus:border-primary text-body-sm text-on-surface outline-none min-h-[60px] resize-y",
+        placeholder: "核心看点或故事简介...",
+      }, workInfo.intro || "");
+
+      const workInfoGroup = ui.el("div", { class: "flex flex-col gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("label", { class: "flex items-center gap-2 cursor-pointer font-label-sm text-label-sm font-semibold text-primary" },
+            syncWorkInfoCb,
+            ui.icon("auto_stories", "text-[16px]"),
+            "故事立项 · 规范同步更新作品信息"),
+          ui.el("span", { class: "text-[11px] text-on-surface-variant" }, "可编辑书名、题材与看点")),
+        ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-2 gap-2" },
+          ui.el("div", { class: "flex flex-col gap-1" },
+            ui.el("span", { class: "text-[12px] text-on-surface-variant" }, "作品书名"),
+            workTitleInput),
+          ui.el("div", { class: "flex flex-col gap-1" },
+            ui.el("span", { class: "text-[12px] text-on-surface-variant" }, "题材定位"),
+            workGenreInput)),
+        ui.el("div", { class: "flex flex-col gap-1" },
+          ui.el("span", { class: "text-[12px] text-on-surface-variant" }, "核心看点 / 故事简介"),
+          workIntroInput));
+      body.append(workInfoGroup);
     }
 
     // 1. 万相谱实体
@@ -514,17 +596,17 @@ async function renderRun(view, runId) {
         ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
           ui.icon("group", "text-[16px]"), `万相谱实体 (${assets.entities.length}个)`));
       const grid = ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-2 gap-2" });
-      assets.entities.forEach((ent, i) => {
+      assets.entities.forEach((ent) => {
         const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
         entChecks.push({ cb, data: ent });
-        const catMap = { character: "人物", item: "道具", location: "地点", faction: "势力" };
+        const catMap = { character: "人物", item: "道具", location: "地点", faction: "势力", lore: "法则" };
         const label = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
           cb,
           ui.el("div", { class: "flex flex-col min-w-0" },
             ui.el("div", { class: "flex items-center gap-1 font-label-sm text-label-sm font-medium" },
-              ui.el("span", { class: "text-primary truncate" }, ent.name),
-              ui.el("span", { class: "px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant text-[11px]" }, catMap[ent.category] || ent.category)),
-            ent.content ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2" }, ent.content) : null));
+              ui.el("span", { class: "text-primary truncate font-semibold" }, ent.name),
+              ui.el("span", { class: "px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant text-[11px] shrink-0" }, catMap[ent.category] || ent.category)),
+            ent.content ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 mt-0.5" }, ent.content) : null));
         grid.append(label);
       });
       entGroup.append(grid);
@@ -545,7 +627,7 @@ async function renderRun(view, runId) {
           cb,
           ui.el("span", { class: "font-label-sm text-label-sm text-on-surface font-medium" }, rel.from_name),
           ui.icon("arrow_forward", "text-[14px] text-on-surface-variant"),
-          ui.el("span", { class: "px-1.5 py-0.5 rounded bg-primary/10 text-primary font-label-sm text-label-sm" }, rel.label),
+          ui.el("span", { class: "px-1.5 py-0.5 rounded bg-primary/10 text-primary font-label-sm text-label-sm font-medium" }, rel.label),
           ui.icon("arrow_forward", "text-[14px] text-on-surface-variant"),
           ui.el("span", { class: "font-label-sm text-label-sm text-on-surface font-medium" }, rel.to_name));
         list.append(item);
@@ -570,14 +652,37 @@ async function renderRun(view, runId) {
             ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-medium" },
               ui.icon(node.is_volume ? "folder" : "description", "text-[14px] text-primary"),
               ui.el("span", { class: "text-on-surface font-semibold" }, node.title)),
-            node.synopsis ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-1" }, node.synopsis) : null));
+            node.synopsis ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-1 mt-0.5" }, node.synopsis) : null));
         list.append(item);
       });
       outGroup.append(list);
       body.append(outGroup);
     }
 
-    // 4. 世界观资料便签
+    // 4. 伏笔计划表
+    const foreshadowChecks = [];
+    if ((assets.foreshadows || []).length > 0) {
+      const fsGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("bookmark", "text-[16px]"), `伏笔计划表 (${assets.foreshadows.length}条)`));
+      const list = ui.el("div", { class: "flex flex-col gap-1.5" });
+      assets.foreshadows.forEach((fs) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
+        foreshadowChecks.push({ cb, data: fs });
+        const item = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
+          cb,
+          ui.el("div", { class: "flex flex-col min-w-0" },
+            ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-medium" },
+              ui.icon("flag", "text-[13px] text-primary"),
+              ui.el("span", { class: "text-primary font-semibold" }, fs.title)),
+            fs.content ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 mt-0.5" }, fs.content) : null));
+        list.append(item);
+      });
+      fsGroup.append(list);
+      body.append(fsGroup);
+    }
+
+    // 5. 世界观与法则资料
     const noteChecks = [];
     if ((assets.notes || []).length > 0) {
       const noteGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
@@ -591,25 +696,29 @@ async function renderRun(view, runId) {
           cb,
           ui.el("div", { class: "flex flex-col min-w-0" },
             ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, note.title),
-            ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 whitespace-pre-wrap" }, note.content)));
+            ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 whitespace-pre-wrap mt-0.5" }, note.content)));
         list.append(item);
       });
       noteGroup.append(list);
       body.append(noteGroup);
     }
 
+    const allCheckboxes = [...entChecks, ...relChecks, ...outlineChecks, ...foreshadowChecks, ...noteChecks];
+
     const footer = ui.el("div", { class: "flex items-center justify-between p-4 border-t border-outline-variant bg-surface-container-low" },
       ui.el("div", { class: "flex gap-2" },
         ui.el("button", {
           class: "px-2.5 py-1 text-[13px] rounded text-on-surface-variant hover:bg-surface-container",
           onclick: () => {
-            [...entChecks, ...relChecks, ...outlineChecks, ...noteChecks].forEach(c => c.cb.checked = true);
+            allCheckboxes.forEach(c => c.cb.checked = true);
+            if (syncWorkInfoCb) syncWorkInfoCb.checked = true;
           },
         }, "全选"),
         ui.el("button", {
           class: "px-2.5 py-1 text-[13px] rounded text-on-surface-variant hover:bg-surface-container",
           onclick: () => {
-            [...entChecks, ...relChecks, ...outlineChecks, ...noteChecks].forEach(c => c.cb.checked = false);
+            allCheckboxes.forEach(c => c.cb.checked = false);
+            if (syncWorkInfoCb) syncWorkInfoCb.checked = false;
           },
         }, "反选")),
       ui.el("div", { class: "flex gap-2" },
@@ -618,25 +727,40 @@ async function renderRun(view, runId) {
           onclick: () => overlay.remove(),
         }, "取消"),
         ui.el("button", {
-          class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-medium hover:opacity-90 flex items-center gap-1.5",
+          class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-medium hover:opacity-90 flex items-center gap-1.5 shadow-sm",
           onclick: async () => {
             const payload = {
               entities: entChecks.filter(c => c.cb.checked).map(c => c.data),
               relations: relChecks.filter(c => c.cb.checked).map(c => c.data),
               outline_nodes: outlineChecks.filter(c => c.cb.checked).map(c => c.data),
+              foreshadows: foreshadowChecks.filter(c => c.cb.checked).map(c => c.data),
               notes: noteChecks.filter(c => c.cb.checked).map(c => c.data),
             };
+            if (syncWorkInfoCb && syncWorkInfoCb.checked) {
+              payload.work_info = {
+                title: workTitleInput ? workTitleInput.value.trim() : "",
+                genre: workGenreInput ? workGenreInput.value.trim() : "",
+                intro: workIntroInput ? workIntroInput.value.trim() : "",
+              };
+            }
             try {
               const res = await api.post(`/workflows/runs/${runId}/steps/${stepSeq}/sync-assets`, payload);
               const sm = res.summary || {};
-              ui.toast(`资产已同步！实体+${sm.entities_added || 0}，关系+${sm.relations_added || 0}，大纲+${sm.outlines_added || 0}，资料+${sm.notes_added || 0}`, "ok");
+              const tips = [];
+              if (sm.work_info_updated) tips.push("作品立项已更新");
+              if (sm.entities_added) tips.push(`万相谱实体+${sm.entities_added}`);
+              if (sm.relations_added) tips.push(`关系+${sm.relations_added}`);
+              if (sm.outlines_added) tips.push(`大纲+${sm.outlines_added}`);
+              if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
+              if (sm.notes_added) tips.push(`设定+${sm.notes_added}`);
+              ui.toast("规范同步成功！" + (tips.join("，") || "已同步"), "ok");
               overlay.remove();
               if (onDone) await onDone();
             } catch (e) {
               ui.toast("同步失败：" + e.message, "err");
             }
           },
-        }, ui.icon("check_circle", "text-[16px]"), "确认同步到作品")));
+        }, ui.icon("check_circle", "text-[16px]"), "确认规范同步到作品库")));
 
     box.append(header, body, footer);
     overlay.append(box);
@@ -732,17 +856,22 @@ async function renderRun(view, runId) {
           ui.el("div", { class: "flex items-center gap-1.5 self-end" },
             ui.el("button", {
               class: "flex items-center gap-1 px-2.5 py-1 rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm hover:opacity-90 transition-opacity",
-              onclick: () => {
-                showAssetSyncModal(runId, s.step_seq, null, async () => {
-                  await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
-                    action: "edit",
-                    content: opt.content,
-                    note: `选用「${opt.title}」并同步资产`,
-                  });
-                  tick();
-                });
+              onclick: async () => {
+                try {
+                  const res = await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/extracted-assets`, { content: opt.content });
+                  showAssetSyncModal(runId, s.step_seq, res.assets, async () => {
+                    await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
+                      action: "edit",
+                      content: opt.content,
+                      note: `选用「${opt.title}」并同步资产`,
+                    });
+                    tick();
+                  }, `选用「${opt.title}」· 前置配置导入`);
+                } catch (e) {
+                  ui.toast("提取方案资产失败：" + e.message, "err");
+                }
               },
-            }, ui.icon("inventory_2", "text-[14px]"), "选用并同步资产"),
+            }, ui.icon("inventory_2", "text-[14px]"), "选用并配置导入"),
             ui.el("button", {
               class: "flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 transition-opacity",
               onclick: async () => {
@@ -778,14 +907,14 @@ async function renderRun(view, runId) {
         }, ui.icon("inventory_2", "text-[16px]"), "规范同步至作品库")));
       card.append(ui.el("div", { class: "flex flex-wrap gap-2" },
         ui.el("button", {
-          class: "flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90",
+          class: "flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 shadow-sm",
           onclick: () => {
             showAssetSyncModal(runId, s.step_seq, null, async () => {
               await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, { action: "approve" });
               tick();
-            });
+            }, "步骤产出 · 前置配置与规范导入");
           },
-        }, ui.icon("inventory_2", "text-[16px]"), "采纳并同步至作品库 (推荐)"),
+        }, ui.icon("inventory_2", "text-[16px]"), "采纳并配置导入 (推荐)"),
         ui.el("button", {
           class: "px-3 py-1.5 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm hover:bg-surface-container-high",
           onclick: async () => {

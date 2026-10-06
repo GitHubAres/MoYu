@@ -365,6 +365,7 @@ def test_review_gate_pauses_and_approve(client):
         assert d2["steps"][0]["review_note"] == "满意"
         assert d2["steps"][1]["status"] == "approved"
         assert d2["steps"][2]["status"] == "approved"
+        time.sleep(0.05)
 
 
 def test_review_gate_edit_replaces_output(client):
@@ -779,10 +780,12 @@ def test_sync_workflow_assets(client):
 
     # 模拟步骤输出文本
     step_output = """
-    #### 方向 1：【古典仙侠】林渊（性格孤僻）
+    #### 方向 1：【古典仙侠】《逆命天尊》林渊（性格孤僻）
+    * 核心看点：夺天地造化，掌生死因果
     * 【道具】断渊残剑（品阶残缺）
     * 【势力】青云宗：领袖宗门
     * 林渊 -> 青云宗 (叛出宗门)
+    * 【伏笔】青铜残片的真实来历：牵扯上古仙魔大战隐秘
 
     ### 规则一：死者因果律
     因果代偿不可避免。
@@ -803,14 +806,19 @@ def test_sync_workflow_assets(client):
     assert len(assets["relations"]) >= 1
     assert len(assets["outline_nodes"]) >= 2
     assert len(assets["notes"]) >= 1
+    assert assets["work_info"]["title"] == "逆命天尊"
+    assert "古典仙侠" in assets["work_info"]["genre"]
+    assert len(assets["foreshadows"]) >= 1
 
     # 4. 测试同步入库接口
     sync_res = client.post(f"/api/workflows/runs/{run_id}/steps/0/sync-assets", json=assets)
     assert sync_res.status_code == 200
     summary = sync_res.json()["summary"]
+    assert summary["work_info_updated"] is True
     assert summary["entities_added"] >= 3
     assert summary["relations_added"] >= 1
     assert summary["outlines_added"] >= 2
+    assert summary["foreshadows_added"] >= 1
     assert summary["notes_added"] >= 1
 
     # 5. 校验数据库各表是否真正写入！
@@ -833,4 +841,13 @@ def test_sync_workflow_assets(client):
     assert len(notes) >= 1
     assert "死者因果律" in notes[0]["content"]
 
-    print("ALL 5 ASSET SYNC INVARIANTS VERIFIED!")
+    # 校验作品立项信息与伏笔库
+    w = db.execute("SELECT title, genre FROM works WHERE id=?", (work_id,)).fetchone()
+    assert w["title"] == "逆命天尊"
+    assert "古典仙侠" in w["genre"]
+
+    fs = db.execute("SELECT title FROM foreshadows WHERE work_id=?", (work_id,)).fetchall()
+    assert len(fs) >= 1
+    assert any("青铜残片" in r["title"] for r in fs)
+
+    print("ALL 7 ASSET SYNC INVARIANTS VERIFIED!")

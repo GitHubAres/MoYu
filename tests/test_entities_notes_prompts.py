@@ -157,6 +157,16 @@ def test_notes_crud(client):
     remaining = client.get("/api/notes", params={"work_id": w["id"]}).json()
     assert [x["content"] for x in remaining] == ["全局便签"]
 
+    # 测试标签过滤与排除功能
+    w_note = client.post("/api/notes", json={"content": "世界观核心规则", "tags": "世界观", "work_id": w["id"]}).json()
+    all_notes = client.get("/api/notes").json()
+    assert any(x["id"] == w_note["id"] for x in all_notes)
+    excluded = client.get("/api/notes", params={"exclude_tag": "世界观"}).json()
+    assert not any(x["id"] == w_note["id"] for x in excluded)
+    filtered = client.get("/api/notes", params={"tag": "世界观"}).json()
+    assert any(x["id"] == w_note["id"] for x in filtered)
+    client.delete(f"/api/notes/{w_note['id']}")
+
 
 # ---------- prompts ----------
 

@@ -14,14 +14,25 @@ def _row(r):
 
 
 @router.get("")
-def list_notes(work_id: int | None = None):
+def list_notes(work_id: int | None = None, tag: str | None = None, exclude_tag: str | None = None):
     db = get_db()
+    sql = "SELECT * FROM notes"
+    conds = []
+    args = []
     if work_id:
-        rows = db.execute(
-            "SELECT * FROM notes WHERE work_id=? OR work_id IS NULL ORDER BY id DESC",
-            (work_id,)).fetchall()
-    else:
-        rows = db.execute("SELECT * FROM notes ORDER BY id DESC").fetchall()
+        conds.append("(work_id=? OR work_id IS NULL)")
+        args.append(work_id)
+    if tag:
+        conds.append("tags LIKE ?")
+        args.append(f"%{tag}%")
+    if exclude_tag:
+        conds.append("(tags IS NULL OR tags NOT LIKE ?)")
+        args.append(f"%{exclude_tag}%")
+
+    if conds:
+        sql += " WHERE " + " AND ".join(conds)
+    sql += " ORDER BY id DESC"
+    rows = db.execute(sql, tuple(args)).fetchall()
     return [_row(r) for r in rows]
 
 

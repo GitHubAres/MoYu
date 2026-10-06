@@ -7,7 +7,7 @@
 **一支笔、一炉丹、一盏灯——部署在本地或私有 VPS、数据不出机的一站式 AI 长篇创作工作台。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.8.3-D9483B)](https://github.com/GitHubAres/MoYu/releases)
+[![Version](https://img.shields.io/badge/version-v1.8.4-D9483B)](https://github.com/GitHubAres/MoYu/releases)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-green)](https://www.python.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)]()
 [![Data](https://img.shields.io/badge/data-100%25%20本地私有-orange)]()
@@ -60,6 +60,7 @@
 
 | 版本 | 日期 | 亮点 |
 |---|---|---|
+| **v1.8.4** | 2026-10-06 | 写作工作流全功能规范打通（立项前置配置弹窗、万相谱/图谱/大纲/伏笔全量同步、多方案独立采纳）、修复作品级联删除与便签隔离 |
 | **v1.8.3** | 2026-10-06 | 写作工作流全流程资产规范同步打通（世界观/万相谱/图谱/大纲/正文），支持方案提取与前置确认弹窗 |
 | **v1.8.2** | 2026-10-05 | 写作工作流支持智能识别 AI 备选方案并一键采纳；优化 AI 测试连接 max_tokens 与错误诊断提示；增强 sub2api 网关兼容性 |
 | **v1.8.1** | 2026-10-05 | 修复「写作工作流」长文本生成被 120 秒超时提前中断缺陷；支持在系统设置中自定义 AI 超时时长（默认提升至 300 秒，工作流自动放宽至 600 秒） |
@@ -81,11 +82,11 @@
 
 ### 方式 A：Windows 原生单文件桌面端（无需环境）
 
-1. 从 [Releases](../../releases) 下载 `墨语MoYu-v1.8.3-win64.exe`
+1. 从 [Releases](../../releases) 下载 `墨语MoYu-v1.8.4-win64.exe`
 2. **双击运行**：直接打开沉浸式轻量原生窗口（依托系统内置 WebView2 运行，无黑框命令行，双击秒开）
 3. **关闭退出**：点击窗口右上角"关闭"按钮（×），程序自动优雅停止后台服务并退出，绝不留存后台僵尸进程
 4. **单实例保护**：重复双击 exe 不会发生端口争用冲突，会自动唤起激活已有运行中的墨语
-5. **浏览器回退模式**：命令行运行 `墨语MoYu-v1.8.3-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
+5. **浏览器回退模式**：命令行运行 `墨语MoYu-v1.8.4-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
 
 ### 方式 B：Linux VPS / 私有服务器 Docker 部署（一键上线）
 
@@ -117,7 +118,7 @@ python run.py                    # 启动本地开发服务：http://127.0.0.1:8
 ```bash
 python -m pytest -q          # 105 项 API、响应式、编码守护与部署健康检查回归测试全绿
 
-python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v1.8.3-win64.exe
+python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v1.8.4-win64.exe
 python build_exe.py --onedir # 文件夹形态（便于调试与启动优化）
 ```
 

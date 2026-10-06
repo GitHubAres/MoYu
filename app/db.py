@@ -473,7 +473,7 @@ CREATE INDEX IF NOT EXISTS idx_workflow_steps_wf ON workflow_steps(workflow_id, 
 CREATE TABLE IF NOT EXISTS workflow_runs (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     workflow_id  INTEGER NOT NULL REFERENCES workflows(id),
-    work_id      INTEGER REFERENCES works(id),
+    work_id      INTEGER REFERENCES works(id) ON DELETE CASCADE,
     chapter_id   INTEGER,
     status       TEXT DEFAULT 'pending',      -- pending|running|awaiting_review|done|failed|cancelled
     current_step INTEGER DEFAULT 0,
@@ -564,11 +564,18 @@ def get_db() -> sqlite3.Connection:
 
         DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-        conn = sqlite3.connect(DB_PATH)
+        from . import db as _db_mod
+        target_path = getattr(_db_mod, "DB_PATH", DB_PATH)
+        conn = sqlite3.connect(target_path, timeout=15.0)
 
         conn.row_factory = sqlite3.Row
 
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute("PRAGMA busy_timeout = 15000")
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+        except sqlite3.OperationalError:
+            pass
 
         _local.conn = conn
 

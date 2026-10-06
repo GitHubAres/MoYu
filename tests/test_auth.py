@@ -1,4 +1,4 @@
-﻿import pytest
+import pytest
 from fastapi.testclient import TestClient
 from app.main import create_app
 from app.db import get_db, _reset_conn
@@ -6,6 +6,7 @@ from app.db import get_db, _reset_conn
 def test_auth_full_lifecycle(tmp_path, monkeypatch):
     test_db = tmp_path / "test_auth.db"
     monkeypatch.setenv("MOYU_DB", str(test_db))
+    monkeypatch.setattr("app.db.DB_PATH", test_db)
     monkeypatch.setenv("MOYU_CLOUD", "1")
     _reset_conn()
 

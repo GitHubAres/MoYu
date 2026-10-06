@@ -83,6 +83,8 @@ def update_work(work_id: int, body: dict):
 def delete_work(work_id: int):
     _one("SELECT id FROM works WHERE id=?", (work_id,))
     db = get_db()
+    db.execute("DELETE FROM workflow_run_steps WHERE run_id IN (SELECT id FROM workflow_runs WHERE work_id=?)", (work_id,))
+    db.execute("DELETE FROM workflow_runs WHERE work_id=?", (work_id,))
     db.execute("DELETE FROM works WHERE id=?", (work_id,))
     db.commit()
 

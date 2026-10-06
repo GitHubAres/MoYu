@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 墨语 MoYu - Copyright (c) 2026 墨语MoYu开发团队 · MIT
 # Licensed under the MIT License. See LICENSE.
 """工作流步骤创作资产提取与各业务系统规范同步服务"""
@@ -8,11 +8,24 @@ from typing import Optional
 from pydantic import BaseModel
 
 
+class AssetWorkInfoIn(BaseModel):
+    title: Optional[str] = None
+    genre: Optional[str] = None
+    intro: Optional[str] = None
+
+
+class AssetForeshadowIn(BaseModel):
+    title: str
+    content: str = ""
+    status: str = "planted"
+
+
 class AssetEntityIn(BaseModel):
     category: str = "character"
     name: str
     content: str = ""
     tags: str = ""
+    fields_json: Optional[str] = "{}"
 
 
 class AssetRelationIn(BaseModel):
@@ -34,9 +47,11 @@ class AssetNoteIn(BaseModel):
 
 
 class SyncAssetsIn(BaseModel):
+    work_info: Optional[AssetWorkInfoIn] = None
     entities: list[AssetEntityIn] = []
     relations: list[AssetRelationIn] = []
     outline_nodes: list[AssetOutlineIn] = []
+    foreshadows: list[AssetForeshadowIn] = []
     notes: list[AssetNoteIn] = []
     apply_to_chapter: bool = False
     chapter_content: Optional[str] = None
@@ -48,9 +63,15 @@ def clean_str(s: str) -> str:
 
 def extract_structured_assets_from_text(text: str) -> dict:
     assets = {
+        "work_info": {
+            "title": "",
+            "genre": "",
+            "intro": "",
+        },
         "entities": [],
         "relations": [],
         "outline_nodes": [],
+        "foreshadows": [],
         "notes": [],
     }
     if not text or not text.strip():
@@ -63,6 +84,7 @@ def extract_structured_assets_from_text(text: str) -> dict:
         "item": ["道具", "物品", "法宝", "武器", "功法", "秘籍", "灵药", "丹药", "神物", "金手指", "词条", "芯片", "概念", "毒药", "密钥"],
         "location": ["地点", "场景", "世界", "宗门驻地", "秘境", "遗迹", "城池", "界域", "凡域", "深渊", "酒店", "机房", "候场室", "宴会厅", "书库"],
         "faction": ["势力", "宗门", "家族", "帮派", "组织", "巨企", "门派", "圣地", "皇朝", "集团", "矩阵", "引擎"],
+        "lore": ["法则", "规则", "体系", "力量体系", "设定", "境界", "概念", "世界观"],
     }
     cat_lookup = {}
     for cat, kws in category_map.items():
@@ -72,8 +94,39 @@ def extract_structured_assets_from_text(text: str) -> dict:
     seen_entities = set()
     seen_relations = set()
 
-    # 1. 结构化 Markdown 表格提取 (核心人物欲望矩阵表、关系网拓扑表等)
+    # 0. 故事立项识别 (书名 / 题材 / 简介 / 核心看点)
+    for line in lines:
+        if not assets["work_info"]["title"]:
+            m_book = re.search(r'《([^》]{2,30})》', line)
+            if m_book and any(k in line for k in ["书名", "作品", "标题", "方向", "方案", "选项", "小说", "项目", "命名"]):
+                assets["work_info"]["title"] = clean_str(m_book.group(1))
+            else:
+                m_t = re.search(r'(?:书\s*名|作品名|小说名|项目名)\s*[:：]\s*(?:《)?([^》\n\r]+)(?:》)?', line)
+                if m_t:
+                    assets["work_info"]["title"] = clean_str(m_t.group(1))
+
+        if not assets["work_info"]["genre"]:
+            m_g = re.search(r'(?:题材|类型|分类|核心题材|题材标签|定位)\s*[:：]\s*([^\n\r]+)', line)
+            if m_g:
+                assets["work_info"]["genre"] = clean_str(m_g.group(1))
+            else:
+                m_g2 = re.search(r'【(?:题材|类型|分类|标签)】\s*([^\n\r]+)', line)
+                if m_g2:
+                    assets["work_info"]["genre"] = clean_str(m_g2.group(1))
+                elif any(k in line for k in ["方向", "方案", "选项"]):
+                    m_g3 = re.search(r'[【\[]([^】\]]{2,15})[】\]]', line)
+                    if m_g3 and not any(bad in m_g3.group(1) for bad in ["方案", "方向", "选项", "路线", "Option"]):
+                        assets["work_info"]["genre"] = clean_str(m_g3.group(1))
+
+        if not assets["work_info"]["intro"]:
+            m_i = re.search(r'(?:一句话简介|核心看点|核心创意|故事梗概|作品简介|核心脑洞|故事简介|简介|梗概)\s*[:：]\s*([^\n\r]+)', line)
+            if m_i:
+                assets["work_info"]["intro"] = clean_str(m_i.group(1))
+
+    # 1. 结构化 Markdown 表格提取 (核心人物欲望矩阵表、关系网拓扑表、伏笔表等)
     table_headers = None
+    foreshadow_headers = None
+    cat_headers = None
     for line in lines:
         if line.startswith("|") and line.endswith("|"):
             cols = [clean_str(c) for c in line.strip("|").split("|")]
@@ -88,6 +141,58 @@ def extract_structured_assets_from_text(text: str) -> dict:
             # 检测是否为关系表表头
             if any(k in cols[0] for k in ["关系对", "人物对", "关系双方"]):
                 table_headers = cols
+                continue
+
+            # 检测是否为伏笔表表头
+            if any(k in cols[0] for k in ["伏笔", "线索", "暗线", "钩子"]):
+                foreshadow_headers = cols
+                continue
+
+            # 检测是否为 势力/地点/道具/法则 表头
+            if any(k in cols[0] for k in ["势力", "宗门", "家族", "帮派", "组织", "门派"]):
+                cat_headers = (cols, "faction")
+                continue
+            if any(k in cols[0] for k in ["地点", "空间", "场景", "世界", "秘境", "城池", "界域"]):
+                cat_headers = (cols, "location")
+                continue
+            if any(k in cols[0] for k in ["道具", "法宝", "武器", "物品", "灵药", "丹药"]):
+                cat_headers = (cols, "item")
+                continue
+            if any(k in cols[0] for k in ["法则", "体系", "设定", "概念", "规则", "境界"]):
+                cat_headers = (cols, "lore")
+                continue
+
+            # 提取伏笔表格数据
+            if foreshadow_headers and any(k in foreshadow_headers[0] for k in ["伏笔", "线索", "暗线", "钩子"]):
+                f_title = clean_str(cols[0])
+                if f_title and len(f_title) <= 50 and not any(k in f_title for k in ["表头", "---"]):
+                    desc_parts = []
+                    for idx, col in enumerate(cols[1:], 1):
+                        if idx < len(foreshadow_headers) and col:
+                            desc_parts.append(f"【{foreshadow_headers[idx]}】{col}")
+                    assets["foreshadows"].append({
+                        "title": f_title,
+                        "content": "\n".join(desc_parts),
+                        "status": "planted",
+                    })
+                continue
+
+            # 提取多品类实体表格数据
+            if cat_headers:
+                h_cols, cur_cat = cat_headers
+                raw_name = clean_str(cols[0])
+                if raw_name and len(raw_name) <= 25 and raw_name not in seen_entities and not any(k in raw_name for k in ["表头", "---"]):
+                    seen_entities.add(raw_name)
+                    desc_parts = []
+                    for idx, col in enumerate(cols[1:], 1):
+                        if idx < len(h_cols) and col:
+                            desc_parts.append(f"【{h_cols[idx]}】{col}")
+                    assets["entities"].append({
+                        "category": cur_cat,
+                        "name": raw_name,
+                        "content": "\n".join(desc_parts),
+                        "tags": h_cols[0],
+                    })
                 continue
 
             # 提取关系对表格数据: 如 | 宁恪 ↔ 陆玄 | 恶毒少爷 vs 逆袭战神 | 争夺叙事推动权 | ...
@@ -148,9 +253,23 @@ def extract_structured_assets_from_text(text: str) -> dict:
     ent_pattern_b = re.compile(
         r'^[#*>\-\s]*\*\*(人物|角色|主角|配角|反派|道具|法宝|功法|武器|物品|地点|场景|势力|宗门|家族|门派)\*\*\s*[:：]\s*([^\s:：(（—–\-]+)(?:[（(]([^）)]+)[）)])?\s*[:：—–\-]?\s*(.*)$'
     )
-    ent_pattern_c = re.compile(r'^[#*>\-\s]*(?:方向|方案|选项)\s*\d+[:：\s]+[【\[]([^】\]]+)[】\]]\s*([^\s(（:：—–\-]+)')
+    ent_pattern_c = re.compile(r'^[#*>\-\s]*(?:方向|方案|选项)\s*\d+[:：\s]+[【\[]([^】\]]+)[】\]]\s*(?:《[^》]+》)?\s*([^\s(（:：—–\-]+)')
 
     for i, line in enumerate(lines):
+        # 模式: 伏笔条目识别
+        fs_m = re.match(r'^[#*>\-\s]*[【\[](?:伏笔|暗线|线索)[】\]]\s*[:：]?\s*([^\n]+)', line) or re.match(r'^[#*>\-\s]*\*\*(?:伏笔|暗线|线索)\*\*\s*[:：]\s*([^\n]+)', line)
+        if fs_m:
+            fs_text = clean_str(fs_m.group(1))
+            parts = re.split(r'[:：—–\-]+', fs_text, maxsplit=1)
+            f_title = parts[0].strip()[:30]
+            f_content = parts[1].strip() if len(parts) > 1 else fs_text
+            assets["foreshadows"].append({
+                "title": f_title,
+                "content": f_content,
+                "status": "planted",
+            })
+            continue
+
         # 优先匹配模式: 方向/方案/选项中的主要人物 (如 #### 方向 1：【古典仙侠】林渊)
         mc3 = ent_pattern_c.match(line)
         if mc3:
@@ -313,12 +432,34 @@ def extract_structured_assets_from_text(text: str) -> dict:
 
 def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 0, seq: int = 0) -> dict:
     summary = {
+        "work_info_updated": False,
         "entities_added": 0,
         "relations_added": 0,
         "outlines_added": 0,
+        "foreshadows_added": 0,
         "notes_added": 0,
         "chapter_synced": False,
     }
+
+    # 0. 故事立项：规范同步至作品基本信息 (works 表)
+    if body.work_info:
+        w_title = (body.work_info.title or "").strip()
+        w_genre = (body.work_info.genre or "").strip()
+        w_intro = (body.work_info.intro or "").strip()
+        updates, params = [], []
+        if w_title:
+            updates.append("title = ?")
+            params.append(w_title)
+        if w_genre:
+            updates.append("genre = ?")
+            params.append(w_genre)
+        if w_intro:
+            updates.append("intro = ?")
+            params.append(w_intro)
+        if updates:
+            params.append(work_id)
+            db.execute(f"UPDATE works SET {', '.join(updates)}, updated_at=datetime('now','localtime') WHERE id=?", tuple(params))
+            summary["work_info_updated"] = True
 
     # 1. 万相谱实体同步
     name_to_id = {}
@@ -340,7 +481,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         else:
             cur = db.execute(
                 "INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?, ?, ?, ?, ?, ?)",
-                (work_id, ent.category or "character", name, ent.content, json.dumps({}, ensure_ascii=False), ent.tags),
+                (work_id, ent.category or "character", name, ent.content, ent.fields_json or json.dumps({}, ensure_ascii=False), ent.tags),
             )
             name_to_id[name] = cur.lastrowid
             summary["entities_added"] += 1
@@ -354,17 +495,33 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
             continue
         from_id = name_to_id.get(from_name)
         to_id = name_to_id.get(to_name)
-        if from_id and to_id:
-            dup = db.execute(
-                "SELECT id FROM entity_relations WHERE work_id=? AND from_id=? AND to_id=? AND label=?",
+        if not from_id:
+            cur = db.execute(
+                "INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?, 'character', ?, '', '{}', '关系推断')",
+                (work_id, from_name),
+            )
+            from_id = cur.lastrowid
+            name_to_id[from_name] = from_id
+            summary["entities_added"] += 1
+        if not to_id:
+            cur = db.execute(
+                "INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?, 'character', ?, '', '{}', '关系推断')",
+                (work_id, to_name),
+            )
+            to_id = cur.lastrowid
+            name_to_id[to_name] = to_id
+            summary["entities_added"] += 1
+
+        dup = db.execute(
+            "SELECT id FROM entity_relations WHERE work_id=? AND from_id=? AND to_id=? AND label=?",
+            (work_id, from_id, to_id, label),
+        ).fetchone()
+        if not dup:
+            db.execute(
+                "INSERT INTO entity_relations (work_id, from_id, to_id, label) VALUES (?, ?, ?, ?)",
                 (work_id, from_id, to_id, label),
-            ).fetchone()
-            if not dup:
-                db.execute(
-                    "INSERT INTO entity_relations (work_id, from_id, to_id, label) VALUES (?, ?, ?, ?)",
-                    (work_id, from_id, to_id, label),
-                )
-                summary["relations_added"] += 1
+            )
+            summary["relations_added"] += 1
 
     # 3. 故事大纲同步
     current_vol_id = None
@@ -390,6 +547,20 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         if node.is_volume:
             current_vol_id = cur.lastrowid
         summary["outlines_added"] += 1
+
+    # 3.5. 伏笔计划表同步 (foreshadows 表)
+    for fs in body.foreshadows:
+        title = fs.title.strip()
+        content = fs.content.strip()
+        if not title:
+            continue
+        dup = db.execute("SELECT id FROM foreshadows WHERE work_id=? AND title=?", (work_id, title)).fetchone()
+        if not dup:
+            db.execute(
+                "INSERT INTO foreshadows (work_id, title, content, status) VALUES (?, ?, ?, ?)",
+                (work_id, title, content, fs.status or "planted"),
+            )
+            summary["foreshadows_added"] += 1
 
     # 4. 世界观资料便签同步
     for note in body.notes:

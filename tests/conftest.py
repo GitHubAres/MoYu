@@ -75,3 +75,10 @@ def make_wvc(client, title="测试作品"):
     v = make_volume(client, w["id"])
     c = make_chapter(client, v["id"])
     return w, v, c
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_test_resources():
+    yield
+    import gc
+    gc.collect()

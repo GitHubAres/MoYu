@@ -247,15 +247,39 @@ async def retry_run(run_id: int):
 
 # ---------- 创作资产提取与全功能规范同步 ----------
 
-@router.get("/runs/{run_id}/steps/{seq}/extracted-assets")
-def get_extracted_assets(run_id: int, seq: int):
-    """从指定步骤的输出内容中自动抽取结构化资产 (实体/关系/大纲/世界观资料)"""
-    db = get_db()
-    rs = db.execute("SELECT output FROM workflow_run_steps WHERE run_id = ? AND step_seq = ?", (run_id, seq)).fetchone()
-    if not rs:
-        raise HTTPException(404, "工作流步骤不存在")
-    return {"ok": True, "assets": extract_structured_assets_from_text(rs["output"] or "")}
+class ExtractContentIn(BaseModel):
+    content: Optional[str] = None
 
+
+@router.post("/runs/{run_id}/steps/{seq}/extracted-assets")
+@router.get("/runs/{run_id}/steps/{seq}/extracted-assets")
+def get_extracted_assets(run_id: int, seq: int, body: Optional[ExtractContentIn] = None):
+    """从指定步骤或传入的方案内容中自动抽取结构化资产 (立项/实体/关系/大纲/伏笔/世界观)"""
+    db = get_db()
+    if body and body.content:
+        raw_text = body.content
+    else:
+        rs = db.execute("SELECT output FROM workflow_run_steps WHERE run_id = ? AND step_seq = ?", (run_id, seq)).fetchone()
+        if not rs:
+            raise HTTPException(404, "工作流步骤不存在")
+        raw_text = rs["output"] or ""
+    return {"ok": True, "assets": extract_structured_assets_from_text(raw_text)}
+
+
+@router.get("/runs/{run_id}/summary-assets")
+def get_summary_assets(run_id: int):
+    """汇总工作流全流程所有步骤的产出，合并抽取全功能结构化资产"""
+    db = get_db()
+    run = db.execute("SELECT * FROM workflow_runs WHERE id = ?", (run_id,)).fetchone()
+    if not run:
+        raise HTTPException(404, "工作流运行实例不存在")
+    steps = db.execute(
+        "SELECT step_seq, output FROM workflow_run_steps WHERE run_id = ? ORDER BY step_seq ASC",
+        (run_id,),
+    ).fetchall()
+    combined_texts = [r["output"] for r in steps if r["output"]]
+    full_text = chr(10).join(combined_texts)
+    return {"ok": True, "assets": extract_structured_assets_from_text(full_text)}
 
 @router.post("/runs/{run_id}/steps/{seq}/sync-assets")
 def sync_step_assets(run_id: int, seq: int, body: SyncAssetsIn):

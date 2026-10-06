@@ -75,7 +75,7 @@ registerPage("bookshelf", async (view) => {
       list.innerHTML = "";
       let notes;
       try {
-        notes = await api.get("/notes");
+        notes = await api.get("/notes?exclude_tag=世界观");
       } catch (e) {
         ui.toast("便签加载失败：" + (e.message || "网络异常"), "err");
         const retryEl = ui.el("div", { class: "text-center py-space-md font-label-sm text-label-sm text-error cursor-pointer hover:underline" }, "便签加载失败，点击重试");
@@ -257,9 +257,13 @@ registerPage("bookshelf", async (view) => {
           onclick: async () => {
             const ok = await ui.confirm("删除作品", `将删除《${w.title}》及其全部卷、章节、大纲与设定，且不可恢复。确定继续？`, "删除", true);
             if (!ok) return;
-            await api.del(`/works/${w.id}`);
-            ui.toast("已删除", "ok");
-            load(searchInput.value.trim());
+            try {
+              await api.del(`/works/${w.id}`);
+              ui.toast("已删除", "ok");
+              load(searchInput.value.trim());
+            } catch (e) {
+              ui.toast("删除作品失败：" + (e.message || "网络异常"), "err");
+            }
           },
         }, ui.icon("delete", "text-[18px]"))));
     return card;
