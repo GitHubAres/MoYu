@@ -1,4 +1,4 @@
-﻿# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
 # Licensed under the MIT License. See LICENSE.
 """桌面原生窗口入口 (moyu_entry.py) 单元与集成测试。"""
 import os

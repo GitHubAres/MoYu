@@ -33,13 +33,24 @@ registerPage("board", async (view, { segs }) => {
   }
 
   async function renderBoard() {
-    const [work, items, tree] = await Promise.all([
+    let outlineTree = [];
+    const [work, items, tree, outlineTreeRes] = await Promise.all([
       api.get(`/works/${workId}`),
       api.get(`/works/${workId}/foreshadows`),
       api.get(`/works/${workId}/tree`),
+      api.get(`/works/${workId}/outline`).catch(() => []),
     ]);
+    outlineTree = Array.isArray(outlineTreeRes) ? outlineTreeRes : [];
     const chapters = [];
     for (const v of tree) for (const c of v.chapters) chapters.push({ id: c.id, title: `${v.title} · ${c.title}` });
+    const outlineNodes = [];
+    (function flattenOutline(nodes) {
+      if (!Array.isArray(nodes)) return;
+      for (const n of nodes) {
+        outlineNodes.push({ id: n.id, title: n.title });
+        if (n.children) flattenOutline(n.children);
+      }
+    })(outlineTree);
 
     ui.setCrumb("伏笔看板", `《${work.title}》`);
     ui.setActions(
@@ -133,7 +144,14 @@ registerPage("board", async (view, { segs }) => {
         ui.el("div", { class: "flex items-center gap-1.5 mb-space-xs flex-wrap" },
           f.chapter_title
             ? ui.el("span", { class: "px-2 py-0.5 rounded bg-surface-container font-label-sm text-label-sm text-on-surface-variant" }, `关联：${f.chapter_title}`)
-            : ui.el("span", { class: "font-label-sm text-label-sm text-outline" }, "未关联章节")),
+            : ui.el("span", { class: "font-label-sm text-label-sm text-outline" }, "未关联章节"),
+          f.outline_node_id
+            ? ui.el("a", {
+                class: "inline-flex items-center gap-1 px-2 py-0.5 rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm hover:bg-secondary hover:text-on-secondary transition-colors cursor-pointer",
+                title: "点击跳转至对应大纲节点",
+                onclick: (e) => { e.stopPropagation(); location.hash = `#/outline/${workId}?node_id=${f.outline_node_id}`; },
+              }, ui.icon("account_tree", "text-[12px]"), f.outline_node_title || ("大纲 #" + f.outline_node_id))
+            : null),
         ui.el("div", { class: "flex items-center justify-end gap-1 pt-space-xs border-t border-surface-container" },
           ui.el("button", {
             class: `${actionCls} hover:text-secondary hover:bg-secondary-fixed`, title: nextTip,
@@ -184,6 +202,11 @@ registerPage("board", async (view, { segs }) => {
         chapters.map((c) => ui.el("option", { value: String(c.id) }, c.title)));
       if (f?.chapter_id) chapterSel.value = String(f.chapter_id);
 
+      const outlineSel = ui.el("select", { class: inputCls },
+        ui.el("option", { value: "" }, "（不关联大纲节点）"),
+        outlineNodes.map((n) => ui.el("option", { value: String(n.id) }, n.title)));
+      if (f?.outline_node_id) outlineSel.value = String(f.outline_node_id);
+
       const close = (ok) => {
         overlay.remove();
         if (!ok) return;
@@ -191,6 +214,7 @@ registerPage("board", async (view, { segs }) => {
           title: title.value.trim(),
           content: content.value.trim(),
           chapter_id: chapterSel.value ? Number(chapterSel.value) : null,
+          outline_node_id: outlineSel.value ? Number(outlineSel.value) : null,
         };
         if (!body.title) { ui.toast("标题不能为空", "err"); return; }
         (async () => {
@@ -213,6 +237,7 @@ registerPage("board", async (view, { segs }) => {
           field("标题", title),
           field("内容", content),
           field("关联章节", chapterSel),
+          field("关联大纲节点", outlineSel),
           ui.el("div", { class: "flex justify-end gap-2" },
             ui.el("button", { class: "px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md", onclick: () => close(false) }, "取消"),
             ui.el("button", { class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md", onclick: () => close(true) }, isNew ? "创建" : "保存"))));

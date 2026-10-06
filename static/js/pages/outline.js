@@ -1,7 +1,7 @@
 /* 故事大纲页（对应设计稿 _3）：左卷轴拓扑树 + 节点详情 + AI 剧构推演 */
 const _ol = { collapsed: new Set(), selected: {} };
 
-registerPage("outline", async (view, { segs }) => {
+registerPage("outline", async (view, { segs, query }) => {
   const workId = Number(segs[0]) || null;
   if (!workId) return outlinePickWork(view);
 
@@ -34,7 +34,10 @@ registerPage("outline", async (view, { segs }) => {
   })(tree, 0, null);
 
   const total = flat.length;
-  if (!_ol.selected[workId] || !flat.some((f) => f.node.id === _ol.selected[workId])) {
+  const qNodeId = query && query.node_id ? Number(query.node_id) : null;
+  if (qNodeId && flat.some((f) => f.node.id === qNodeId)) {
+    _ol.selected[workId] = qNodeId;
+  } else if (!_ol.selected[workId] || !flat.some((f) => f.node.id === _ol.selected[workId])) {
     _ol.selected[workId] = flat.length ? flat[0].node.id : null;
   }
 
@@ -102,10 +105,19 @@ registerPage("outline", async (view, { segs }) => {
             }, collapsed ? "chevron_right" : "expand_more")
           : ui.el("span", { class: "w-[18px] shrink-0" }),
         ui.el("div", { class: "flex flex-col min-w-0" },
-          ui.el("span", {
-            class: (depth === 0 ? "font-body-md text-body-md font-semibold " : "font-body-sm text-body-sm ") +
-              (selected ? "text-on-primary" : depth === 0 ? "text-on-surface" : "") + " truncate",
-          }, n.title),
+          ui.el("div", { class: "flex items-center gap-1 min-w-0" },
+            ui.el("span", {
+              class: (depth === 0 ? "font-body-md text-body-md font-semibold " : "font-body-sm text-body-sm ") +
+                (selected ? "text-on-primary" : depth === 0 ? "text-on-surface" : "") + " truncate",
+            }, n.title),
+            n.timeline_count > 0 ? ui.el("span", {
+              class: "inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] bg-secondary/15 text-secondary font-mono shrink-0",
+              title: "关联 " + n.timeline_count + " 个时间线事件",
+            }, ui.icon("timeline", "text-[11px]"), String(n.timeline_count)) : null,
+            n.foreshadow_count > 0 ? ui.el("span", {
+              class: "inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[10px] bg-amber-500/15 text-amber-700 dark:text-amber-300 font-mono shrink-0",
+              title: "关联 " + n.foreshadow_count + " 条伏笔",
+            }, ui.icon("bookmark", "text-[11px]"), String(n.foreshadow_count)) : null),
           depth === 0 && n.synopsis
             ? ui.el("span", { class: "font-label-sm text-label-sm truncate " + (selected ? "text-on-primary-container" : "text-on-surface-variant") },
                 n.synopsis.slice(0, 24))
@@ -212,6 +224,8 @@ registerPage("outline", async (view, { segs }) => {
               },
             }, ui.icon("save", "text-[16px]"), "保存梗概"))),
         synInput),
+      /* 剧情脉络 (Plot Triad: 时间线与伏笔) */
+      renderPlotTriadSection(node),
       /* 节点操作 */
       ui.el("div", { class: "flex items-center gap-2 flex-wrap relative" },
         ui.el("button", {
@@ -628,6 +642,181 @@ registerPage("outline", async (view, { segs }) => {
         runBtn),
       hintInput,
       list);
+  }
+
+  
+  /* ---------- 剧情脉络三位一体 (Plot Triad) ---------- */
+
+  function renderPlotTriadSection(node) {
+    const section = ui.el("div", {
+      class: "flex flex-col gap-space-sm bg-surface-container-low/50 p-space-md rounded-xl border border-border-feather relative",
+    });
+
+    const header = ui.el("div", { class: "flex items-center justify-between flex-wrap gap-2" },
+      ui.el("div", { class: "flex items-center gap-2" },
+        ui.icon("account_tree", "text-[20px] text-secondary"),
+        ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "剧情脉络 · 三位一体关联"),
+        ui.el("span", { class: "font-label-sm text-[11px] text-on-surface-variant" }, "时间线事件与伏笔追踪")),
+      ui.el("div", { class: "flex items-center gap-2" },
+        ui.el("button", {
+          class: "flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-label-sm text-label-sm transition-colors cursor-pointer",
+          onclick: () => addTimelineEventModal(node),
+        }, ui.icon("timeline", "text-[14px]"), "添加事件"),
+        ui.el("button", {
+          class: "flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-amber-700 dark:text-amber-300 font-label-sm text-label-sm transition-colors cursor-pointer",
+          onclick: () => addForeshadowModal(node),
+        }, ui.icon("bookmark", "text-[14px]"), "埋下伏笔")));
+
+    const contentBox = ui.el("div", { class: "flex flex-col gap-3 pt-1" });
+    section.append(header, contentBox);
+
+    (async () => {
+      try {
+        const data = await api.get(`/works/${workId}/outline/nodes/${node.id}/plot-items`);
+        contentBox.innerHTML = "";
+        const events = data.timeline_events || [];
+        const foreshadows = data.foreshadows || [];
+
+        if (!events.length && !foreshadows.length) {
+          contentBox.append(ui.el("div", { class: "text-center py-3 text-on-surface-variant text-body-sm font-label-sm" },
+            "当前大纲节点暂无关联的时间线事件或伏笔，点击右上角快速关联"));
+          return;
+        }
+
+        const grid = ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-3" });
+
+        const evCol = ui.el("div", { class: "flex flex-col gap-2" },
+          ui.el("div", { class: "flex items-center justify-between font-label-sm text-on-surface-variant pb-1 border-b border-border-feather" },
+            ui.el("span", { class: "font-semibold flex items-center gap-1" }, ui.icon("timeline", "text-[15px] text-secondary"), `时间线事件 (${events.length})`),
+            ui.el("a", { class: "hover:text-primary cursor-pointer text-[11px]", onclick: () => { location.hash = `#/timeline/${workId}`; } }, "前往时间线 →")));
+        if (!events.length) {
+          evCol.append(ui.el("div", { class: "text-[12px] text-on-surface-variant/70 italic py-1" }, "无关联事件"));
+        } else {
+          for (const ev of events) {
+            evCol.append(ui.el("div", {
+              class: "p-2 rounded-lg bg-surface-container-lowest border border-border-feather shadow-xs flex flex-col gap-1 hover:border-primary/40 transition-colors",
+            },
+              ui.el("div", { class: "flex items-center justify-between gap-1 text-[12px]" },
+                ui.el("span", { class: "font-semibold text-primary truncate" }, ev.time_label || "未定时间"),
+                ui.el("a", {
+                  class: "text-secondary hover:underline text-[11px] cursor-pointer",
+                  onclick: () => { location.hash = `#/timeline/${workId}`; },
+                }, "查看")),
+              ui.el("p", { class: "text-[12px] text-on-surface line-clamp-2" }, ev.event || "")));
+          }
+        }
+
+        const fsCol = ui.el("div", { class: "flex flex-col gap-2" },
+          ui.el("div", { class: "flex items-center justify-between font-label-sm text-on-surface-variant pb-1 border-b border-border-feather" },
+            ui.el("span", { class: "font-semibold flex items-center gap-1" }, ui.icon("bookmark", "text-[15px] text-amber-600"), `伏笔记录 (${foreshadows.length})`),
+            ui.el("a", { class: "hover:text-primary cursor-pointer text-[11px]", onclick: () => { location.hash = `#/board/${workId}`; } }, "前往伏笔看板 →")));
+        if (!foreshadows.length) {
+          fsCol.append(ui.el("div", { class: "text-[12px] text-on-surface-variant/70 italic py-1" }, "无关联伏笔"));
+        } else {
+          for (const fsItem of foreshadows) {
+            const stLabel = fsItem.status === "resolved" ? "已回收" : "埋设中";
+            const stCls = fsItem.status === "resolved" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-700";
+            fsCol.append(ui.el("div", {
+              class: "p-2 rounded-lg bg-surface-container-lowest border border-border-feather shadow-xs flex flex-col gap-1 hover:border-primary/40 transition-colors",
+            },
+              ui.el("div", { class: "flex items-center justify-between gap-1 text-[12px]" },
+                ui.el("span", { class: "font-semibold text-primary truncate" }, fsItem.title),
+                ui.el("span", { class: `px-1.5 py-0.2 rounded text-[10px] ${stCls}` }, stLabel)),
+              fsItem.content ? ui.el("p", { class: "text-[12px] text-on-surface-variant line-clamp-2" }, fsItem.content) : null));
+          }
+        }
+
+        grid.append(evCol, fsCol);
+        contentBox.append(grid);
+      } catch (err) {
+        contentBox.innerHTML = `<span class="text-error text-body-sm">加载剧情脉络失败: ${err.message}</span>`;
+      }
+    })();
+
+    return section;
+  }
+
+  function addTimelineEventModal(node) {
+    const inputCls = "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-md text-body-md";
+    const labelCls = "flex flex-col gap-1 font-label-sm text-label-sm text-on-surface-variant";
+    const timeInput = ui.el("input", { class: inputCls, placeholder: "如：第10章·秘境试炼" });
+    const eventInput = ui.el("textarea", { class: inputCls + " resize-y min-h-[80px]", placeholder: "记录该大纲节点发生的剧情事件…" });
+    const charsInput = ui.el("input", { class: inputCls, placeholder: "涉及人物（顿号分隔，可留空）" });
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[460px] max-w-[calc(100vw-2rem)] mx-2 shadow-xl flex flex-col gap-space-md" },
+        ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "为「" + node.title + "」添加时间线事件"),
+        ui.el("label", { class: labelCls }, "时间标签", timeInput),
+        ui.el("label", { class: labelCls }, "事件内容", eventInput),
+        ui.el("label", { class: labelCls }, "涉及人物", charsInput),
+        ui.el("div", { class: "flex justify-end gap-2 pt-2" },
+          ui.el("button", {
+            class: "px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md",
+            onclick: () => overlay.remove(),
+          }, "取消"),
+          ui.el("button", {
+            class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md",
+            onclick: async () => {
+              if (!eventInput.value.trim()) { ui.toast("事件内容不能为空", "err"); return; }
+              try {
+                await api.post(`/works/${workId}/timeline/events`, {
+                  time_label: timeInput.value.trim(),
+                  event: eventInput.value.trim(),
+                  characters: charsInput.value.trim(),
+                  chapter_id: node.chapter_id || null,
+                  outline_node_id: node.id,
+                });
+                ui.toast("剧情事件已关联", "ok");
+                overlay.remove();
+                reload(node.id);
+              } catch (err) { ui.toast(err.message, "err"); }
+            },
+          }, "保存并关联"))));
+    document.getElementById("modal-root").append(overlay);
+    timeInput.focus();
+  }
+
+  function addForeshadowModal(node) {
+    const inputCls = "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-md text-body-md";
+    const labelCls = "flex flex-col gap-1 font-label-sm text-label-sm text-on-surface-variant";
+    const titleInput = ui.el("input", { class: inputCls, placeholder: "伏笔标题，如：秘境石壁断剑暗纹" });
+    const contentInput = ui.el("textarea", { class: inputCls + " resize-y min-h-[80px]", placeholder: "伏笔线索、埋藏地点与预定回收走向…" });
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[460px] max-w-[calc(100vw-2rem)] mx-2 shadow-xl flex flex-col gap-space-md" },
+        ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "为「" + node.title + "」埋下伏笔"),
+        ui.el("label", { class: labelCls }, "伏笔标题", titleInput),
+        ui.el("label", { class: labelCls }, "伏笔内容与暗线规划", contentInput),
+        ui.el("div", { class: "flex justify-end gap-2 pt-2" },
+          ui.el("button", {
+            class: "px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md",
+            onclick: () => overlay.remove(),
+          }, "取消"),
+          ui.el("button", {
+            class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md",
+            onclick: async () => {
+              if (!titleInput.value.trim()) { ui.toast("伏笔标题不能为空", "err"); return; }
+              try {
+                await api.post(`/works/${workId}/foreshadows`, {
+                  title: titleInput.value.trim(),
+                  content: contentInput.value.trim(),
+                  chapter_id: node.chapter_id || null,
+                  outline_node_id: node.id,
+                });
+                ui.toast("伏笔已成功埋下并关联", "ok");
+                overlay.remove();
+                reload(node.id);
+              } catch (err) { ui.toast(err.message, "err"); }
+            },
+          }, "埋设伏笔"))));
+    document.getElementById("modal-root").append(overlay);
+    titleInput.focus();
   }
 
   /* ---------- 数据重载 ---------- */

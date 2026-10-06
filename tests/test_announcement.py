@@ -1,4 +1,4 @@
-﻿# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
 """公告模块测试套件：覆盖拉取入库、超时降级、内置兜底、ack幂等、force逻辑、min_app_version过滤、XSS转义与列表排序等。"""
 import datetime

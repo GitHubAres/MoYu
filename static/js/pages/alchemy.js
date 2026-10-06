@@ -1,11 +1,10 @@
 /* 炼丹炉 · 创作前期工坊：拆书蒸馏 / 资料融汇 / 开炉炼丹 / 丹青阁 */
 registerPage("alchemy", async (view) => {
-  ui.setCrumb("炼丹炉");
+  ui.setCrumb("创作实验室");
 
   const TABS = [
     { id: "distill", label: "拆书蒸馏", icon: "menu_book" },
     { id: "fuse", label: "资料融汇", icon: "merge" },
-    { id: "brew", label: "开炉炼丹", icon: "science" },
     { id: "gallery", label: "丹青阁", icon: "palette" },
   ];
   const CAT_META = {
@@ -15,12 +14,7 @@ registerPage("alchemy", async (view) => {
     item: { label: "物品", icon: "diamond" },
     term: { label: "术语", icon: "book_2" },
   };
-  const BREW_STEPS = [
-    { id: "framework", label: "题材框架", icon: "architecture", hint: "题材方向 / 核心卖点 / 主线一句话 / 目标读者" },
-    { id: "world", label: "世界观", icon: "public", hint: "地点、势力、术语等设定条目" },
-    { id: "characters", label: "主要人物", icon: "group", hint: "角色卡：身份 / 性格 / 背景 / 目标" },
-    { id: "outline", label: "故事大纲", icon: "account_tree", hint: "卷为顶层、章为子级的大纲树" },
-  ];
+
 
   let works = [];
   let active = "distill";
@@ -185,12 +179,23 @@ registerPage("alchemy", async (view) => {
         ui.el("div", { class: "flex items-center gap-space-xs z-10" },
           ui.el("span", { class: "inline-flex items-center justify-center w-6 h-6 rounded-full bg-tertiary-container text-on-tertiary-container shadow-sm" },
             ui.icon("science", "text-[15px]")),
-          ui.el("span", { class: "font-label-sm text-label-sm text-secondary tracking-widest uppercase" }, "ALCHEMY · PRE-WRITING FORGE"),
+          ui.el("span", { class: "font-label-sm text-label-sm text-secondary tracking-widest uppercase" }, "CREATIVE LAB · PRE-WRITING WORKSHOP"),
           ui.el("span", { class: "text-outline-variant font-body-sm text-body-sm" }, "•"),
-          ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "拆书、融汇、炼丹，一气呵成")),
-        ui.el("h1", { class: "font-headline-lg text-headline-lg text-primary tracking-tight z-10" }, "炼丹炉 · 创作前期工坊"),
+          ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "拆书、融汇、绘卷，创意迸发")),
+        ui.el("h1", { class: "font-headline-lg text-headline-lg text-primary tracking-tight z-10" }, "创作实验室 · 前期灵感工坊"),
         ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant z-10" },
-          "拆解佳作提炼文风，融汇资料生成设定，四步开炉炼出作品胚子。所有 AI 生成内容均需你确认后才会入库。")),
+          "拆解佳作提炼文风，融汇多源资料生成设定。全书立项与结构化开坑请使用写作工作流。")),
+      ui.el("div", { class: "flex items-center justify-between p-space-md rounded-xl bg-primary-fixed/20 border border-primary/20 text-on-surface flex-wrap gap-space-sm" },
+        ui.el("div", { class: "flex items-center gap-space-sm min-w-0" },
+          ui.el("span", { class: "inline-flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-on-primary shrink-0" },
+            ui.icon("alt_route", "text-[18px]")),
+          ui.el("div", { class: "flex flex-col min-w-0" },
+            ui.el("span", { class: "font-label-md text-label-md font-semibold text-primary" }, "需要全书立项与生成？前往 [写作工作流 · 新书开坑]"),
+            ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "立项推演、世界观、人物谱、大纲到细纲，一键全自动资产入库。"))),
+        ui.el("a", {
+          href: "#/workflows",
+          class: "flex items-center gap-1 px-space-md py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:opacity-90 transition-opacity shrink-0 cursor-pointer"
+        }, ui.icon("arrow_forward", "text-[16px]"), "前往写作工作流")),
       tabBar,
       content));
 
@@ -210,7 +215,6 @@ registerPage("alchemy", async (view) => {
     content.innerHTML = "";
     if (active === "distill") renderDistill();
     else if (active === "fuse") renderFuse();
-    else if (active === "brew") renderBrew();
     else if (window.GalleryTab && window.GalleryTab.render) window.GalleryTab.render(content);
     else content.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-xl text-on-surface-variant" },
       ui.icon("palette", "text-[48px] text-outline-variant"),
@@ -523,283 +527,6 @@ registerPage("alchemy", async (view) => {
           ui.el("span", { class: "shrink-0 self-center px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant font-label-sm text-label-sm" }, meta.label),
           nameIn),
         contentIn, tagsIn));
-  }
-
-  /* ================= Tab3 开炉炼丹 ================= */
-
-  const brew = { step: 0, data: { framework: null, world: null, characters: null, outline: null }, candidate: null, running: false };
-
-  function brewContext() {
-    const parts = [];
-    const f = brew.data.framework;
-    if (f) {
-      parts.push("【题材框架】书名候选：" + (f.title_suggestions || []).join("、")
-        + "；题材：" + (f.genre || "") + "；核心卖点：" + (f.selling_point || "")
-        + "；主线：" + (f.main_line || "") + "；目标读者：" + (f.audience || ""));
-    }
-    for (const [key, label] of [["world", "世界观"], ["characters", "主要人物"]]) {
-      const ents = ((brew.data[key] || {}).entities) || [];
-      if (ents.length) parts.push(`【${label}】\n` + ents.map((e) => `- ${e.name}：${e.content}`).join("\n"));
-    }
-    const ol = ((brew.data.outline || {}).outline) || [];
-    if (ol.length) {
-      parts.push("【故事大纲】\n" + ol.map((o) => `- ${o.title}${o.synopsis ? "：" + o.synopsis : ""}`).join("\n"));
-    }
-    return parts.join("\n\n");
-  }
-
-  function renderBrew() {
-    content.append(
-      brewStepBar(),
-      brew.step >= BREW_STEPS.length ? brewFinale() : brewStepPanel());
-  }
-
-  function brewStepBar() {
-    const bar = ui.el("div", { class: cardCls + " flex items-center gap-space-xs flex-wrap" });
-    BREW_STEPS.forEach((s, i) => {
-      const done = !!brew.data[s.id];
-      const cur = i === brew.step;
-      bar.append(ui.el("button", {
-          class: "flex items-center gap-space-xs px-space-sm py-2 rounded-lg font-label-md text-label-md transition-colors " +
-            (cur ? "bg-primary text-on-primary shadow-sm"
-              : done ? "bg-secondary-fixed/60 text-on-secondary-fixed"
-                : "text-on-surface-variant hover:bg-surface-container-high"),
-          onclick: () => { brew.step = i; brew.candidate = null; renderContent(); },
-        },
-          ui.icon(done ? "check_circle" : s.icon, "text-[16px]"),
-          `${i + 1}. ${s.label}`));
-      if (i < BREW_STEPS.length - 1) {
-        bar.append(ui.icon("chevron_right", "text-[16px] text-outline-variant"));
-      }
-    });
-    return bar;
-  }
-
-  function brewStepPanel() {
-    const meta = BREW_STEPS[brew.step];
-    const panel = ui.el("div", { class: "flex flex-col gap-space-md" });
-
-    /* 指令输入 + 生成 */
-    const instr = ui.el("textarea", {
-      class: inputCls + " font-body-md text-body-md", rows: "3",
-      placeholder: `给炼丹炉的指令（可选）：例如「想要东方仙侠 + 规则怪谈混搭」「主角要亦正亦邪」…`,
-    });
-    const genBtn = ui.el("button", {
-      class: btnPrimary,
-      disabled: brew.running ? "" : null,
-      onclick: async () => {
-        if (brew.running) return;
-        brew.running = true;
-        renderContent();
-        try {
-          const task = await api.post("/alchemy/brew?async_mode=true", {
-            step: meta.id, instruction: instr.value, context: brewContext(),
-          });
-          const r = task.task_id ? await pollTask(task.task_id) : task;
-          brew.candidate = r.result;
-        } catch (e) {
-          brew.candidate = null;
-          aiFail(e);
-        } finally {
-          brew.running = false;
-          renderContent();
-        }
-      },
-    }, ui.icon("science", "text-[18px]"),
-      brew.running ? "炼制中…" : (brew.candidate ? "重新生成" : "生成"));
-    panel.append(ui.el("div", { class: cardCls + " flex flex-col gap-space-sm" },
-      ui.el("div", { class: "flex items-center gap-space-xs" },
-        ui.icon(meta.icon, "text-[20px] text-secondary"),
-        ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" },
-          `第 ${brew.step + 1} 步 · ${meta.label}`),
-        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "· " + meta.hint)),
-      instr,
-      ui.el("div", { class: "flex items-center gap-space-sm" },
-        genBtn,
-        brewContext() ? ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" },
-          "已自动携带前序步骤的确认内容作为上下文") : null)));
-
-    /* 候选展示 */
-    if (brew.running) {
-      panel.append(loadingCard(`正在炼制${meta.label}…`));
-      return panel;
-    }
-    if (!brew.candidate) {
-      if (brew.data[meta.id]) {
-        panel.append(ui.el("div", { class: "flex items-center gap-space-xs rounded-lg bg-secondary-fixed/60 px-space-sm py-space-xs text-on-secondary-fixed font-body-sm text-body-sm" },
-          ui.icon("check_circle", "text-[16px] shrink-0"),
-          "本步已确认入炉，可点上方步骤条回顾，或点「生成」重新炼制一炉。"));
-      } else {
-        panel.append(ui.el("div", { class: cardCls + " flex flex-col items-center gap-space-sm py-space-lg text-center" },
-          ui.icon("hourglass_empty", "text-[40px] text-outline-variant"),
-          ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "点「生成」开炉，候选结果可直接编辑后再确认")));
-      }
-      return panel;
-    }
-
-    const editorBox = ui.el("div", { class: "flex flex-col gap-space-md" });
-    renderBrewCandidate(meta.id, brew.candidate, editorBox);
-    panel.append(editorBox);
-
-    const confirmBtn = ui.el("button", {
-      class: btnPrimary,
-      onclick: () => {
-        brew.data[meta.id] = collectBrewCandidate(meta.id);
-        brew.candidate = null;
-        brew.step += 1;
-        ui.toast(`「${meta.label}」已确认入炉`, "ok");
-        renderContent();
-      },
-    }, ui.icon("local_fire_department", "text-[18px]"), "确认入炉");
-    panel.append(ui.el("div", { class: cardCls + " flex items-center justify-end gap-space-sm" },
-      ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant mr-auto" }, "候选内容可直接编辑，确认后进入下一步"),
-      confirmBtn));
-    return panel;
-  }
-
-  /* 候选渲染（就地编辑 DOM，确认时回收） */
-  function renderBrewCandidate(stepId, cand, box) {
-    if (stepId === "framework") {
-      const field = (label, value, textarea) => {
-        const el = textarea
-          ? ui.el("textarea", { class: inputCls, rows: "2" })
-          : ui.el("input", { class: inputCls });
-        el.value = value || "";
-        el.dataset.field = label;
-        return ui.el("label", { class: "flex flex-col gap-1 font-label-sm text-label-sm text-on-surface-variant" }, label, el);
-      };
-      const titlesBox = ui.el("div", { class: "flex flex-col gap-1" });
-      (cand.title_suggestions || []).forEach((t) => {
-        const inp = ui.el("input", { class: inputCls, value: t });
-        inp.dataset.title = "1";
-        titlesBox.append(inp);
-      });
-      box.append(ui.el("div", { class: cardCls + " flex flex-col gap-space-sm", id: "brew-framework" },
-        ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold tracking-wider" }, "题材框架"),
-        ui.el("label", { class: "flex flex-col gap-1 font-label-sm text-label-sm text-on-surface-variant" }, "候选书名", titlesBox),
-        ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-space-sm" },
-          field("题材", cand.genre), field("目标读者", cand.audience)),
-        field("核心卖点", cand.selling_point, true),
-        field("主线一句话", cand.main_line, true)));
-    } else if (stepId === "world" || stepId === "characters") {
-      const ents = cand.entities || [];
-      if (!ents.length) {
-        box.append(ui.el("div", { class: cardCls + " text-center py-space-lg font-body-sm text-body-sm text-on-surface-variant" },
-          "AI 未给出条目，可调整指令后重新生成"));
-        return;
-      }
-      for (const e of ents) {
-        const nameIn = ui.el("input", { class: inputCls + " font-semibold", value: e.name });
-        const contentIn = ui.el("textarea", { class: inputCls, rows: "3" });
-        contentIn.value = e.content || "";
-        const tagsIn = ui.el("input", { class: inputCls, value: e.tags || "", placeholder: "标签（逗号分隔）" });
-        const catSel = ui.el("select", { class: inputCls + " w-auto shrink-0" },
-          ...Object.entries(CAT_META).map(([k, m]) => ui.el("option", { value: k }, m.label)));
-        catSel.value = stepId === "characters" ? "character" : (CAT_META[e.category] ? e.category : "term");
-        box.append(ui.el("div", { class: cardCls + " flex flex-col gap-1 brew-entity" },
-          ui.el("div", { class: "flex gap-space-xs items-center" }, catSel, nameIn),
-          contentIn, tagsIn));
-      }
-    } else if (stepId === "outline") {
-      const rows = orderOutline((cand.outline || []).map((o) => o));
-      if (!rows.length) {
-        box.append(ui.el("div", { class: cardCls + " text-center py-space-lg font-body-sm text-body-sm text-on-surface-variant" },
-          "AI 未给出大纲，可调整指令后重新生成"));
-        return;
-      }
-      const tree = ui.el("div", { class: cardCls + " flex flex-col gap-space-sm", id: "brew-outline" },
-        ui.el("span", { class: "font-label-md text-label-md text-primary font-semibold tracking-wider" }, "卷章大纲"));
-      for (const { node, depth } of rows) {
-        const titleIn = ui.el("input", { class: inputCls + " font-semibold", value: node.title });
-        const synIn = ui.el("textarea", { class: inputCls, rows: "2" });
-        synIn.value = node.synopsis || "";
-        const row = ui.el("div", {
-          class: "brew-outline-node flex flex-col gap-1 rounded-lg bg-surface-container-low p-space-sm",
-          style: `margin-left:${Math.min(depth, 3) * 20}px`,
-        }, titleIn, synIn);
-        row.dataset.parent = node.parent || "";
-        tree.append(row);
-      }
-      box.append(tree);
-    }
-  }
-
-  function collectBrewCandidate(stepId) {
-    if (stepId === "framework") {
-      const root = document.getElementById("brew-framework");
-      const titles = [...root.querySelectorAll("input[data-title]")].map((i) => i.value.trim()).filter(Boolean);
-      const get = (f) => (root.querySelector(`[data-field="${f}"]`) || {}).value || "";
-      return { title_suggestions: titles, genre: get("题材"), audience: get("目标读者"),
-               selling_point: get("核心卖点"), main_line: get("主线一句话") };
-    }
-    if (stepId === "world" || stepId === "characters") {
-      const entities = [...document.querySelectorAll(".brew-entity")].map((card) => {
-        const [sel, nameIn, contentIn, tagsIn] = card.querySelectorAll("select, input, textarea");
-        return { category: sel.value, name: nameIn.value.trim(),
-                 content: contentIn.value.trim(), tags: tagsIn.value.trim() };
-      }).filter((e) => e.name);
-      return { entities };
-    }
-    const outline = [...document.querySelectorAll(".brew-outline-node")].map((row) => {
-      const [titleIn, synIn] = row.querySelectorAll("input, textarea");
-      return { title: titleIn.value.trim(), synopsis: synIn.value.trim(),
-               parent: row.dataset.parent || null };
-    }).filter((o) => o.title);
-    return { outline };
-  }
-
-  /* 成丹 */
-  function brewFinale() {
-    const f = brew.data.framework || {};
-    const modeNew = ui.el("input", { type: "radio", name: "brew-mode", class: "accent-secondary", checked: "" });
-    modeNew.checked = true;
-    const modeExisting = ui.el("input", { type: "radio", name: "brew-mode", class: "accent-secondary" });
-    const titleIn = ui.el("input", { class: inputCls, value: (f.title_suggestions || [])[0] || "", placeholder: "新作品书名" });
-    const targetSel = workSelect();
-
-    const doneBtn = ui.el("button", {
-      class: btnPrimary,
-      onclick: async () => {
-        const isNew = modeNew.checked;
-        if (isNew && !titleIn.value.trim()) { ui.toast("请填写新作品书名", "err"); return; }
-        const wid = selectedWorkId(targetSel);
-        if (!isNew && !wid) { ui.toast("请选择要填充的现有作品", "err"); return; }
-        doneBtn.disabled = true;
-        try {
-          const r = await api.post("/alchemy/complete", {
-            mode: isNew ? "new" : "existing",
-            title: titleIn.value.trim(),
-            work_id: isNew ? undefined : wid,
-            brew: brew.data,
-          });
-          ui.toast(`成丹！入库设定 ${r.created.entities} 条、大纲节点 ${r.created.outline} 个`, "ok");
-          location.hash = `#/outline/${r.work_id}`;
-        } catch (e) {
-          ui.toast(e.message, "err");
-          doneBtn.disabled = false;
-        }
-      },
-    }, ui.icon("auto_awesome", "text-[18px]"), "成丹");
-
-    return ui.el("div", { class: cardCls + " flex flex-col gap-space-md" },
-      ui.el("div", { class: "flex items-center gap-space-xs" },
-        ui.icon("local_fire_department", "text-[20px] text-cinnabar-accent"),
-        ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "成丹出炉"),
-        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" }, "四味药材已备齐，选择落鼎之处")),
-      ui.el("label", { class: "flex items-start gap-space-sm p-space-sm rounded-lg bg-surface-container-low cursor-pointer" },
-        modeNew,
-        ui.el("div", { class: "flex-1 flex flex-col gap-1" },
-          ui.el("span", { class: "font-body-md text-body-md font-semibold text-on-surface" }, "新建作品"),
-          titleIn)),
-      ui.el("label", { class: "flex items-start gap-space-sm p-space-sm rounded-lg bg-surface-container-low cursor-pointer" },
-        modeExisting,
-        ui.el("div", { class: "flex-1 flex flex-col gap-1" },
-          ui.el("span", { class: "font-body-md text-body-md font-semibold text-on-surface" }, "填充到现有作品"),
-          targetSel)),
-      ui.el("div", { class: "flex items-center justify-between gap-space-sm flex-wrap" },
-        ui.el("span", { class: "font-body-sm text-body-sm text-on-surface-variant" },
-          "世界观与人物将进入设定库，大纲将挂入大纲树；新建作品自动创建「卷一」"),
-        doneBtn));
   }
 
   /* ---------- 启动 ---------- */

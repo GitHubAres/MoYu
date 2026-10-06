@@ -28,7 +28,9 @@ def _all(sql, args=()):
 def outline_tree(work_id: int):
     _one("SELECT id FROM works WHERE id=?", (work_id,))
     rows = _all(
-        """SELECT n.*, c.title AS chapter_title, c.word_count AS chapter_words
+        """SELECT n.*, c.title AS chapter_title, c.word_count AS chapter_words,
+                  (SELECT COUNT(*) FROM timeline_events te WHERE te.outline_node_id = n.id) AS timeline_count,
+                  (SELECT COUNT(*) FROM foreshadows f WHERE f.outline_node_id = n.id) AS foreshadow_count
            FROM outline_nodes n
            LEFT JOIN chapters c ON c.id = n.chapter_id
            WHERE n.work_id=? ORDER BY n.sort_order, n.id""", (work_id,))
@@ -166,3 +168,33 @@ def link_chapter(node_id: int, body: LinkIn):
     db.execute("UPDATE outline_nodes SET chapter_id=? WHERE id=?", (body.chapter_id, node_id))
     db.commit()
     return _one("SELECT * FROM outline_nodes WHERE id=?", (node_id,))
+
+
+@router.get("/works/{work_id}/outline/nodes/{node_id}/plot-items")
+def get_node_plot_items(work_id: int, node_id: int):
+    """聚合返回大纲节点名下的剧情时间线事件与关联伏笔。"""
+    _one("SELECT id FROM works WHERE id=?", (work_id,))
+    node = _one("SELECT * FROM outline_nodes WHERE id=? AND work_id=?", (node_id, work_id))
+    timeline_events = _all(
+        """SELECT te.*, c.title AS chapter_title, n.title AS outline_title
+           FROM timeline_events te
+           LEFT JOIN chapters c ON c.id = te.chapter_id
+           LEFT JOIN outline_nodes n ON n.id = te.outline_node_id
+           WHERE te.work_id=? AND te.outline_node_id=?
+           ORDER BY te.sort_order, te.id""",
+        (work_id, node_id)
+    )
+    foreshadows = _all(
+        """SELECT f.*, c.title AS chapter_title, n.title AS outline_title
+           FROM foreshadows f
+           LEFT JOIN chapters c ON c.id = f.chapter_id
+           LEFT JOIN outline_nodes n ON n.id = f.outline_node_id
+           WHERE f.work_id=? AND f.outline_node_id=?
+           ORDER BY f.id DESC""",
+        (work_id, node_id)
+    )
+    return {
+        "node_id": node_id,
+        "timeline_events": timeline_events,
+        "foreshadows": foreshadows
+    }

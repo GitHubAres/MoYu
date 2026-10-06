@@ -25,12 +25,42 @@ def _all(sql, args=()):
 
 
 def _serialize(e: dict) -> dict:
-    """fields_json 解析为 fields 对象，便于前端直接使用。"""
+    """fields_json 解析为 fields 对象，并附带关联关系。"""
     try:
         e["fields"] = json.loads(e.get("fields_json") or "{}")
     except (ValueError, TypeError):
         e["fields"] = {}
+    if "id" in e:
+        db = get_db()
+        rels = db.execute(
+            """SELECT r.id, r.from_id, r.to_id, r.label, e2.name AS to_name, e2.category AS to_category
+               FROM entity_relations r
+               JOIN entities e2 ON e2.id = r.to_id
+               WHERE r.from_id=? ORDER BY r.id ASC""",
+            (e["id"],)
+        ).fetchall()
+        e["relations"] = [dict(r) for r in rels]
+    else:
+        e["relations"] = []
     return e
+
+
+def _sync_relations(db, work_id: int, from_id: int, relations: list[dict] | None):
+    if relations is None:
+        return
+    db.execute("DELETE FROM entity_relations WHERE work_id=? AND from_id=?", (work_id, from_id))
+    for rel in relations:
+        to_id = rel.get("to_id")
+        label = (rel.get("label") or "").strip()
+        if not to_id or to_id == from_id:
+            continue
+        target = db.execute("SELECT id FROM entities WHERE id=? AND work_id=?", (to_id, work_id)).fetchone()
+        if not target:
+            continue
+        db.execute(
+            "INSERT INTO entity_relations (work_id, from_id, to_id, label) VALUES (?, ?, ?, ?)",
+            (work_id, from_id, to_id, label)
+        )
 
 
 def _check_category(category: str):
@@ -62,6 +92,7 @@ class EntityIn(BaseModel):
     content: str = ""
     fields_json: dict = {}
     tags: str = ""
+    relations: list[dict] | None = None
 
 
 @router.post("/works/{work_id}/entities", status_code=201)
@@ -73,9 +104,11 @@ def create_entity(work_id: int, body: EntityIn):
         "INSERT INTO entities(work_id, category, name, content, fields_json, tags) VALUES (?,?,?,?,?,?)",
         (work_id, body.category, body.name, body.content,
          json.dumps(body.fields_json, ensure_ascii=False), body.tags))
+    entity_id = cur.lastrowid
+    _sync_relations(db, work_id, entity_id, body.relations)
     db.execute("UPDATE works SET updated_at=datetime('now','localtime') WHERE id=?", (work_id,))
     db.commit()
-    return _serialize(_one("SELECT * FROM entities WHERE id=?", (cur.lastrowid,)))
+    return _serialize(_one("SELECT * FROM entities WHERE id=?", (entity_id,)))
 
 
 @router.get("/entities/{entity_id}")
@@ -89,11 +122,12 @@ class EntityPatch(BaseModel):
     content: str | None = None
     fields_json: dict | None = None
     tags: str | None = None
+    relations: list[dict] | None = None
 
 
 @router.patch("/entities/{entity_id}")
 def update_entity(entity_id: int, body: EntityPatch):
-    _one("SELECT id FROM entities WHERE id=?", (entity_id,))
+    old = _one("SELECT * FROM entities WHERE id=?", (entity_id,))
     data = body.model_dump(exclude_unset=True)
     if "category" in data and data["category"] is not None:
         _check_category(data["category"])
@@ -104,6 +138,8 @@ def update_entity(entity_id: int, body: EntityPatch):
     if data.get("fields_json") is not None:
         db.execute("UPDATE entities SET fields_json=? WHERE id=?",
                    (json.dumps(data["fields_json"], ensure_ascii=False), entity_id))
+    if "relations" in data:
+        _sync_relations(db, old["work_id"], entity_id, data["relations"])
     db.execute("UPDATE entities SET updated_at=datetime('now','localtime') WHERE id=?", (entity_id,))
     db.commit()
     return _serialize(_one("SELECT * FROM entities WHERE id=?", (entity_id,)))

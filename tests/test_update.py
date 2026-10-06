@@ -1,4 +1,4 @@
-﻿# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
+# 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
 """自动更新模块单元测试：语义化版本比对、环境探测、GitHub 检查模拟与 VPS 更新保护。"""
 import json

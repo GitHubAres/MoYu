@@ -209,6 +209,77 @@ registerPage("entities", async (view, { segs }) => {
     });
 
     const chaptersBox = ui.el("div", { class: "flex flex-col gap-2" });
+    let currentRelations = Array.isArray(e.relations) ? JSON.parse(JSON.stringify(e.relations)) : [];
+    const relationsListEl = ui.el("div", { class: "flex flex-wrap gap-2" });
+
+    function renderRelationsList() {
+      relationsListEl.innerHTML = "";
+      if (!currentRelations.length) {
+        relationsListEl.append(ui.el("span", { class: "text-[12px] text-on-surface-variant/70 italic py-1" }, "暂无关系关联，可通过下方添加人物或势力羁绊"));
+        return;
+      }
+      for (let i = 0; i < currentRelations.length; i++) {
+        const r = currentRelations[i];
+        const targetEnt = visible.find((x) => x.id === r.to_id);
+        const targetName = r.to_name || (targetEnt ? targetEnt.name : ("条目 #" + r.to_id));
+        relationsListEl.append(ui.el("span", {
+          class: "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container-low border border-border-feather font-label-sm text-label-sm text-on-surface",
+        },
+          ui.icon("hub", "text-[14px] text-secondary"),
+          ui.el("span", { class: "font-semibold text-primary" }, targetName),
+          ui.el("span", { class: "px-1.5 py-0.2 rounded text-[11px] bg-secondary/10 text-secondary" }, r.label || "关联"),
+          ui.el("button", {
+            class: "text-on-surface-variant hover:text-error transition-colors ml-0.5 cursor-pointer",
+            title: "移除该关系",
+            onclick: () => {
+              currentRelations.splice(i, 1);
+              renderRelationsList();
+            },
+          }, ui.icon("close", "text-[14px]"))));
+      }
+    }
+    renderRelationsList();
+
+    const otherEntities = visible.filter((x) => x.id !== e.id);
+    const relTargetSelect = ui.el("select", {
+      class: "px-2.5 py-1.5 rounded-lg bg-surface-container-low border border-border-feather text-body-sm font-label-sm outline-none flex-1 min-w-[140px]",
+    });
+    if (!otherEntities.length) {
+      relTargetSelect.append(ui.el("option", { value: "" }, "（无其他可选实体）"));
+    } else {
+      for (const o of otherEntities) {
+        relTargetSelect.append(ui.el("option", { value: String(o.id) }, `${o.name} (${catMeta(o.category).label})`));
+      }
+    }
+
+    const relLabelInput = ui.el("input", {
+      class: "px-2.5 py-1.5 rounded-lg bg-surface-container-low border border-border-feather text-body-sm font-label-sm outline-none w-28",
+      placeholder: "关系称谓(如师徒)",
+    });
+
+    const addRelBtn = ui.el("button", {
+      class: "px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-label-sm text-label-sm flex items-center gap-1 transition-colors cursor-pointer",
+      onclick: () => {
+        const toId = Number(relTargetSelect.value);
+        if (!toId) { ui.toast("请选择关联目标", "err"); return; }
+        const label = relLabelInput.value.trim() || "关联";
+        const targetEnt = visible.find((x) => x.id === toId);
+        currentRelations.push({ to_id: toId, label, to_name: targetEnt ? targetEnt.name : "" });
+        relLabelInput.value = "";
+        renderRelationsList();
+      },
+    }, ui.icon("add", "text-[15px]"), "添加关系");
+
+    const relationsSection = ui.el("div", { class: "flex flex-col gap-2 relative bg-surface-container-low/40 p-space-md rounded-xl border border-border-feather" },
+      ui.el("div", { class: "flex items-center justify-between" },
+        ui.el("div", { class: "flex items-center gap-2" },
+          ui.icon("hub", "text-[18px] text-secondary"),
+          ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "人物与势力关系网络"),
+          ui.el("span", { class: "font-label-sm text-[11px] text-on-surface-variant" }, "自动反哺知识图谱")),
+        ui.el("a", { class: "text-[11px] text-secondary hover:underline cursor-pointer", onclick: () => { location.hash = `#/graph/${workId}`; } }, "查看全书图谱 →")),
+      relationsListEl,
+      otherEntities.length ? ui.el("div", { class: "flex items-center gap-2 flex-wrap pt-1" },
+        relTargetSelect, relLabelInput, addRelBtn) : null);
 
     detailBox.append(ui.el("div", {
       class: "bg-surface-container-lowest rounded-2xl p-space-lg shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-lg relative overflow-hidden",
@@ -276,6 +347,8 @@ registerPage("entities", async (view, { segs }) => {
           ui.icon("sell", "text-[18px] text-secondary"),
           ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary" }, "标签")),
         tagsInput),
+      /* 关系网络 */
+      relationsSection,
       /* 关联章节 */
       ui.el("div", { class: "flex flex-col gap-2 relative" },
         ui.el("div", { class: "flex items-center gap-2" },
@@ -286,7 +359,11 @@ registerPage("entities", async (view, { segs }) => {
     renderEntityChapters(e);
 
     async function saveEntity(ent) {
-      const body = { name: nameInput.value.trim() || ent.name, tags: tagsInput.value.trim() };
+      const body = {
+        name: nameInput.value.trim() || ent.name,
+        tags: tagsInput.value.trim(),
+        relations: currentRelations.map((r) => ({ to_id: r.to_id, label: r.label || "关联" })),
+      };
       if (ent.category === "character") {
         body.fields_json = {};
         for (const f of CHAR_FIELDS) body.fields_json[f.key] = fieldInputs[f.key].value.trim();
@@ -296,7 +373,7 @@ registerPage("entities", async (view, { segs }) => {
       }
       try {
         await api.patch(`/entities/${ent.id}`, body);
-        ui.toast("设定已保存", "ok");
+        ui.toast("设定与关系网络已保存", "ok");
         load();
       } catch (err) { ui.toast(err.message, "err"); }
     }

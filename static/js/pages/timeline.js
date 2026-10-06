@@ -5,15 +5,25 @@ registerPage("timeline", async (view, { segs }) => {
 
   let work, works, events, tree;
   try {
-    [work, works, tree] = await Promise.all([
+    let outlineTree = [];
+    [work, works, tree, outlineTree] = await Promise.all([
       api.get(`/works/${workId}`),
       api.get("/works"),
       api.get(`/works/${workId}/tree`),
+      api.get(`/works/${workId}/outline`).catch(() => []),
     ]);
     events = await api.get(`/works/${workId}/timeline`);
   } catch (e) { ui.toast(e.message, "err"); return; }
 
   const chapters = tree.flatMap((v) => v.chapters.map((c) => ({ ...c, volume_title: v.title })));
+  const outlineNodes = [];
+  (function flattenOutline(nodes) {
+    if (!Array.isArray(nodes)) return;
+    for (const n of nodes) {
+      outlineNodes.push({ id: n.id, title: n.title });
+      if (n.children) flattenOutline(n.children);
+    }
+  })(outlineTree);
   const chapterName = (id) => {
     const c = chapters.find((x) => x.id === id);
     return c ? `${c.volume_title} · ${c.title}` : null;
@@ -111,14 +121,19 @@ registerPage("timeline", async (view, { segs }) => {
                 title: "删除", onclick: () => removeEvent(ev),
               }, ui.icon("delete", "text-[16px]")))),
           ui.el("p", { class: "font-body-md text-body-md text-on-surface whitespace-pre-wrap" }, ev.event),
-          (chars.length || chTitle) && ui.el("div", { class: "flex items-center gap-1.5 flex-wrap pt-0.5" },
+          (chars.length || chTitle || ev.outline_node_id) && ui.el("div", { class: "flex items-center gap-1.5 flex-wrap pt-0.5" },
             chars.map((c) => ui.el("span", {
               class: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant font-label-sm text-label-sm",
             }, ui.icon("person", "text-[13px]"), c)),
             chTitle && ui.el("a", {
               class: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary-fixed text-on-primary-fixed font-label-sm text-label-sm hover:bg-primary-container hover:text-on-primary transition-colors cursor-pointer",
               onclick: () => { location.hash = `#/workbench/${workId}?chapter=${ev.chapter_id}`; },
-            }, ui.icon("menu_book", "text-[13px]"), chTitle)))));
+            }, ui.icon("menu_book", "text-[13px]"), chTitle),
+            ev.outline_node_id && ui.el("a", {
+              class: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm hover:bg-secondary hover:text-on-secondary transition-colors cursor-pointer",
+              title: "点击跳转至关联的大纲节点",
+              onclick: () => { location.hash = `#/outline/${workId}?node_id=${ev.outline_node_id}`; },
+            }, ui.icon("account_tree", "text-[13px]"), ev.outline_node_title || ("大纲 #" + ev.outline_node_id))))));
   }
 
   /* ---------- 事件表单弹窗（新建 / 编辑） ---------- */
@@ -137,6 +152,13 @@ registerPage("timeline", async (view, { segs }) => {
           value: c.id, selected: initial.chapter_id === c.id ? "" : null,
         }, `${c.volume_title} · ${c.title}`));
       }
+      const outlineSelect = ui.el("select", { class: inputCls },
+        ui.el("option", { value: "" }, "（不关联大纲节点）"));
+      for (const n of outlineNodes) {
+        outlineSelect.append(ui.el("option", {
+          value: String(n.id), selected: initial.outline_node_id === n.id ? "" : null,
+        }, n.title));
+      }
       const close = (val) => { overlay.remove(); resolve(val); };
       const overlay = ui.el("div", {
         class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
@@ -148,6 +170,7 @@ registerPage("timeline", async (view, { segs }) => {
           ui.el("label", { class: labelCls }, "事件描述", eventInput),
           ui.el("label", { class: labelCls }, "涉及人物", charsInput),
           ui.el("label", { class: labelCls }, "关联章节", chSelect),
+          ui.el("label", { class: labelCls }, "关联大纲节点", outlineSelect),
           ui.el("div", { class: "flex justify-end gap-2" },
             ui.el("button", {
               class: "px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md",
@@ -162,6 +185,7 @@ registerPage("timeline", async (view, { segs }) => {
                   event: eventInput.value.trim(),
                   characters: charsInput.value.trim(),
                   chapter_id: chSelect.value ? Number(chSelect.value) : null,
+                  outline_node_id: outlineSelect.value ? Number(outlineSelect.value) : null,
                 });
               },
             }, "保存"))));

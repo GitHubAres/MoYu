@@ -30,9 +30,7 @@ registerPage("workbench", async (view, { segs, params }) => {
   // 每个任务标签各自绑定的 Skill（null=自动匹配内置技能），localStorage 持久化
   let aiSkillMap = {};
   try { aiSkillMap = JSON.parse(localStorage.getItem("moyu_task_skill_map") || "{}"); } catch (_) { aiSkillMap = {}; }
-  let isClassicCandidateMode = false;
   let workbenchChatInstance = null;
-  let classicBox = null;
   let skills = [];
   let currentTaskId = null;
   let outlineNodes = [];
@@ -778,12 +776,12 @@ registerPage("workbench", async (view, { segs, params }) => {
           aiTask = task;
           syncTaskBtns();
           hideSelToolbar();
-          if (isClassicCandidateMode || !workbenchChatInstance) {
-            runGenerate();
-          } else {
-            if (window.innerWidth < 1024) openMobileDrawer("right");
+          if (window.innerWidth < 1024) openMobileDrawer("right");
+          if (workbenchChatInstance) {
             workbenchChatInstance.setActiveTask(task);
             workbenchChatInstance.sendQuickTask(task, selText);
+          } else {
+            runGenerate();
           }
         },
       }, label));
@@ -1007,64 +1005,15 @@ registerPage("workbench", async (view, { segs, params }) => {
       ui.el("div", { class: "flex items-center justify-between" },
         ui.el("span", { class: "text-[11px] text-on-surface-variant" }, "技能在输入框上方任务标签右侧按任务选择"),
         ui.el("a", { class: "text-[11px] text-primary hover:underline cursor-pointer", href: "#/skills", onclick: (e) => { e.preventDefault(); location.hash = "#/skills"; } }, "管理技能 →")));
-    const classicSettingsSlot = ui.el("div");
-    const drawerSettingsSlot = ui.el("div");
-
-    const classicHeader = ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
-      ui.el("div", { class: "flex items-center justify-between" },
-        ui.el("div", { class: "flex items-center gap-2" },
-          ui.el("div", { class: "w-8 h-8 rounded-full bg-primary text-on-primary flex items-center justify-center shrink-0" },
-            ui.icon("auto_awesome", "text-[18px]")),
-          ui.el("div", { class: "flex flex-col" },
-            ui.el("span", { class: "font-headline-sm text-label-md text-primary font-semibold" }, "经典多候选面板"),
-            ui.el("span", { class: "font-label-sm text-[11px] text-on-surface-variant" }, "多候选生成与行级对比"))),
-        ui.el("button", {
-          class: "flex items-center gap-0.5 px-2 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-primary font-label-sm text-label-sm cursor-pointer",
-          onclick: () => {
-            isClassicCandidateMode = false;
-            syncAiPanelMode();
-          },
-        }, ui.icon("forum", "text-[15px]"), "切回聊天")
-      ),
-      ui.el("div", { class: "flex flex-wrap gap-1 pt-1" },
+    const drawerContextBox = ui.el("div", { class: "flex flex-col gap-2" },
+      ctxBox,
+      relatedBox,
+      ui.el("div", { class: "flex flex-wrap gap-1 pt-2 border-t border-border-feather/50" },
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/outline/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/outline/${workId}`; } }, "故事大纲"),
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/entities/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/entities/${workId}`; } }, "设定库"),
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/versions/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = chapter ? `#/versions/${workId}?chapter=${chapter.id}` : `#/versions/${workId}`; } }, "版本快照"),
         ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: "#/audit", onclick: (e) => { e.preventDefault(); location.hash = "#/audit"; } }, "一致性检查"))
     );
-
-    classicBox = ui.el("div", { class: "hidden flex flex-col gap-space-sm" },
-      classicHeader,
-      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
-        ui.el("div", { class: "flex items-center gap-1 text-primary" },
-          ui.icon("linked_services", "text-[16px]"),
-          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "已挂载上下文")),
-        ctxBox,
-        relatedBox),
-      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-sm shadow-[0_4px_20px_rgba(6,21,35,0.03)] flex flex-col gap-space-xs" },
-        ui.el("div", { class: "flex items-center gap-1 text-primary" },
-          ui.icon("auto_awesome", "text-[16px]"),
-          ui.el("span", { class: "font-label-md text-label-md font-semibold" }, "任务控制")),
-        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "任务"),
-        taskSeg.wrap,
-        classicSettingsSlot,
-        instrInput,
-        recentBox,
-        genBtn, stopBtn,
-        taskStatusEl),
-      candidatesBox
-    );
-
-    const drawerSettingsBox = ui.el("div", { class: "flex flex-col gap-2 pt-2 border-t border-border-feather" },
-      drawerSettingsSlot,
-      ui.el("div", { class: "flex flex-wrap gap-1 pt-1 border-t border-border-feather/50" },
-        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/outline/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/outline/${workId}`; } }, "故事大纲"),
-        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/entities/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = `#/entities/${workId}`; } }, "设定库"),
-        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: `#/versions/${workId}`, onclick: (e) => { e.preventDefault(); location.hash = chapter ? `#/versions/${workId}?chapter=${chapter.id}` : `#/versions/${workId}`; } }, "版本快照"),
-        ui.el("a", { class: "px-2 py-1 rounded-lg bg-surface-container-low hover:bg-surface-container text-on-surface-variant font-label-sm text-label-sm", href: "#/audit", onclick: (e) => { e.preventDefault(); location.hash = "#/audit"; } }, "一致性检查"))
-    );
-
-    const drawerContextBox = ui.el("div", { class: "flex flex-col gap-2" }, ctxBox, relatedBox);
 
     if (window.WorkbenchChat) {
       workbenchChatInstance = window.WorkbenchChat.init({
@@ -1075,12 +1024,6 @@ registerPage("workbench", async (view, { segs, params }) => {
         getContext: () => ctxItems.filter((i) => i.cb.checked).map((i) => i.getText()).filter(Boolean).join("\n\n----\n\n"),
         getContextCount: () => ctxItems.filter((i) => i.cb.checked).length,
         contextDrawerEl: drawerContextBox,
-        classicSettingsEl: drawerSettingsBox,
-        isClassicMode: () => isClassicCandidateMode,
-        toggleClassicMode: (val) => {
-          isClassicCandidateMode = val;
-          syncAiPanelMode();
-        },
         onAdopt: async (msg, text) => {
           const res = await applyAdoptContent(text, msg ? msg.id : null);
           if (res && res.ok) {
@@ -1094,7 +1037,7 @@ registerPage("workbench", async (view, { segs, params }) => {
         },
         onRetry: (task) => {
           aiTask = task;
-          window.aiSkillBridge.syncWindow(task);
+          if (window.aiSkillBridge) window.aiSkillBridge.syncWindow(task);
           syncTaskBtns();
           workbenchChatInstance.setActiveTask(task);
           workbenchChatInstance.sendQuickTask(task, selText);
@@ -1102,23 +1045,9 @@ registerPage("workbench", async (view, { segs, params }) => {
       });
     }
 
-    function syncAiPanelMode() {
-      if (isClassicCandidateMode) {
-        classicSettingsSlot.append(settingsBlock);
-        classicBox.classList.remove("hidden");
-        if (workbenchChatInstance) workbenchChatInstance.el.classList.add("hidden");
-      } else {
-        drawerSettingsSlot.append(settingsBlock);
-        classicBox.classList.add("hidden");
-        if (workbenchChatInstance) workbenchChatInstance.el.classList.remove("hidden");
-      }
-    }
-
     const panelWrapper = ui.el("div", {
       class: "flex flex-col gap-space-sm h-full min-h-0",
-    }, workbenchChatInstance ? workbenchChatInstance.el : null, classicBox);
-
-    syncAiPanelMode();
+    }, workbenchChatInstance ? workbenchChatInstance.el : null);
     return panelWrapper;
   }
 

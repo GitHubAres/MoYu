@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import pytest
 import httpx
 from app.db import DEFAULT_SETTINGS, get_db

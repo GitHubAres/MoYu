@@ -25,6 +25,7 @@ class ChatIn(BaseModel):
     skill_id: Optional[int] = None
     context: str = ""
     length: str = "medium"
+    candidates: int = 1
     stream: bool = True
 
 
@@ -242,27 +243,36 @@ async def send_chat_message(body: ChatIn):
     start_time = time.time()
     start_task(task_id)
 
+    num_candidates = max(1, min(3, body.candidates))
+
     # 非流式模式（供测试或特殊场景调用）
     if not body.stream:
         try:
-            reply_text, total_tokens = await chat(messages, cfg)
+            cand_results = []
+            total_toks = 0
+            for _ in range(num_candidates):
+                reply_text, tokens = await chat(messages, cfg)
+                cand_results.append(reply_text)
+                total_toks += (tokens or 0)
             elapsed = int((time.time() - start_time) * 1000)
-            done_steps = [*steps, {"id": "generate", "title": "生成正文", "detail": f"输出 {len(reply_text)} 字 · 用时 {elapsed / 1000:.1f}s", "status": "done"}]
-            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length, "steps": done_steps}, ensure_ascii=False)
+            primary_text = cand_results[0] if cand_results else ""
+            done_steps = [*steps, {"id": "generate", "title": "生成正文", "detail": f"输出 {len(cand_results)} 个候选 · 用时 {elapsed / 1000:.1f}s", "status": "done"}]
+            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length, "candidates": cand_results, "steps": done_steps}, ensure_ascii=False)
             cur_ai = db.execute(
                 """INSERT INTO chat_messages (session_id, role, content, task_type, meta_json, adopted)
                    VALUES (?, 'ai', ?, ?, ?, 0)""",
-                (session_id, reply_text, body.task, meta),
+                (session_id, primary_text, body.task, meta),
             )
             ai_msg_id = cur_ai.lastrowid
             db.execute("UPDATE chat_sessions SET updated_at=datetime('now','localtime') WHERE id=?", (session_id,))
             db.commit()
-            finish_task(task_id, {"message_id": ai_msg_id, "content": reply_text}, token_used=total_tokens or 0, elapsed_ms=elapsed)
+            finish_task(task_id, {"message_id": ai_msg_id, "content": primary_text, "candidates": cand_results}, token_used=total_toks, elapsed_ms=elapsed)
             return {
                 "session_id": session_id,
                 "user_message_id": user_msg_id,
                 "message_id": ai_msg_id,
-                "content": reply_text,
+                "content": primary_text,
+                "candidates": cand_results,
                 "task_id": task_id,
             }
         except Exception as e:
@@ -271,42 +281,44 @@ async def send_chat_message(body: ChatIn):
 
     # SSE 流式模式
     async def event_stream():
-        full_text = []
-        total_tokens = 0
+        cand_results = []
         gen_step = {"id": "generate", "title": "生成正文", "detail": "流式输出中…", "status": "doing"}
         run_steps = [*steps, gen_step]
         try:
-            yield "data: " + json.dumps({"session_id": session_id, "task_id": task_id, "user_message_id": user_msg_id}, ensure_ascii=False) + "\n\n"
+            yield "data: " + json.dumps({"session_id": session_id, "task_id": task_id, "user_message_id": user_msg_id, "candidate_count": num_candidates}, ensure_ascii=False) + "\n\n"
             for st in steps:
                 yield "data: " + json.dumps({"step": st}, ensure_ascii=False) + "\n\n"
             yield "data: " + json.dumps({"step": gen_step}, ensure_ascii=False) + "\n\n"
-            yield "data: " + json.dumps({"candidate": 0, "start": True}, ensure_ascii=False) + "\n\n"
 
-            async for delta in chat_stream(messages, cfg, {}):
-                full_text.append(delta)
-                yield "data: " + json.dumps({"candidate": 0, "delta": delta}, ensure_ascii=False) + "\n\n"
+            for c_idx in range(num_candidates):
+                yield "data: " + json.dumps({"candidate": c_idx, "start": True}, ensure_ascii=False) + "\n\n"
+                full_text = []
+                async for delta in chat_stream(messages, cfg, {}):
+                    full_text.append(delta)
+                    yield "data: " + json.dumps({"candidate": c_idx, "delta": delta}, ensure_ascii=False) + "\n\n"
+                cand_results.append("".join(full_text))
 
-            final_reply = "".join(full_text)
+            primary_reply = cand_results[0] if cand_results else ""
             elapsed = int((time.time() - start_time) * 1000)
 
             gen_step["status"] = "done"
-            gen_step["detail"] = f"输出 {len(final_reply)} 字 · 用时 {elapsed / 1000:.1f}s"
+            gen_step["detail"] = f"输出 {num_candidates} 个候选 · 用时 {elapsed / 1000:.1f}s"
             yield "data: " + json.dumps({"step": gen_step}, ensure_ascii=False) + "\n\n"
 
-            # 写库记录 AI 回复（meta 携带思考步骤供历史回放）
+            # 写库记录 AI 回复（meta 携带思考步骤与全量候选供回放）
             thread_db = get_db()
-            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length, "steps": run_steps}, ensure_ascii=False)
+            meta = json.dumps({"task_id": task_id, "task": body.task, "length": body.length, "candidates": cand_results, "steps": run_steps}, ensure_ascii=False)
             cur_ai = thread_db.execute(
                 """INSERT INTO chat_messages (session_id, role, content, task_type, meta_json, adopted)
                    VALUES (?, 'ai', ?, ?, ?, 0)""",
-                (session_id, final_reply, body.task, meta),
+                (session_id, primary_reply, body.task, meta),
             )
             ai_msg_id = cur_ai.lastrowid
             thread_db.execute("UPDATE chat_sessions SET updated_at=datetime('now','localtime') WHERE id=?", (session_id,))
             thread_db.commit()
 
-            finish_task(task_id, {"message_id": ai_msg_id, "content": final_reply}, token_used=total_tokens, elapsed_ms=elapsed)
-            yield "data: " + json.dumps({"done": True, "message_id": ai_msg_id, "task_id": task_id}, ensure_ascii=False) + "\n\n"
+            finish_task(task_id, {"message_id": ai_msg_id, "content": primary_reply, "candidates": cand_results}, token_used=0, elapsed_ms=elapsed)
+            yield "data: " + json.dumps({"done": True, "message_id": ai_msg_id, "task_id": task_id, "candidates": cand_results}, ensure_ascii=False) + "\n\n"
         except AIError as e:
             fail_task(task_id, str(e), int((time.time() - start_time) * 1000))
             gen_step["status"] = "error"

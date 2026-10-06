@@ -192,6 +192,8 @@ CREATE TABLE IF NOT EXISTS foreshadows (
 
     chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL,
 
+    outline_node_id INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL,
+
     created_at TEXT DEFAULT (datetime('now','localtime'))
 
 );
@@ -264,6 +266,8 @@ CREATE TABLE IF NOT EXISTS timeline_events (
 
     chapter_id INTEGER REFERENCES chapters(id) ON DELETE SET NULL,
 
+    outline_node_id INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL,
+
     time_label TEXT DEFAULT '',
 
     event TEXT NOT NULL,
@@ -277,6 +281,8 @@ CREATE TABLE IF NOT EXISTS timeline_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_chapters_volume ON chapters(volume_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_timeline_outline_node ON timeline_events(outline_node_id);
+CREATE INDEX IF NOT EXISTS idx_foreshadows_outline_node ON foreshadows(outline_node_id);
 
 CREATE INDEX IF NOT EXISTS idx_versions_chapter ON chapter_versions(chapter_id, id DESC);
 
@@ -609,6 +615,10 @@ MIGRATIONS = {
 
     "works": [("style_profile", "TEXT DEFAULT ''"), ("cover_image", "TEXT DEFAULT ''")],
 
+    "timeline_events": [("outline_node_id", "INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL")],
+
+    "foreshadows": [("outline_node_id", "INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL")],
+
 }
 
 
@@ -630,6 +640,8 @@ def init_db():
             if col not in existing:
 
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_timeline_outline_node ON timeline_events(outline_node_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_foreshadows_outline_node ON foreshadows(outline_node_id)")
 
     for k, v in DEFAULT_SETTINGS.items():
 

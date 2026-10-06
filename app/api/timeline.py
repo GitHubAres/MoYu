@@ -37,8 +37,9 @@ def _all(sql, args=()):
 
 def _event(work_id: int, event_id: int) -> dict:
     return _one(
-        """SELECT t.*, c.title AS chapter_title FROM timeline_events t
+        """SELECT t.*, c.title AS chapter_title, n.title AS outline_title FROM timeline_events t
            LEFT JOIN chapters c ON c.id = t.chapter_id
+           LEFT JOIN outline_nodes n ON n.id = t.outline_node_id
            WHERE t.id=? AND t.work_id=?""", (event_id, work_id))
 
 
@@ -52,14 +53,25 @@ def _check_chapter(work_id: int, chapter_id: int | None):
         raise HTTPException(400, "所选章节不存在或不属于该作品")
 
 
+def _check_outline_node(work_id: int, outline_node_id: int | None):
+    if outline_node_id is None:
+        return
+    row = get_db().execute(
+        """SELECT id FROM outline_nodes WHERE id=? AND work_id=?""",
+        (outline_node_id, work_id)).fetchone()
+    if row is None:
+        raise HTTPException(400, "所选大纲节点不存在或不属于该作品")
+
+
 # ---------- CRUD ----------
 
 @router.get("/works/{work_id}/timeline")
 def list_events(work_id: int):
     _one("SELECT id FROM works WHERE id=?", (work_id,))
     return _all(
-        """SELECT t.*, c.title AS chapter_title FROM timeline_events t
+        """SELECT t.*, c.title AS chapter_title, n.title AS outline_title FROM timeline_events t
            LEFT JOIN chapters c ON c.id = t.chapter_id
+           LEFT JOIN outline_nodes n ON n.id = t.outline_node_id
            WHERE t.work_id=? ORDER BY t.sort_order, t.id""", (work_id,))
 
 
@@ -68,12 +80,14 @@ class EventIn(BaseModel):
     event: str
     characters: str = ""
     chapter_id: int | None = None
+    outline_node_id: int | None = None
 
 
 @router.post("/works/{work_id}/timeline", status_code=201)
 def create_event(work_id: int, body: EventIn):
     _one("SELECT id FROM works WHERE id=?", (work_id,))
     _check_chapter(work_id, body.chapter_id)
+    _check_outline_node(work_id, body.outline_node_id)
     if not body.event.strip():
         raise HTTPException(400, "事件内容不能为空")
     db = get_db()
@@ -81,9 +95,9 @@ def create_event(work_id: int, body: EventIn):
         "SELECT COALESCE(MAX(sort_order),0)+1 FROM timeline_events WHERE work_id=?",
         (work_id,)).fetchone()[0]
     cur = db.execute(
-        "INSERT INTO timeline_events(work_id, chapter_id, time_label, event, characters, sort_order) "
-        "VALUES (?,?,?,?,?,?)",
-        (work_id, body.chapter_id, body.time_label.strip(),
+        "INSERT INTO timeline_events(work_id, chapter_id, outline_node_id, time_label, event, characters, sort_order) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (work_id, body.chapter_id, body.outline_node_id, body.time_label.strip(),
          body.event.strip(), body.characters.strip(), n))
     db.commit()
     return _event(work_id, cur.lastrowid)
@@ -94,6 +108,7 @@ class EventPatch(BaseModel):
     event: str | None = None
     characters: str | None = None
     chapter_id: int | None = None
+    outline_node_id: int | None = None
     sort_order: int | None = None
 
 
@@ -104,9 +119,11 @@ def update_event(event_id: int, body: EventPatch):
     data = body.model_dump(exclude_unset=True)
     if "chapter_id" in data:
         _check_chapter(old["work_id"], data["chapter_id"])
+    if "outline_node_id" in data:
+        _check_outline_node(old["work_id"], data["outline_node_id"])
     if data.get("event") is not None and not data["event"].strip():
         raise HTTPException(400, "事件内容不能为空")
-    for k in ("time_label", "event", "characters", "chapter_id", "sort_order"):
+    for k in ("time_label", "event", "characters", "chapter_id", "outline_node_id", "sort_order"):
         if k in data:
             v = data[k]
             db.execute(f"UPDATE timeline_events SET {k}=? WHERE id=?",

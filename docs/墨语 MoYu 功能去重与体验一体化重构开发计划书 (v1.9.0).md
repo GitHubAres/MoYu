@@ -1,0 +1,114 @@
+# 墨语 MoYu 功能去重与体验一体化重构开发计划书 (v1.9.0)
+
+> **目标**：彻底解决目前墨语在“前期策划”、“写作台AI交互”、“剧情脉络管理”与“设定资产”四大维度的功能性重复与体验割裂，形成决策闭环，可直接交由 Codex 执行。
+
+---
+
+## 1. 摘要与实施原则 (Summary & Principles)
+
+本重构覆盖 4 个核心方向：
+1. **立项收敛**：下线炼丹炉“开炉炼丹”，将其变更为“创作实验室”；全书策划统一归并至“写作工作流”预设管线。
+2. **工作台一体化**：工作台右侧彻底废除经典模式/对话模式双轨切换与深层抽屉，统一为修撰使伴写对话流，内置任务药丸、候选对比与快捷设置。
+3. **剧情中枢化**：以故事大纲树为唯一主干，通过增量迁移让时间线事件与伏笔挂载至大纲节点，实现“大纲-时序-看板”三向联动。
+4. **设定归口**：设定统一入万象谱并自动反哺关系图谱，灵感便签严格收缩为碎片随笔。
+
+**工程红线**：
+- 前端严格保持原生 JS（无打包/无编译），仅使用 `ui.el()` 和 `ui.icon()`；
+- 遵循 SQLite 增量迁移规范（`MIGRATIONS` 机制），严禁破坏现有用户数据；
+- 保持 150+ 项现有回归测试全绿，测试需在隔离数据库中运行。
+
+---
+
+## 2. 详细改造清单与接口规约 (Implementation Changes)
+
+### 模块一：前期立项整合（收敛至写作工作流）
+- **文件**：`static/js/pages/alchemy.js`
+  - 移除 `TABS` 中的 `{ id: "brew", label: "开炉炼丹", icon: "science" }` 及对应的 `BREW_STEPS`、`renderBrew`、`brewFinale` 表单构建逻辑。
+  - 炼丹炉顶部展示固定引导横幅（Banner）：包含“需要全书立项与生成？前往 [写作工作流 · 新书开坑]”的链接按钮（点击跳转 `#/workflows`）。
+  - 保留并精简现有 3 个 Tab：拆书蒸馏 (`distill`)、资料融汇 (`fuse`)、丹青阁 (`gallery`)。
+- **文件**：`app/db.py`
+  - 确保官方预设工作流《新书开坑五连流》（立项→世界观→人物→大纲→细纲）处于默认激活状态，复用 `app/workflow_assets.py` 的结构化提取与一键入库能力。
+
+### 模块二：写作工作台 AI 侧栏交互一体化
+- **文件**：`static/js/pages/workbench.js`
+  - 移除变量 `isClassicCandidateMode`、`classicBox` 以及经典候选模式专用的底部开关控制栏。
+  - 默认全量加载并嵌入 `workbenchChatInstance`，侧边栏作为唯一统一交互界面。
+- **文件**：`static/js/pages/workbench_chat.js`
+  - **输入框上方快捷药丸（Action Pills）**：
+    - 常驻 5 个任务药丸：`续写` (`continue`)、`扩写` (`expand`)、`缩写` (`condense`)、`润色` (`polish`)、`推演` (`analyze`)。
+    - 点击药丸自动高亮当前任务类型，并将默认提示词注入输入框或自动预填充指令。
+  - **控制栏与字数设置**：
+    - 在输入框右上角/底部内嵌极简控件：字数选择下拉（500/1000/2000/3000字）、候选数量（1/2/3），移除多余的深层设置抽屉。
+  - **消息流候选对比与采纳**：
+    - 当候选数 > 1 时，在同一条 Assistant 消息卡片内直接以 Tab 切换或双栏并排展示“候选 1 / 候选 2”，各候选均带独立的【采纳为正文】与【一键撤销】回调。
+
+### 模块三：剧情三件套联动（大纲为中枢，时间线与伏笔为投影）
+- **数据层增量迁移 (`app/db.py`)**：
+  - 在 `MIGRATIONS` 列表追加迁移脚本（例如迁移版本 16）：
+    ```sql
+    ALTER TABLE timeline_events ADD COLUMN outline_node_id INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL;
+    ALTER TABLE foreshadows ADD COLUMN outline_node_id INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS idx_timeline_outline_node ON timeline_events(outline_node_id);
+    CREATE INDEX IF NOT EXISTS idx_foreshadows_outline_node ON foreshadows(outline_node_id);
+    ```
+- **业务 API 支持 (`app/api/outlines.py`, `app/api/timeline.py`, `app/api/board.py`)**：
+  - `GET /api/works/{work_id}/outline`：返回的大纲节点结构中，动态聚合挂载 `timeline_count` 与 `foreshadow_count` 统计字段。
+  - `GET /api/works/{work_id}/outline/nodes/{node_id}/plot-items`：新增端点，聚合返回该节点名下的剧情时间线事件列表与关联伏笔列表。
+  - `POST /api/works/{work_id}/timeline` 与 `POST /api/works/{work_id}/foreshadows`：入参模型扩展支持可选的 `outline_node_id: Optional[int] = None`。
+- **前端中枢与视图联动**：
+  - **`static/js/pages/outline.js`**：
+    - 大纲节点详情页右侧/下方新增【剧情脉络】区域：展示本节点关联的“时间线事件”与“伏笔线索”。
+    - 提供【+ 添加剧情事件】和【+ 埋下伏笔】快捷弹窗，创建时自动绑定当前 `outline_node_id` 与章节。
+  - **`static/js/pages/timeline.js` 与 `board.js`**：
+    - 事件与伏笔卡片上渲染对应大纲节点的徽章标签（如 `[卷一·第一章] 节点名`）；
+    - 点击徽章可快速导航跳转至大纲树对应节点详情高亮（`#/outline/{work_id}?node_id={node_id}`）。
+
+### 模块四：设定百科归口与图谱自动反哺
+- **灵感便签定位收敛 (`static/js/pages/bookshelf.js`, `app/workflow_assets.py`)**：
+  - 严禁工作流或 AI 任务向 `notes` 表写入长篇结构化设定；
+  - 便签保留作家的零星便签与草稿记录，移除标签选择中干扰性的预设“#世界观”。
+- **万象谱与图谱联动 (`app/api/entities.py`, `static/js/pages/entities.js`, `graph.js`)**：
+  - 在万象谱的实体编辑弹窗中，增加“人物/势力关联”简易行列表（选择目标实体 + 关系类型 + 说明）；
+  - 保存实体时，后端同步向 `entity_relations` 表插入或更新对应的双向/单向关系；
+  - 使得用户在万象谱编辑角色时，关系图谱自动成图，无需到图谱页面重复拉线。
+
+---
+
+## 3. 具体修改与新建文件清单 (Affected Files)
+
+1. **`app/db.py`**：添加 `outline_node_id` 迁移与索引，确保 SQLite WAL 模式稳定；
+2. **`app/api/outlines.py`**：增加节点关联剧情聚合接口；
+3. **`app/api/timeline.py`**：接收并保存 `outline_node_id`；
+4. **`app/api/board.py`**：接收并保存 `outline_node_id`；
+5. **`app/api/entities.py`**：实体保存时级联同步更新 `entity_relations`；
+6. **`static/js/pages/alchemy.js`**：移除开炉炼丹 Tab，增加工作流引导横幅；
+7. **`static/js/pages/workbench.js`**：废弃经典候选分离模式，侧栏全量接入统一伴写面板；
+8. **`static/js/pages/workbench_chat.js`**：增加快捷任务药丸、行内微型设置与多候选并排对比卡片；
+9. **`static/js/pages/outline.js`**：接入节点名下剧情事件与伏笔挂载管理；
+10. **`static/js/pages/timeline.js`** & **`board.js`**：增加大纲节点徽章展示与跳转联动；
+11. **`static/js/pages/entities.js`**：实体弹窗增加轻量关系配置，联动写入图谱；
+12. **`tests/test_plot_triad.py`**（新建）：剧情三件套联动回归测试；
+13. **`docs/v1.9.0-development-notes.md`**（新建）：版本发布与演进文档归档。
+
+---
+
+## 4. 自动化测试与验证方案 (Test Plan)
+
+1. **数据库迁移与向后兼容测试**：
+   - 验证旧版 SQLite 数据库平滑升级至包含 `outline_node_id` 字段，且原字段和数据零丢失；
+2. **剧情中枢 API 联动测试 (`tests/test_plot_triad.py`)**：
+   - 测试通过 `POST /timeline` 和 `POST /foreshadows` 传入 `outline_node_id`；
+   - 测试 `GET /outline/nodes/{id}/plot-items` 正确返回对应的事件与伏笔；
+   - 级联测试：删除大纲节点时，时间线和伏笔记录保留并将 `outline_node_id` 安全置空（SET NULL）。
+3. **实体与图谱同步测试 (`tests/test_entities_notes_prompts.py`)**：
+   - 验证在万象谱新建实体并带上关系时，`entity_relations` 表自动生成对应连线。
+4. **全量回归测试**：
+   - 运行 `D:\KimiCode工作区\.venv\Scripts\python.exe -m pytest -q`，确保 150+ 项现有 API、工作流及桌面端用例 100% 全部通过。
+
+---
+
+## 5. 关键假设与默认约定 (Assumptions)
+
+- **无缝向前兼容**：所有历史已创建的时间线事件和伏笔，其 `outline_node_id` 默认为 `NULL`，不强制要求必须属于某个大纲节点；
+- **前端零外部编译**：前端代码严格保持在单个 HTML/JS 文件中由原生浏览器解析，样式使用 Tailwind 运行时类名；
+- **版本归档规范**：开发完成后严格按照 `AGENTS.md` 规约生成 `docs/v1.9.0-development-notes.md` 并同步更新产品说明文档。
