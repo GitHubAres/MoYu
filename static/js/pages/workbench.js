@@ -1156,6 +1156,31 @@ registerPage("workbench", async (view, { segs, params }) => {
       outRow.getText = () => `【关联大纲 · ${node.title}】\n${node.synopsis || "（本节暂无细纲）"}`;
       ctxItems.push(outRow);
       baseGroup.append(outRow.row);
+
+      // 三位一体深度联动：自动加载当前大纲节点关联的时间线事件与伏笔
+      try {
+        const plotData = await api.get(`/works/${workId}/outline/nodes/${node.id}/plot-items`);
+        if (plotData) {
+          if (Array.isArray(plotData.timeline_events) && plotData.timeline_events.length > 0) {
+            plotData.timeline_events.forEach((ev) => {
+              const tLabel = ev.time_label ? `[${ev.time_label}] ` : "";
+              const evRow = ctxRow(`事件 · ${tLabel}${ev.event}`, true);
+              evRow.getText = () => `【时间线事件】${tLabel}${ev.event}${ev.characters ? ` (涉及人物: ${ev.characters})` : ""}`;
+              ctxItems.push(evRow);
+              baseGroup.append(evRow.row);
+            });
+          }
+          if (Array.isArray(plotData.foreshadows) && plotData.foreshadows.length > 0) {
+            plotData.foreshadows.forEach((fs) => {
+              const st = fs.status === "resolved" ? "已回收" : "埋设中";
+              const fsRow = ctxRow(`伏笔 · 《${fs.title}》（${st}）`, true);
+              fsRow.getText = () => `【关联伏笔】《${fs.title}》（${st}）${fs.content ? `：${fs.content}` : ""}`;
+              ctxItems.push(fsRow);
+              baseGroup.append(fsRow.row);
+            });
+          }
+        }
+      } catch (_) {}
     }
     ctxBox.append(baseGroup);
 
@@ -1301,14 +1326,171 @@ registerPage("workbench", async (view, { segs, params }) => {
     }
     const text = editorText();
     const all = detectEntitiesInContent(text);
-    if (!all.length) {
-      ui.toast("正文中未提及已登记的设定条目", "info");
+
+    let unreg = [];
+    try {
+      const res = await api.post(`/works/${workId}/entities/detect-unregistered`, {
+        content: text,
+        chapter_id: chapter.id
+      });
+      if (res && res.unregistered) unreg = res.unregistered;
+    } catch (e) {
+      console.warn("探测未入库设定失败:", e);
+    }
+
+    if (unreg.length > 0) {
+      openUnregisteredIntakeDialog(unreg);
     } else {
-      const linkedIds = new Set(linkedEntities.map((e) => e.id));
-      const newOnes = all.filter((e) => !linkedIds.has(e.id));
-      ui.toast(`智能识别完成：探测到 ${all.length} 个设定条目${newOnes.length ? `（${newOnes.length} 个未绑定）` : ""}`, "ok");
+      if (!all.length) {
+        ui.toast("正文中未提及已登记设定，亦未发现新设定候选", "info");
+      } else {
+        const linkedIds = new Set(linkedEntities.map((e) => e.id));
+        const newOnes = all.filter((e) => !linkedIds.has(e.id));
+        ui.toast(`智能识别完成：探测到 ${all.length} 个设定条目${newOnes.length ? `（${newOnes.length} 个未绑定）` : ""}`, "ok");
+      }
     }
     await renderContext();
+  }
+
+  /* ---------- 未入库新设定确认弹窗 ---------- */
+  function openUnregisteredIntakeDialog(unregList) {
+    if (!chapter || !unregList || !unregList.length) return;
+    const root = document.getElementById("modal-root");
+
+    const itemsState = unregList.map((item) => ({
+      name: item.name,
+      category: item.category || "term",
+      snippet: item.snippet || "",
+      suggested_tags: item.suggested_tags || "",
+      checked: true,
+    }));
+
+    const listBox = ui.el("div", { class: "flex flex-col gap-2 max-h-[50vh] overflow-y-auto pr-1" });
+
+    function renderList() {
+      listBox.innerHTML = "";
+      itemsState.forEach((st) => {
+        const cb = ui.el("input", { type: "checkbox", class: "accent-[#316bf3] shrink-0" });
+        cb.checked = st.checked;
+        cb.addEventListener("change", () => {
+          st.checked = cb.checked;
+          updateSubmitBtn();
+        });
+
+        const nameInput = ui.el("input", {
+          class: "px-2 py-1 text-[13px] font-semibold text-primary bg-surface-container rounded-lg border border-border-feather focus:border-primary outline-none min-w-[100px] max-w-[140px]",
+          value: st.name,
+        });
+        nameInput.addEventListener("input", () => {
+          st.name = nameInput.value.trim();
+          updateSubmitBtn();
+        });
+
+        const catSelect = ui.el("select", {
+          class: "px-2 py-1 text-[12px] bg-surface-container rounded-lg border border-border-feather outline-none text-on-surface-variant font-label-sm shrink-0",
+        },
+          ui.el("option", { value: "character", selected: st.category === "character" }, "人物"),
+          ui.el("option", { value: "item", selected: st.category === "item" }, "道具/法宝"),
+          ui.el("option", { value: "place", selected: st.category === "place" }, "地点/场景"),
+          ui.el("option", { value: "faction", selected: st.category === "faction" }, "势力/宗门"),
+          ui.el("option", { value: "term", selected: st.category === "term" }, "法则/术语"),
+          ui.el("option", { value: "custom", selected: st.category === "custom" }, "自定义")
+        );
+        catSelect.addEventListener("change", () => {
+          st.category = catSelect.value;
+        });
+
+        const snippetEl = st.snippet ? ui.el("span", {
+          class: "text-[11px] text-on-surface-variant line-clamp-1 italic bg-surface-container-low px-1.5 py-0.5 rounded truncate flex-1 min-w-0",
+          title: st.snippet
+        }, `“${st.snippet}”`) : null;
+
+        const row = ui.el("div", {
+          class: "flex items-center gap-2 p-2 rounded-xl border border-border-feather bg-surface-container-lowest hover:bg-surface-container-low/50 transition-colors",
+        }, cb, nameInput, catSelect, snippetEl);
+
+        listBox.append(row);
+      });
+    }
+
+    const selectAllBtn = ui.el("button", {
+      class: "text-[12px] text-primary hover:underline cursor-pointer",
+      onclick: () => {
+        const allChecked = itemsState.every((i) => i.checked);
+        itemsState.forEach((i) => { i.checked = !allChecked; });
+        renderList();
+        updateSubmitBtn();
+      }
+    }, "全选 / 反选");
+
+    const submitBtn = ui.el("button", {
+      class: "px-4 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
+      onclick: async () => {
+        const selected = itemsState.filter((i) => i.checked && i.name);
+        if (!selected.length) return;
+        submitBtn.disabled = true;
+        submitBtn.textContent = "入库中...";
+        try {
+          const payload = {
+            entities: selected.map((s) => ({
+              name: s.name,
+              category: s.category,
+              content: s.snippet ? `【出处引文】\n${s.snippet}` : "",
+              tags: s.suggested_tags
+            })),
+            chapter_id: chapter.id
+          };
+          const res = await api.post(`/works/${workId}/entities/batch-intake`, payload);
+          ui.toast(`成功收录 ${res.added_count} 个新设定并关联至本章`, "ok");
+          overlay.remove();
+          if (window.store && window.store.events) {
+            window.store.events.emit("entity:changed", { workId });
+          }
+          try { allEntities = await api.get(`/works/${workId}/entities`); } catch (_) {}
+          await renderContext();
+        } catch (e) {
+          ui.toast("批量入库失败: " + e.message, "err");
+          submitBtn.disabled = false;
+          updateSubmitBtn();
+        }
+      }
+    });
+
+    function updateSubmitBtn() {
+      const cnt = itemsState.filter((i) => i.checked && i.name).length;
+      submitBtn.textContent = `确认收录入库 (${cnt})`;
+      submitBtn.disabled = cnt === 0;
+    }
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[620px] max-w-[calc(100vw-1.5rem)] shadow-[0_12px_32px_rgba(27,42,56,0.16)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.icon("auto_awesome", "text-[22px] text-primary"),
+            ui.el("div", { class: "flex flex-col" },
+              ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "发现正文未入库新设定"),
+              ui.el("p", { class: "text-[12px] text-on-surface-variant" }, "以下条目疑似新设定，请核对分类并选择需要正式收录到万相谱的条目："))),
+          ui.el("button", {
+            class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant cursor-pointer",
+            onclick: () => overlay.remove(),
+          }, ui.icon("close", "text-[20px]"))),
+        ui.el("div", { class: "flex items-center justify-between px-1" },
+          ui.el("span", { class: "text-[12px] text-on-surface-variant font-label-sm" }, `共探测到 ${itemsState.length} 个候选条目`),
+          selectAllBtn),
+        listBox,
+        ui.el("div", { class: "flex items-center justify-end gap-2 pt-2 border-t border-border-feather" },
+          ui.el("button", {
+            class: "px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-label-md text-label-md transition-colors cursor-pointer",
+            onclick: () => overlay.remove()
+          }, "取消"),
+          submitBtn)));
+
+    renderList();
+    updateSubmitBtn();
+    root.append(overlay);
   }
 
   /* ---------- 实体挑选弹窗 ---------- */

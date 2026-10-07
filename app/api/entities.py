@@ -262,3 +262,263 @@ def batch_link_chapter_entities(chapter_id: int, body: ChapterBatchEntitiesIn):
                        (chapter_id, eid))
     db.commit()
     return chapter_entities(chapter_id)
+
+
+# ---------- 未入库实体探测与批量入库 ----------
+
+class DetectUnregisteredIn(BaseModel):
+    content: str
+    chapter_id: int | None = None
+
+
+STOP_WORDS = {
+    '主角', '配角', '反派', '宗主', '掌门', '长老', '师尊', '师傅', '师父', '师兄', '师弟', '师姐', '师妹',
+    '弟子', '众人', '所有人', '此时', '片刻', '刹那', '翌日', '第二天', '不知', '没有', '什么', '这个', '那个',
+    '一个', '自己', '他们', '我们', '你们', '天下', '人间', '江湖', '天地', '苍生', '世间', '时间', '地点',
+    '人物', '角色', '身份', '关系', '能力', '限制', '目标', '冲突', '转折', '伏笔', '细纲', '大纲', '场景'
+}
+
+CATEGORY_MAP = {
+    'character': 'character',
+    '人物': 'character',
+    '角色': 'character',
+    '主角': 'character',
+    '配角': 'character',
+    '反派': 'character',
+    'item': 'item',
+    '道具': 'item',
+    '法宝': 'item',
+    '武器': 'item',
+    '神兵': 'item',
+    '物品': 'item',
+    '功法': 'item',
+    '秘籍': 'item',
+    '灵药': 'item',
+    '丹药': 'item',
+    'place': 'place',
+    'location': 'place',
+    '地点': 'place',
+    '场景': 'place',
+    '城池': 'place',
+    '秘境': 'place',
+    '洞府': 'place',
+    '世界': 'place',
+    'faction': 'faction',
+    '势力': 'faction',
+    '宗门': 'faction',
+    '家族': 'faction',
+    '帮派': 'faction',
+    '门派': 'faction',
+    '组织': 'faction',
+    'term': 'term',
+    'lore': 'term',
+    '法则': 'term',
+    '规则': 'term',
+    '体系': 'term',
+    '设定': 'term',
+    '境界': 'term',
+    '概念': 'term'
+}
+
+
+@router.post('/works/{work_id}/entities/detect-unregistered')
+def detect_unregistered_entities(work_id: int, body: DetectUnregisteredIn):
+    _one('SELECT id FROM works WHERE id=?', (work_id,))
+    content = (body.content or '').strip()
+    if not content:
+        return {'unregistered': []}
+
+    db = get_db()
+    existing_rows = db.execute('SELECT name, fields_json FROM entities WHERE work_id=?', (work_id,)).fetchall()
+    known_names = set()
+    for row in existing_rows:
+        if row['name']:
+            known_names.add(row['name'].strip().lower())
+        try:
+            fields = json.loads(row['fields_json'] or '{}')
+            for alias_key in ('aliases', 'alias', '别名'):
+                val = fields.get(alias_key)
+                if isinstance(val, list):
+                    for v in val:
+                        if v and str(v).strip():
+                            known_names.add(str(v).strip().lower())
+                elif isinstance(val, str) and val.strip():
+                    for v in val.replace('，', ',').split(','):
+                        if v.strip():
+                            known_names.add(v.strip().lower())
+        except Exception:
+            pass
+
+    import re
+    from ..workflow_assets import extract_structured_assets_from_text
+
+    raw_candidates = []
+
+    # 1. workflow_assets 提取
+    structured = extract_structured_assets_from_text(content)
+    for ent in structured.get('entities', []):
+        raw_candidates.append({
+            'name': (ent.get('name') or '').strip(),
+            'category': ent.get('category', 'term'),
+            'snippet': ent.get('content') or ent.get('summary') or ''
+        })
+
+    # 2. 显式标记提取 【类别】名称
+    cat_keys_re = '|'.join(re.escape(k) for k in CATEGORY_MAP.keys())
+    tag_pattern = re.compile(r'[【\[](' + cat_keys_re + r')[】\]]\s*[:：]?\s*([^\s:：(（【】\[\]，,。！？!?]{2,20})')
+    for match in tag_pattern.finditer(content):
+        cat_raw = match.group(1)
+        name = match.group(2).strip()
+        name = re.split(r'[的了在是有与和同从至向对入出被把]', name)[0].strip()
+        start = max(0, match.start() - 20)
+        end = min(len(content), match.end() + 20)
+        raw_candidates.append({
+            'name': name,
+            'category': CATEGORY_MAP.get(cat_raw, 'term'),
+            'snippet': content[start:end].strip()
+        })
+
+    # 3. 标题档案卡 ### 名称（身份）
+    header_pattern = re.compile(r'^[#*>\s\-]*###\s+([^\s:：（(—–#\-]{2,20})(?:[（(]([^）)]+)[）)])?', re.MULTILINE)
+    for match in header_pattern.finditer(content):
+        name = match.group(1).strip()
+        sub = match.group(2) or ''
+        cat = 'character'
+        for k, v in CATEGORY_MAP.items():
+            if k in sub:
+                cat = v
+                break
+        start = max(0, match.start() - 10)
+        end = min(len(content), match.end() + 30)
+        raw_candidates.append({
+            'name': name,
+            'category': cat,
+            'snippet': content[start:end].strip()
+        })
+
+    # 4. 专名特征提取 《宝物/秘籍》
+    book_pattern = re.compile(r'《([^》\s]{2,15})》')
+    for match in book_pattern.finditer(content):
+        name = match.group(1).strip()
+        start = max(0, match.start() - 20)
+        end = min(len(content), match.end() + 20)
+        raw_candidates.append({
+            'name': name,
+            'category': 'item',
+            'snippet': content[start:end].strip()
+        })
+
+    seen_names = set()
+    unregistered = []
+
+    for c in raw_candidates:
+        name = c['name'].strip()
+        if not name or len(name) < 2 or len(name) > 25:
+            continue
+        name = re.sub(r'[^\w\u4e00-\u9fa5]+$|^[^\w\u4e00-\u9fa5]+', '', name)
+        if not name or len(name) < 2 or name in STOP_WORDS or name.lower() in STOP_WORDS:
+            continue
+        if name.lower() in known_names or name.lower() in seen_names:
+            continue
+
+        seen_names.add(name.lower())
+        cat = CATEGORY_MAP.get(c.get('category', ''), 'term')
+        if cat not in CATEGORIES:
+            cat = 'term'
+
+        snippet = (c.get('snippet') or '').strip()
+        if not snippet:
+            idx = content.find(name)
+            if idx != -1:
+                start = max(0, idx - 20)
+                end = min(len(content), idx + len(name) + 20)
+                snippet = content[start:end].strip()
+
+        cat_names_cn = {
+            'character': '人物',
+            'item': '道具',
+            'place': '地点',
+            'faction': '势力',
+            'term': '术语/法则',
+            'custom': '自定义'
+        }
+        tag_val = cat_names_cn.get(cat, '设定')
+        suggested_tags = f'新设定,{tag_val}'
+
+        unregistered.append({
+            'name': name,
+            'category': cat,
+            'snippet': snippet,
+            'suggested_tags': suggested_tags
+        })
+
+    return {'unregistered': unregistered}
+
+
+class BatchIntakeItem(BaseModel):
+    name: str
+    category: str = 'character'
+    content: str = ''
+    tags: str = ''
+    fields_json: dict = {}
+
+
+class BatchIntakeIn(BaseModel):
+    entities: list[BatchIntakeItem]
+    chapter_id: int | None = None
+
+
+@router.post('/works/{work_id}/entities/batch-intake', status_code=201)
+def batch_intake_entities(work_id: int, body: BatchIntakeIn):
+    _one('SELECT id FROM works WHERE id=?', (work_id,))
+    db = get_db()
+
+    target_chapter_id = None
+    if body.chapter_id:
+        ch = db.execute(
+            'SELECT c.id FROM chapters c JOIN volumes v ON v.id = c.volume_id WHERE c.id=? AND v.work_id=?',
+            (body.chapter_id, work_id)
+        ).fetchone()
+        if ch:
+            target_chapter_id = ch['id']
+
+    created_or_linked = []
+    added_count = 0
+
+    for item in body.entities:
+        name = (item.name or '').strip()
+        if not name:
+            continue
+        cat = item.category if item.category in CATEGORIES else 'term'
+        content = (item.content or '').strip()
+        tags = (item.tags or '').strip()
+        fields_str = json.dumps(item.fields_json or {}, ensure_ascii=False)
+
+        exist = db.execute('SELECT id FROM entities WHERE work_id=? AND name=?', (work_id, name)).fetchone()
+        if exist:
+            eid = exist['id']
+        else:
+            cur = db.execute(
+                'INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?,?,?,?,?,?)',
+                (work_id, cat, name, content, fields_str, tags)
+            )
+            eid = cur.lastrowid
+            added_count += 1
+
+        if target_chapter_id:
+            db.execute(
+                'INSERT OR IGNORE INTO chapter_entities (chapter_id, entity_id) VALUES (?,?)',
+                (target_chapter_id, eid)
+            )
+
+        row = _one('SELECT * FROM entities WHERE id=?', (eid,))
+        created_or_linked.append(_serialize(row))
+
+    db.execute("UPDATE works SET updated_at=datetime('now','localtime') WHERE id=?", (work_id,))
+    db.commit()
+
+    return {
+        'added_count': added_count,
+        'total_processed': len(created_or_linked),
+        'entities': created_or_linked
+    }
