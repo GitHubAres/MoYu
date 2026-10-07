@@ -44,18 +44,31 @@ def assemble_workflow_context(
     chapter_text: str = "",
     prev_step_text: str = "",
     input_mode: str = "chapter",
+    context_sources: Optional[list[str]] = None,
 ) -> str:
     """为工作流步骤装配完整、紧凑的领域上下文（三位一体大纲卡 + 章节正文 + 前序输出）。"""
     parts = []
 
-    triad_block = assemble_plot_triad_block(db, work_id, outline_node_id)
-    if triad_block:
-        parts.append(triad_block)
+    if context_sources is not None:
+        include_triad = "triad" in context_sources
+        include_chapter = "chapter" in context_sources
+    else:
+        # 向后兼容旧 input_mode
+        include_triad = input_mode != "none"
+        include_chapter = input_mode in ("chapter", "merge")
 
-    if input_mode in ("chapter", "merge") and chapter_text:
+    if include_triad:
+        triad_block = assemble_plot_triad_block(db, work_id, outline_node_id)
+        if triad_block:
+            parts.append(triad_block)
+
+    if include_chapter and chapter_text:
         parts.append("【本章正文】\n" + chapter_text)
 
-    if input_mode in ("prev_output", "merge") and prev_step_text:
-        parts.append("【前序步骤输出】\n" + prev_step_text)
+    if prev_step_text:
+        if prev_step_text.startswith("【前序"):
+            parts.append(prev_step_text)
+        else:
+            parts.append("【前序步骤输出】\n" + prev_step_text)
 
     return "\n\n".join(parts)

@@ -240,12 +240,26 @@ async function renderEditor(view, idOrNew) {
     try {
       const wf = await api.get(`/workflows/${idOrNew}`);
       meta = { name: wf.name, description: wf.description, icon: wf.icon, scope: wf.scope };
-      steps = (wf.steps || []).map((s) => ({
-        title: s.title, skill_id: s.skill_id, input_mode: s.input_mode,
-        prev_step_seq: s.prev_step_seq, instruction: s.instruction || "",
-        length: s.length || "medium", requires_review: s.requires_review ? 1 : 0,
-        enabled: s.enabled ? 1 : 0,
-      }));
+      steps = (wf.steps || []).map((s) => {
+        const refSeqs = Array.isArray(s.ref_step_seqs) ? s.ref_step_seqs : (s.prev_step_seq !== null && s.prev_step_seq !== undefined ? [s.prev_step_seq] : []);
+        let ctxSources = Array.isArray(s.context_sources) && s.context_sources.length ? s.context_sources : null;
+        if (!ctxSources) {
+          if (s.input_mode === "chapter" || s.input_mode === "merge") ctxSources = ["chapter", "triad"];
+          else ctxSources = [];
+        }
+        return {
+          title: s.title,
+          skill_id: s.skill_id,
+          input_mode: s.input_mode || "chapter",
+          prev_step_seq: s.prev_step_seq,
+          ref_step_seqs: refSeqs,
+          context_sources: ctxSources,
+          instruction: s.instruction || "",
+          length: s.length || "medium",
+          requires_review: s.requires_review ? 1 : 0,
+          enabled: s.enabled ? 1 : 0,
+        };
+      });
     } catch (e) { ui.toast("加载工作流失败：" + e.message, "err"); location.hash = "#/workflows"; return; }
   }
 
@@ -254,8 +268,8 @@ async function renderEditor(view, idOrNew) {
 
   const inputCls = "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-body-sm";
 
-  const nameIn = ui.el("input", { class: inputCls, placeholder: "工作流名称，如：章节标准生产流", value: meta.name });
-  const descIn = ui.el("textarea", { class: inputCls + " min-h-[60px] resize-y", placeholder: "说明这条流程做什么、适合什么时候用" }, meta.description);
+  const nameIn = ui.el("input", { class: inputCls, placeholder: "工作流名称，例如：新章标准写作流", value: meta.name });
+  const descIn = ui.el("textarea", { class: inputCls + " min-h-[60px] resize-y", placeholder: "说明（这是什么、适合什么时候用）" }, meta.description);
   const iconSel = ui.el("select", { class: inputCls });
   WF_ICONS.forEach((ic) => iconSel.append(ui.el("option", { value: ic, selected: ic === meta.icon ? "" : undefined }, ic)));
 
@@ -268,7 +282,18 @@ async function renderEditor(view, idOrNew) {
   const addBtn = ui.el("button", {
     class: "px-4 py-2 rounded-xl bg-surface-container text-on-surface font-label-sm text-label-sm hover:bg-surface-container-high flex items-center gap-1 self-start",
     onclick: () => {
-      steps.push({ title: `步骤 ${steps.length + 1}`, skill_id: skills[0] ? skills[0].id : null, input_mode: "chapter", prev_step_seq: null, instruction: "", length: "medium", requires_review: 1, enabled: 1 });
+      steps.push({
+        title: `步骤 ${steps.length + 1}`,
+        skill_id: skills[0] ? skills[0].id : null,
+        input_mode: "chapter",
+        prev_step_seq: null,
+        ref_step_seqs: [],
+        context_sources: ["chapter", "triad"],
+        instruction: "",
+        length: "medium",
+        requires_review: 1,
+        enabled: 1
+      });
       renderSteps();
     },
   }, ui.icon("add", "text-[16px]"), "添加步骤");
@@ -293,7 +318,7 @@ async function renderEditor(view, idOrNew) {
     stepsBox.innerHTML = "";
     if (!steps.length) {
       stepsBox.append(ui.el("div", { class: "text-center py-8 text-on-surface-variant font-body-sm text-body-sm rounded-2xl border border-dashed border-outline-variant" },
-        "还没有步骤，点击下方「添加步骤」"));
+        "暂无步骤，点击下方按钮添加步骤"));
     }
     steps.forEach((st, i) => stepsBox.append(renderStep(st, i)));
   }
@@ -312,7 +337,7 @@ async function renderEditor(view, idOrNew) {
       renderSteps();
     });
 
-    const titleIn = ui.el("input", { class: inputCls + " flex-1", value: st.title, placeholder: "步骤展示名，如：生成本章草稿" });
+    const titleIn = ui.el("input", { class: inputCls + " flex-1", value: st.title, placeholder: "步骤展示名称，例如：生成本章草稿" });
     titleIn.addEventListener("input", () => { st.title = titleIn.value; });
 
     const skillSel = ui.el("select", { class: inputCls });
@@ -320,31 +345,148 @@ async function renderEditor(view, idOrNew) {
       `${sk.title}（${sk.applies_to || "通用"}）`)));
     skillSel.addEventListener("change", () => { st.skill_id = skillSel.value ? Number(skillSel.value) : null; });
 
-    const modeSel = ui.el("select", { class: inputCls });
-    WF_INPUT_MODES.forEach(([v, l]) => modeSel.append(ui.el("option", { value: v, selected: v === st.input_mode ? "" : undefined }, l)));
-    modeSel.addEventListener("change", () => { st.input_mode = modeSel.value; prevWrap.style.display = (modeSel.value === "prev_output" || modeSel.value === "merge") ? "" : "none"; });
-
-    const prevSel = ui.el("select", { class: inputCls });
-    prevSel.append(ui.el("option", { value: "" }, "上一步（默认）"));
-    steps.forEach((s2, j) => {
-      if (j < i) prevSel.append(ui.el("option", { value: j, selected: j === st.prev_step_seq ? "" : undefined }, `第 ${j + 1} 步 · ${s2.title}`));
-    });
-    prevSel.addEventListener("change", () => { st.prev_step_seq = prevSel.value === "" ? null : Number(prevSel.value); });
-    const prevWrap = ui.el("div", { style: `display:${(st.input_mode === "prev_output" || st.input_mode === "merge") ? "" : "none"}` },
-      ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "引用哪一步的输出"), prevSel);
-
     const lenSel = ui.el("select", { class: inputCls });
     WF_LENGTH_OPTIONS.forEach(([v, l]) => lenSel.append(ui.el("option", { value: v, selected: v === st.length ? "" : undefined }, l)));
     lenSel.addEventListener("change", () => { st.length = lenSel.value; });
 
-    const instIn = ui.el("textarea", { class: inputCls + " min-h-[56px] resize-y", placeholder: "固定补充指令（可引用 {{steps.0.output}} 这样的前序输出）" }, st.instruction);
+    // 辅助同步兼容字段
+    function syncInputModeCompat() {
+      const hasSteps = st.ref_step_seqs && st.ref_step_seqs.length > 0;
+      const hasText = st.context_sources && (st.context_sources.includes("chapter") || st.context_sources.includes("triad"));
+      if (hasSteps && hasText) {
+        st.input_mode = "merge";
+      } else if (hasSteps) {
+        st.input_mode = "prev_output";
+      } else if (hasText) {
+        st.input_mode = "chapter";
+      } else {
+        st.input_mode = "none";
+      }
+      st.prev_step_seq = hasSteps ? st.ref_step_seqs[st.ref_step_seqs.length - 1] : null;
+    }
+
+    // --- 上下文装配源模块（整合基础上下文与前序多步骤勾选） ---
+    const ctxBox = ui.el("div", { class: "p-3 rounded-xl bg-surface-container-low border border-border-feather flex flex-col gap-2.5" });
+
+    ctxBox.append(ui.el("div", { class: "flex items-center justify-between" },
+      ui.el("span", { class: "font-label-sm text-label-sm text-on-surface font-medium flex items-center gap-1.5" },
+        ui.icon("tune", "text-[16px] text-primary"),
+        "步骤上下文输入（动态装配）"
+      ),
+      ui.el("span", { class: "font-label-sm text-label-xs text-on-surface-variant" }, "自由组合注入给本步骤 AI 的信息")
+    ));
+
+    // 1. 基础源（章节正文、大纲三位一体）
+    const baseSourcesRow = ui.el("div", { class: "flex flex-wrap items-center gap-4 pt-0.5" });
+
+    const chkChapter = ui.el("input", { type: "checkbox", class: "accent-primary cursor-pointer w-4 h-4" });
+    chkChapter.checked = st.context_sources.includes("chapter");
+    const lblChapter = ui.el("label", { class: "flex items-center gap-1.5 cursor-pointer font-label-sm text-label-sm text-on-surface select-none" },
+      chkChapter,
+      ui.icon("article", "text-[16px] text-primary"),
+      "当前章节正文"
+    );
+
+    const chkTriad = ui.el("input", { type: "checkbox", class: "accent-primary cursor-pointer w-4 h-4" });
+    chkTriad.checked = st.context_sources.includes("triad");
+    const lblTriad = ui.el("label", { class: "flex items-center gap-1.5 cursor-pointer font-label-sm text-label-sm text-on-surface select-none" },
+      chkTriad,
+      ui.icon("account_tree", "text-[16px] text-primary"),
+      "目标大纲节点与三位一体剧情卡"
+    );
+
+    function syncBaseSources() {
+      const src = [];
+      if (chkChapter.checked) src.push("chapter");
+      if (chkTriad.checked) src.push("triad");
+      st.context_sources = src;
+      syncInputModeCompat();
+    }
+    chkChapter.addEventListener("change", syncBaseSources);
+    chkTriad.addEventListener("change", syncBaseSources);
+
+    baseSourcesRow.append(lblChapter, lblTriad);
+    ctxBox.append(baseSourcesRow);
+
+    // 2. 前序步骤引用勾选
+    const prevStepsRow = ui.el("div", { class: "flex flex-col gap-1.5 pt-2 border-t border-border-feather/60" });
+    const prevHeader = ui.el("div", { class: "flex items-center justify-between" },
+      ui.el("span", { class: "font-label-sm text-label-xs text-on-surface-variant flex items-center gap-1" },
+        ui.icon("dynamic_feed", "text-[15px]"),
+        "前序步骤产出参考（支持多选）"
+      )
+    );
+
+    if (i > 1) {
+      const toolActions = ui.el("div", { class: "flex items-center gap-2.5" },
+        ui.el("button", {
+          type: "button",
+          class: "font-label-sm text-label-xs text-primary hover:underline",
+          onclick: (e) => {
+            e.preventDefault();
+            st.ref_step_seqs = steps.slice(0, i).map((_, idx) => idx);
+            syncInputModeCompat();
+            renderSteps();
+          }
+        }, "全选前序"),
+        ui.el("button", {
+          type: "button",
+          class: "font-label-sm text-label-xs text-on-surface-variant hover:underline",
+          onclick: (e) => {
+            e.preventDefault();
+            st.ref_step_seqs = [];
+            syncInputModeCompat();
+            renderSteps();
+          }
+        }, "清空前序")
+      );
+      prevHeader.append(toolActions);
+    }
+    prevStepsRow.append(prevHeader);
+
+    if (i === 0) {
+      prevStepsRow.append(ui.el("span", { class: "font-label-sm text-label-xs text-on-surface-variant/80 italic py-1" }, "（第 1 步为流程起点，无前序步骤可引用）"));
+    } else {
+      const chipsWrap = ui.el("div", { class: "flex flex-wrap gap-2 pt-1" });
+      for (let j = 0; j < i; j++) {
+        const prevSt = steps[j];
+        const isChecked = st.ref_step_seqs.includes(j);
+        const chip = ui.el("button", {
+          type: "button",
+          class: `flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-label-xs font-label-sm transition-all ${
+            isChecked
+              ? "bg-primary-container text-on-primary-container border-primary/40 font-medium shadow-xs"
+              : "bg-surface-container text-on-surface-variant border-border-feather hover:border-outline-variant"
+          }`,
+          onclick: (e) => {
+            e.preventDefault();
+            if (st.ref_step_seqs.includes(j)) {
+              st.ref_step_seqs = st.ref_step_seqs.filter((x) => x !== j);
+            } else {
+              st.ref_step_seqs.push(j);
+              st.ref_step_seqs.sort((a, b) => a - b);
+            }
+            syncInputModeCompat();
+            renderSteps();
+          }
+        },
+          ui.icon(isChecked ? "check_circle" : "add_circle_outline", "text-[14px]"),
+          `步骤 ${j + 1}: ${prevSt.title || "未命名"}`
+        );
+        chipsWrap.append(chip);
+      }
+      prevStepsRow.append(chipsWrap);
+    }
+    ctxBox.append(prevStepsRow);
+
+    const instIn = ui.el("textarea", { class: inputCls + " min-h-[56px] resize-y", placeholder: "固定补充指令（可引用 {{steps.0.output}} 注入指定前序输出）" }, st.instruction);
     instIn.addEventListener("input", () => { st.instruction = instIn.value; });
 
     const reviewToggle = ui.el("button", {
       class: `flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-label-sm text-label-sm ${st.requires_review ? "bg-error/10 text-error border border-error/30" : "bg-surface-container text-on-surface-variant"}`,
-      title: "开启后，该步骤完成会暂停等待你确认，未确认绝不推进",
+      title: "开启后，该步骤完成后暂停，等待人工确认；未确认绝不推进下一步",
       onclick: () => { st.requires_review = st.requires_review ? 0 : 1; renderSteps(); },
-    }, ui.icon(st.requires_review ? "check_circle" : "radio_button_unchecked", "text-[15px]"), "完成后需我确认");
+    }, ui.icon(st.requires_review ? "check_circle" : "radio_button_unchecked", "text-[15px]"), "完成后人工确认");
 
     const enabledToggle = ui.el("button", {
       class: `material-symbols-outlined text-[20px] ${st.enabled ? "text-primary" : "text-on-surface-variant"}`,
@@ -362,14 +504,13 @@ async function renderEditor(view, idOrNew) {
       ui.el("div", { class: "flex items-center gap-2" },
         ui.el("span", { class: "w-6 h-6 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center font-label-sm text-label-sm shrink-0" }, String(i + 1)),
         titleIn, enabledToggle, delBtn),
-      ui.el("div", { class: "grid grid-cols-1 md:grid-cols-3 gap-3" },
+      ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-3" },
         ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "绑定 Skill"), skillSel),
-        ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "输入来源"), modeSel),
         ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "长度档位"), lenSel)),
-      prevWrap,
+      ctxBox,
       ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "固定指令"), instIn),
       ui.el("div", { class: "flex items-center gap-2" }, reviewToggle,
-        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "确认闸是安全红线：未确认的输出不会进入下一步")));
+        ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "确认闸是安全底线：未确认的生成绝不进入下一步")));
     return card;
   }
 
@@ -379,8 +520,10 @@ async function renderEditor(view, idOrNew) {
     const payloadSteps = steps.map((s, i) => ({
       title: (s.title || `步骤 ${i + 1}`).trim(),
       skill_id: s.skill_id,
-      input_mode: s.input_mode,
+      input_mode: s.input_mode || "chapter",
       prev_step_seq: s.prev_step_seq,
+      ref_step_seqs: s.ref_step_seqs || [],
+      context_sources: s.context_sources || ["chapter", "triad"],
       output_var: `step${i}`,
       instruction: s.instruction || "",
       length: s.length,
@@ -405,7 +548,6 @@ async function renderEditor(view, idOrNew) {
 
   renderSteps();
 }
-
 /* ---------------- 运行态 ---------------- */
 
 async function renderRun(view, runId) {
@@ -920,6 +1062,14 @@ async function renderRun(view, runId) {
       s.elapsed_ms ? ui.el("span", { class: "ml-auto font-label-sm text-label-sm text-on-surface-variant" }, `${(s.elapsed_ms / 1000).toFixed(1)}s · ${s.token_used || 0} token`) : null);
 
     const card = wfCard(`flex flex-col gap-3 ${waiting ? "border-error/50 ring-1 ring-error/30" : ""}`, header);
+
+    if (s.ref_step_seqs && s.ref_step_seqs.length > 0) {
+      const refLabels = s.ref_step_seqs.map((idx) => `步骤 ${idx + 1}`).join("、");
+      card.append(ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-xs text-on-surface-variant bg-surface-container-low px-2.5 py-1 rounded-md self-start border border-border-feather" },
+        ui.icon("alt_route", "text-[14px] text-primary"),
+        `前序上下文参考：${refLabels}`
+      ));
+    }
 
     if (s.review_note) {
       card.append(ui.el("div", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `确认备注：${s.review_note}`));

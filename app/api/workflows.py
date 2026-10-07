@@ -1,3 +1,4 @@
+import json
 # 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
 """写作工作流 API：定义 CRUD、步骤编排、运行与人工确认闸。"""
@@ -26,14 +27,14 @@ class StepIn(BaseModel):
     skill_id: Optional[int] = None
     input_mode: str = "chapter"
     prev_step_seq: Optional[int] = None
+    ref_step_seqs: list[int] = []
+    context_sources: list[str] = ["chapter", "triad"]
     output_var: str = ""
     instruction: str = ""
     length: str = "medium"
     candidates: int = 1
     requires_review: int = 1
     enabled: int = 1
-
-
 class WorkflowIn(BaseModel):
     name: str
     description: str = ""
@@ -93,18 +94,46 @@ def _validate_steps(db, steps: list[StepIn]):
 
 def _insert_steps(db, wf_id: int, steps: list[StepIn]):
     for seq, s in enumerate(steps):
+        # 规范化 ref_step_seqs
+        ref_seqs = [int(x) for x in s.ref_step_seqs if isinstance(x, int) and x < seq]
+        if not ref_seqs and s.prev_step_seq is not None and s.prev_step_seq < seq and s.input_mode in ("prev_output", "merge"):
+            ref_seqs = [s.prev_step_seq]
+        # 若未指定具体步骤但模式要求前序输出，默认引用紧邻的上一步 (seq - 1)
+        if not ref_seqs and s.input_mode in ("prev_output", "merge") and seq > 0:
+            ref_seqs = [seq - 1]
+
+        # 规范化 context_sources
+        ctx_sources = [c for c in s.context_sources if c in ("chapter", "triad")]
+        if not ctx_sources and not s.ref_step_seqs:
+            if s.input_mode in ("chapter", "merge"):
+                ctx_sources = ["chapter", "triad"]
+            elif s.input_mode in ("prev_output", "none"):
+                ctx_sources = []
+
+        # 双向兼容 input_mode 与 prev_step_seq
+        prev_seq = ref_seqs[-1] if ref_seqs else (s.prev_step_seq if s.prev_step_seq is not None and s.prev_step_seq < seq else None)
+        mode = s.input_mode
+        if ref_seqs and ("chapter" in ctx_sources or "triad" in ctx_sources):
+            mode = "merge"
+        elif ref_seqs:
+            mode = "prev_output"
+        elif "chapter" in ctx_sources or "triad" in ctx_sources:
+            mode = "chapter"
+        elif not ref_seqs and not ctx_sources:
+            mode = "none"
+
         db.execute(
             """INSERT INTO workflow_steps(
                    workflow_id, seq, title, skill_id, input_mode, prev_step_seq,
+                   ref_step_seqs, context_sources,
                    output_var, instruction, length, candidates, requires_review, enabled)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (wf_id, seq, s.title.strip(), s.skill_id, s.input_mode, s.prev_step_seq,
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (wf_id, seq, s.title.strip(), s.skill_id, mode, prev_seq,
+             json.dumps(ref_seqs), json.dumps(ctx_sources),
              s.output_var or f"step{seq}", s.instruction, s.length,
              max(1, min(s.candidates, 3)), 1 if s.requires_review else 0,
              1 if s.enabled else 0),
         )
-
-
 def _steps_of(db, wf_id: int) -> list[dict]:
     rows = db.execute(
         """SELECT ws.*, sk.title AS skill_title, sk.name AS skill_name, sk.applies_to AS skill_applies_to
@@ -113,7 +142,36 @@ def _steps_of(db, wf_id: int) -> list[dict]:
            WHERE ws.workflow_id = ? ORDER BY ws.seq""",
         (wf_id,),
     ).fetchall()
-    return [_row(r) for r in rows]
+    out = []
+    for r in rows:
+        d = _row(r)
+        ref_seqs = []
+        if d.get("ref_step_seqs"):
+            try:
+                ref_seqs = json.loads(d["ref_step_seqs"])
+            except Exception:
+                ref_seqs = []
+        if not ref_seqs and d.get("prev_step_seq") is not None and d.get("input_mode") in ("prev_output", "merge"):
+            ref_seqs = [d["prev_step_seq"]]
+        d["ref_step_seqs"] = ref_seqs if isinstance(ref_seqs, list) else []
+
+        ctx_src = []
+        if d.get("context_sources"):
+            try:
+                ctx_src = json.loads(d["context_sources"])
+            except Exception:
+                ctx_src = []
+        if not ctx_src:
+            mode = d.get("input_mode", "chapter")
+            if mode in ("chapter", "merge"):
+                ctx_src = ["chapter", "triad"]
+            elif mode == "prev_output":
+                ctx_src = []
+            elif mode == "none":
+                ctx_src = []
+        d["context_sources"] = ctx_src if isinstance(ctx_src, list) else []
+        out.append(d)
+    return out
 
 
 def _run_detail(db, run_id: int) -> dict:
@@ -126,8 +184,26 @@ def _run_detail(db, run_id: int) -> dict:
     total = len(steps)
     done = sum(1 for s in steps if s["status"] in ("approved", "skipped"))
     wf = db.execute("SELECT name, icon FROM workflows WHERE id = ?", (run["workflow_id"],)).fetchone()
+    wf_step_defs = {s["seq"]: s for s in _steps_of(db, run["workflow_id"])}
+
     out = _row(run)
-    out["steps"] = [_row(s) for s in steps]
+    out_steps = []
+    for s in steps:
+        d = _row(s)
+        s_def = wf_step_defs.get(d["step_seq"])
+        if s_def:
+            d["ref_step_seqs"] = s_def.get("ref_step_seqs", [])
+            d["context_sources"] = s_def.get("context_sources", [])
+            d["skill_title"] = s_def.get("skill_title", "")
+            d["instruction"] = s_def.get("instruction", "")
+        else:
+            d["ref_step_seqs"] = []
+            d["context_sources"] = []
+            d["skill_title"] = ""
+            d["instruction"] = ""
+        out_steps.append(d)
+
+    out["steps"] = out_steps
     out["total_steps"] = total
     out["finished_steps"] = done
     out["workflow_name"] = wf["name"] if wf else ""

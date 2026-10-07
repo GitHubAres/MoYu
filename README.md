@@ -7,7 +7,7 @@
 **一支笔、一炉丹、一盏灯——部署在本地或私有 VPS、数据不出机的一站式 AI 长篇创作工作台。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v1.9.4-D9483B)](https://github.com/GitHubAres/MoYu/releases)
+[![Version](https://img.shields.io/badge/version-v1.9.5-D9483B)](https://github.com/GitHubAres/MoYu/releases)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-green)](https://www.python.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)]()
 [![Data](https://img.shields.io/badge/data-100%25%20本地私有-orange)]()
@@ -60,6 +60,7 @@
 
 | 版本 | 日期 | 亮点 |
 |---|---|---|
+| **v1.9.5** | 2026-10-07 | 写作工作流多前序步骤动态上下文装配重构：彻底解决输入来源与引用步骤冗余分裂问题、统一支持多前序步骤产出自由组合与模板变量替换、前端提供直观装配面板、160 项测试全绿 |
 | **v1.9.4** | 2026-10-07 | 剧情时间线/工作流同步/万象谱多端互通修复：彻底修复时间线与工作流未定义变量死区、工作流全量解析角色四维档案并入库、章节登场引用自动双向绑定与选择器、158 项测试全绿 |
 | **v1.9.3** | 2026-10-07 | 工作流全流程资产一键自动反哺看板：全流程资产合并提取与库内差异比对（全新收录 vs 增量更新）、步骤全部审批通过后自动呼出全流程反哺看板、章节双向自动绑定、157 项测试全绿 |
 | **v1.9.2** | 2026-10-07 | 创作技能交付规范与设定探测入库：内置五大 Skill 交付模版标准化、写作台未入库设定智能探测与批量入库确认闭环、写作台与三位一体（大纲/时间线/伏笔）深度联动、156 项测试全绿 |
@@ -87,11 +88,11 @@
 
 ### 方式 A：Windows 原生单文件桌面端（无需环境）
 
-1. 从 [Releases](../../releases) 下载 `墨语MoYu-v1.9.4-win64.exe`
+1. 从 [Releases](../../releases) 下载 `墨语MoYu-v1.9.5-win64.exe`
 2. **双击运行**：直接打开沉浸式轻量原生窗口（依托系统内置 WebView2 运行，无黑框命令行，双击秒开）
 3. **关闭退出**：点击窗口右上角"关闭"按钮（×），程序自动优雅停止后台服务并退出，绝不留存后台僵尸进程
 4. **单实例保护**：重复双击 exe 不会发生端口争用冲突，会自动唤起激活已有运行中的墨语
-5. **浏览器回退模式**：命令行运行 `墨语MoYu-v1.9.4-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
+5. **浏览器回退模式**：命令行运行 `墨语MoYu-v1.9.5-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
 
 ### 方式 B：Linux VPS / 私有服务器 Docker 部署（一键上线）
 
@@ -123,7 +124,7 @@ python run.py                    # 启动本地开发服务：http://127.0.0.1:8
 ```bash
 python -m pytest -q          # 153 项 API、响应式、编码守护与部署健康检查回归测试全绿
 
-python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v1.9.4-win64.exe
+python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v1.9.5-win64.exe
 python build_exe.py --onedir # 文件夹形态（便于调试与启动优化）
 ```
 

@@ -1,3 +1,4 @@
+import json
 from app.services.context_service import assemble_workflow_context
 # 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者 · MIT
 # Licensed under the MIT License. See LICENSE.
@@ -54,17 +55,56 @@ def _render_instruction(template: str, outputs: dict[int, str]) -> str:
     return _STEP_REF_RE.sub(_sub, template or "")
 
 
-def _build_step_context(db, run, step, outputs: dict[int, str], chapter_text: str) -> str:
-    mode = step["input_mode"] or "chapter"
-    prev_step_text = ""
-    if mode in ("prev_output", "merge"):
-        ref_seq = step["prev_step_seq"]
+def _parse_json_list(val) -> list:
+    if isinstance(val, list):
+        return val
+    if not val:
+        return []
+    try:
+        res = json.loads(val)
+        return res if isinstance(res, list) else []
+    except Exception:
+        return []
+
+
+def _build_step_context(
+    db, run, step, outputs: dict[int, str], chapter_text: str, step_titles: dict[int, str] | None = None
+) -> str:
+    step_dict = dict(step)
+    mode = step_dict.get("input_mode") or "chapter"
+
+    # 1. 解析引用的前序步骤列表
+    ref_seqs = _parse_json_list(step_dict.get("ref_step_seqs"))
+    if not ref_seqs and mode in ("prev_output", "merge"):
+        # 兼容旧单字段 prev_step_seq
+        ref_seq = step_dict.get("prev_step_seq")
         if ref_seq is None:
-            earlier = [s for s in outputs if s < step["seq"]]
+            earlier = [s for s in outputs if s < step_dict["seq"]]
             ref_seq = max(earlier) if earlier else None
-        prev_raw = outputs.get(ref_seq, "") if ref_seq is not None else ""
-        if prev_raw:
-            prev_step_text = f"（第 {ref_seq} 步输出）\n" + _truncate_prev(prev_raw)
+        if ref_seq is not None:
+            ref_seqs = [ref_seq]
+
+    # 2. 解析上下文来源标记 (chapter, triad)
+    context_sources = _parse_json_list(step_dict.get("context_sources"))
+    if not context_sources:
+        if mode in ("chapter", "merge"):
+            context_sources = ["chapter", "triad"]
+        elif mode == "prev_output":
+            context_sources = []
+        elif mode == "none":
+            context_sources = []
+
+    # 3. 组装多前序步骤输出文本块（按步骤序号升序，且只允许引用当前步之前）
+    prev_blocks = []
+    valid_seqs = sorted(s for s in set(ref_seqs) if isinstance(s, int) and s < step_dict["seq"])
+    for s_seq in valid_seqs:
+        raw = outputs.get(s_seq, "")
+        if raw:
+            t_label = f" ({step_titles[s_seq]})" if step_titles and s_seq in step_titles and step_titles[s_seq] else ""
+            header = f"【前序参考：步骤 {s_seq + 1}{t_label}】" + chr(10)
+            prev_blocks.append(header + _truncate_prev(raw))
+
+    prev_step_text = (chr(10) + chr(10)).join(prev_blocks)
 
     return assemble_workflow_context(
         db=db,
@@ -74,9 +114,8 @@ def _build_step_context(db, run, step, outputs: dict[int, str], chapter_text: st
         chapter_text=chapter_text,
         prev_step_text=prev_step_text,
         input_mode=mode,
+        context_sources=context_sources,
     )
-
-
 def _set_run(db, run_id: int, **fields):
     cols = ", ".join(f"{k} = ?" for k in fields)
     db.execute(f"UPDATE workflow_runs SET {cols} WHERE id = ?", (*fields.values(), run_id))
@@ -128,7 +167,8 @@ async def _execute(run_id: int):
             _set_run_step(db, run_id, seq, status="running")
 
             outputs = _approved_outputs(db, run_id)
-            context = _build_step_context(db, run, step, outputs, chapter_text)
+            step_titles = {s["seq"]: s["title"] for s in steps}
+            context = _build_step_context(db, run, step, outputs, chapter_text, step_titles=step_titles)
             instruction = _render_instruction(step["instruction"], outputs)
 
             task_id = create_task(run["work_id"], "workflow_step",

@@ -1,3 +1,4 @@
+import json
 # 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
 
 # Licensed under the MIT License. See LICENSE.
@@ -462,6 +463,8 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
     skill_id      INTEGER REFERENCES skills(id),
     input_mode    TEXT DEFAULT 'chapter',     -- chapter | prev_output | merge | none
     prev_step_seq INTEGER,
+    ref_step_seqs TEXT DEFAULT '[]',          -- 引用前序步骤序号列表 JSON
+    context_sources TEXT DEFAULT '["chapter","triad"]', -- 上下文装配源列表 JSON: chapter, triad
     output_var    TEXT DEFAULT '',
     instruction   TEXT DEFAULT '',            -- 固定补充指令，可引用 {{steps.N.output}}
     length        TEXT DEFAULT 'medium',
@@ -619,6 +622,11 @@ MIGRATIONS = {
     "foreshadows": [("outline_node_id", "INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL")],
 
     "workflow_runs": [("outline_node_id", "INTEGER REFERENCES outline_nodes(id) ON DELETE SET NULL")],
+
+    "workflow_steps": [
+        ("ref_step_seqs", "TEXT DEFAULT '[]'"),
+        ("context_sources", "TEXT DEFAULT '[\"chapter\",\"triad\"]'"),
+    ],
 
 }
 
@@ -2593,13 +2601,24 @@ def seed_builtin_workflows(conn: sqlite3.Connection | None = None):
             (wf["name"], wf["description"], wf["icon"]),
         )
         wf_id = cur.lastrowid
-        for seq, (title, skill_name, input_mode, prev_seq, instruction, length, review) in enumerate(wf["steps"]):
+        for seq, step_tuple in enumerate(wf["steps"]):
+            title = step_tuple[0]
+            skill_name = step_tuple[1]
+            input_mode = step_tuple[2]
+            prev_seq = step_tuple[3]
+            instruction = step_tuple[4]
+            length = step_tuple[5]
+            review = step_tuple[6]
+            ref_seqs = [prev_seq] if prev_seq is not None else []
+            ctx_sources = ["chapter", "triad"] if input_mode in ("chapter", "merge") else []
             conn.execute(
                 """INSERT INTO workflow_steps(
                        workflow_id, seq, title, skill_id, input_mode, prev_step_seq,
+                       ref_step_seqs, context_sources,
                        output_var, instruction, length, candidates, requires_review, enabled)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 1)""",
                 (wf_id, seq, title, _skill_id(skill_name), input_mode, prev_seq,
+                 json.dumps(ref_seqs), json.dumps(ctx_sources),
                  f"step{seq}", instruction, length, review),
             )
     conn.commit()
