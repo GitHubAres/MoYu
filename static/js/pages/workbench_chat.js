@@ -41,7 +41,7 @@ window.WorkbenchChat = (() => {
     let aiLength = "2000";
     try {
       const savedLen = localStorage.getItem("moyu_ai_length");
-      if (savedLen && ["500", "1000", "2000", "3000"].includes(savedLen)) aiLength = savedLen;
+      if (savedLen && ["500", "1000", "2000", "3000", "unlimited"].includes(savedLen)) aiLength = savedLen;
     } catch (_) {}
 
     let aiCandidates = 1;
@@ -153,7 +153,8 @@ window.WorkbenchChat = (() => {
       ui.el("option", { value: "500", selected: aiLength === "500" }, "500字"),
       ui.el("option", { value: "1000", selected: aiLength === "1000" }, "1000字"),
       ui.el("option", { value: "2000", selected: aiLength === "2000" }, "2000字"),
-      ui.el("option", { value: "3000", selected: aiLength === "3000" }, "3000字")
+      ui.el("option", { value: "3000", selected: aiLength === "3000" }, "3000字"),
+      ui.el("option", { value: "unlimited", selected: aiLength === "unlimited" }, "不上限")
     );
 
     const candSelect = ui.el("select", {

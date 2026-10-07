@@ -236,8 +236,10 @@ class AIOrchestrator:
 
     @staticmethod
     def length_hint(length: str) -> str:
-        """长度档位 → 提示语。数字档位（如 "2000"）直接生成字数要求，兼容旧 short/medium/long。"""
+        """长度档位 → 提示语。数字档位（如 "2000"）直接生成字数要求，兼容不上限（unlimited）与旧 short/medium/long。"""
         s = str(length or "").strip()
+        if s in ("unlimited", "none", "0", "不上限", "不限"):
+            return "篇幅不上限，根据剧情推进自然展开，充分铺陈细节与情绪，写尽为止，无需受字数拘束。"
         if s.isdigit():
             n = int(s)
             if n > 0:

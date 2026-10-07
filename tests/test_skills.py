@@ -319,6 +319,8 @@ def test_length_hint_numeric_and_legacy():
     from app.features import AIOrchestrator
     assert "2000 字" in AIOrchestrator.length_hint("2000")
     assert "1500 字" in AIOrchestrator.length_hint("1500")
+    assert "篇幅不上限" in AIOrchestrator.length_hint("unlimited")
+    assert "篇幅不上限" in AIOrchestrator.length_hint("不上限")
     assert AIOrchestrator.length_hint("short") == AIOrchestrator.LENGTH_HINTS["short"]
     assert AIOrchestrator.length_hint("long") == AIOrchestrator.LENGTH_HINTS["long"]
     # 空值与非法值回退 medium

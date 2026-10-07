@@ -232,6 +232,39 @@ def test_chat_stream_mode(client):
     assert meta["steps"][-1]["id"] == "generate" and meta["steps"][-1]["status"] == "done"
 
 
+def test_chat_length_unlimited(client):
+    """测试 AI 修撰使字数不上限选项（unlimited）接口交互与思考步骤解析。"""
+    _, _, chapter = make_wvc(client, "测试不上限作品")
+    client.patch(
+        "/api/settings",
+        json={"values": {"ai_api_key": "test-key-mock", "ai_model": "mock-model"}},
+    )
+
+    with patch("app.api.chat.chat", new_callable=AsyncMock) as mock_chat:
+        mock_chat.return_value = ("不限字数回复内容", 150)
+        resp = client.post(
+            "/api/chat",
+            json={
+                "chapter_id": chapter["id"],
+                "message": "故事续写",
+                "task": "continue",
+                "length": "unlimited",
+                "stream": False,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["content"] == "不限字数回复内容"
+
+    # 校验 meta 中的步骤信息
+    hist = client.get(f"/api/chat?chapter_id={chapter['id']}").json()
+    ai_msg = [m for m in hist["messages"] if m["role"] == "ai"][0]
+    meta = json.loads(ai_msg["meta_json"])
+    assert meta["length"] == "unlimited"
+    parse_step = next(s for s in meta["steps"] if s["id"] == "parse")
+    assert "不上限" in parse_step["detail"]
+
+
 def test_chat_isolated_between_chapters(client):
     """测试不同章节间会话相互隔离。"""
     work, volume, chap1 = make_wvc(client, "多章节测试作品")
@@ -287,6 +320,10 @@ def test_workbench_chat_frontend_assets():
     assert 'streaming-caret' in content
     assert 'onAdopt' in content
     assert 'onUndoAdopt' in content
+
+    # 验证字数不上限选项
+    assert 'value: "unlimited"' in content
+    assert '不上限' in content
 
     # 验证 static/index.html 成功引入
     index_html = Path('static/index.html').read_text(encoding='utf-8')

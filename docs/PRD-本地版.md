@@ -1,9 +1,9 @@
-# 「墨语MoYu」本地与私有云写作工作台｜产品需求文档（v1.9.6）
+# 「墨语MoYu」本地与私有云写作工作台｜产品需求文档（v1.9.7）
 
-- 版本：v1.9.6（以代码实际功能为准）
+- 版本：v1.9.7（以代码实际功能为准）
 - 日期：2026-10-07
 - 依据：依据当前代码库（`app/` 与 `static/js/pages/`）实际已实现功能全面盘点重写
-- 范围：**本地单机部署、单用户**、Windows 轻量原生应用窗口（WebView2 驱动，无黑框控制台，点叉即退；亦支持 --browser 外部浏览器访问），最终交付物为 PyInstaller 单 exe（墨语MoYu-v1.9.6-win64.exe）
+- 范围：**本地单机部署、单用户**、Windows 轻量原生应用窗口（WebView2 驱动，无黑框控制台，点叉即退；亦支持 --browser 外部浏览器访问），最终交付物为 PyInstaller 单 exe（墨语MoYu-v1.9.7-win64.exe）
 - 技术形态：Python FastAPI + SQLite + 原生 JavaScript SPA 单页应用，AI 走用户自配置的 OpenAI 兼容 API
 
 ---
