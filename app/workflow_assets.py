@@ -33,7 +33,7 @@ class AssetEntityIn(BaseModel):
     name: str
     content: str = ""
     tags: str = ""
-    fields_json: Optional[str] = "{}"
+    fields_json: Optional[dict | str] = {}
 
 
 class AssetRelationIn(BaseModel):
@@ -63,6 +63,7 @@ class SyncAssetsIn(BaseModel):
     foreshadows: list[AssetForeshadowIn] = []
     timeline_events: list[AssetTimelineEventIn] = []
     notes: list[AssetNoteIn] = []
+    chapter_id: Optional[int] = None
     apply_to_chapter: bool = False
     chapter_content: Optional[str] = None
 
@@ -369,15 +370,33 @@ def extract_structured_assets_from_text(text: str) -> dict:
                 if len(cname) >= 2 and len(cname) <= 20 and cname not in seen_entities and not re.match(r'^[0-9一二三四五六七八九十]+[、.\s]*$', cname):
                     seen_entities.add(cname)
                     sub_desc = []
-                    for nxt in lines[i+1:i+8]:
+                    fields_dict = {}
+                    for nxt in lines[i+1:i+15]:
                         if nxt.startswith(('###', '##', '#', '---')):
                             break
-                        if nxt.startswith('-') or nxt.startswith('*'):
-                            sub_desc.append(clean_str(nxt))
+                        if nxt.startswith(('-', '*', '>')):
+                            clean_line = clean_str(nxt)
+                            sub_desc.append(clean_line)
+                            kv_m = re.search(r'[*_\s]*([^\s:：*_\-]+)[*_\s]*[:：]\s*(.*)$', clean_line)
+                            if kv_m:
+                                k_raw = kv_m.group(1).strip()
+                                val_clean = clean_str(kv_m.group(2).strip())
+                                if any(x in k_raw for x in ["身份", "定位", "职业", "角色定位"]):
+                                    fields_dict["identity"] = val_clean
+                                elif any(x in k_raw for x in ["性格", "特质", "人设", "性格特质"]):
+                                    fields_dict["personality"] = val_clean
+                                elif any(x in k_raw for x in ["背景", "身世", "过往", "前史", "出身"]):
+                                    fields_dict["background"] = val_clean
+                                elif any(x in k_raw for x in ["目标", "动机", "欲望", "目标与变化", "核心动机", "核心欲望"]):
+                                    fields_dict["goal"] = val_clean
+                    if alias and "aliases" not in fields_dict:
+                        fields_dict["aliases"] = [alias]
+
                     assets["entities"].append({
                         "category": "character",
                         "name": cname,
                         "content": "\n".join(sub_desc),
+                        "fields_json": fields_dict,
                         "tags": f"角色档案{',' + alias if alias else ''}",
                     })
             continue
@@ -518,7 +537,17 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
 
     run_meta = db.execute("SELECT chapter_id, outline_node_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()
     target_outline_id = run_meta["outline_node_id"] if run_meta else None
-    target_chap_id = run_meta["chapter_id"] if run_meta else None
+    target_chap_id = body.chapter_id or (run_meta["chapter_id"] if run_meta else None)
+    if not target_chap_id and work_id:
+        chap_row = db.execute(
+            """SELECT c.id FROM chapters c 
+               JOIN volumes v ON v.id = c.volume_id 
+               WHERE v.work_id = ? 
+               ORDER BY v.sort_order ASC, c.sort_order ASC, c.id ASC LIMIT 1""",
+            (work_id,)
+        ).fetchone()
+        if chap_row:
+            target_chap_id = chap_row["id"]
 
     # 0. 故事立项：规范同步至作品基本信息 (works 表)
     if body.work_info:
@@ -550,26 +579,55 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         name = ent.name.strip()
         if not name:
             continue
+        f_json = ent.fields_json
+        if isinstance(f_json, dict):
+            fields_str = json.dumps(f_json, ensure_ascii=False)
+        elif isinstance(f_json, str) and f_json.strip():
+            fields_str = f_json
+        else:
+            fields_str = "{}"
+
         if name in name_to_id:
             eid = name_to_id[name]
+            exist_row = db.execute("SELECT fields_json FROM entities WHERE id=?", (eid,)).fetchone()
+            try:
+                exist_fields = json.loads(exist_row["fields_json"] or "{}") if exist_row else {}
+            except Exception:
+                exist_fields = {}
+            if isinstance(f_json, dict):
+                for k, v in f_json.items():
+                    if v and not exist_fields.get(k):
+                        exist_fields[k] = v
+            new_fields_str = json.dumps(exist_fields, ensure_ascii=False)
+
             if ent.content:
                 db.execute(
-                    "UPDATE entities SET content = content || '\n' || ?, updated_at=datetime('now','localtime') WHERE id=?",
-                    (ent.content, eid),
+                    """UPDATE entities 
+                       SET content = CASE WHEN content != '' THEN content || '\n' || ? ELSE ? END, 
+                           fields_json = ?, 
+                           updated_at = datetime('now','localtime') 
+                       WHERE id = ?""",
+                    (ent.content, ent.content, new_fields_str, eid),
+                )
+            else:
+                db.execute(
+                    """UPDATE entities SET fields_json = ?, updated_at = datetime('now','localtime') WHERE id = ?""",
+                    (new_fields_str, eid),
                 )
         else:
             cur = db.execute(
                 "INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?, ?, ?, ?, ?, ?)",
-                (work_id, ent.category or "character", name, ent.content, ent.fields_json or json.dumps({}, ensure_ascii=False), ent.tags),
+                (work_id, ent.category or "character", name, ent.content, fields_str, ent.tags),
             )
             eid = cur.lastrowid
             name_to_id[name] = eid
             summary["entities_added"] += 1
-            if target_chap_id:
-                db.execute(
-                    "INSERT OR IGNORE INTO chapter_entities (chapter_id, entity_id) VALUES (?, ?)",
-                    (target_chap_id, eid)
-                )
+
+        if target_chap_id:
+            db.execute(
+                "INSERT OR IGNORE INTO chapter_entities (chapter_id, entity_id) VALUES (?, ?)",
+                (target_chap_id, eid)
+            )
 
     # 2. 万相图谱关系同步
     for rel in body.relations:

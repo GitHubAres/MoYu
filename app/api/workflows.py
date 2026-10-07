@@ -355,7 +355,7 @@ def sync_step_assets(run_id: int, seq: int, body: SyncAssetsIn):
         raise HTTPException(400, "该工作流未关联具体作品，无法规范同步到作品资产库")
 
     summary = sync_assets_to_database(db, work_id, body, run_id=run_id, seq=seq)
-    return {"ok": True, "summary": summary}
+    return {"ok": True, "work_id": work_id, "summary": summary}
 
 # ---------- 工作流定义 ----------
 

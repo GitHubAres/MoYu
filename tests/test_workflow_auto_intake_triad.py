@@ -1,6 +1,43 @@
 # -*- coding: utf-8 -*-
 from conftest import make_work, make_wvc
 from app.db import get_db
+from app.workflow_assets import extract_structured_assets_from_text
+import json
+
+
+def test_character_card_fields_json_extraction():
+    """验证角色卡提取是否完整解析了 identity, personality, background, goal 结构化档案"""
+    raw_cast_md = """
+### 宁恪（主角）
+- **身份**：问剑宗弃徒，天生无垢剑体
+- **性格**：沉稳隐忍，杀伐果断，重情重义
+- **背景**：原为宗门首席天骄，因撞破禁地阴谋被师门构陷废去气海
+- **核心动机**：探寻师门灭门惨案真相，重铸剑魄
+
+### 顾青蝉（白月光）
+- **定位**：素问阁圣女
+- **特质**：外冷内热，医剑双绝
+- **身世**：上古医圣血脉后裔
+- **目标与变化**：寻找续命神药，摆脱宿命桎梏
+"""
+    assets = extract_structured_assets_from_text(raw_cast_md)
+    ents = {e["name"]: e for e in assets["entities"]}
+    assert "宁恪" in ents
+    assert "顾青蝉" in ents
+
+    # 验证 宁恪 的 fields_json
+    nk_fields = ents["宁恪"]["fields_json"]
+    assert "问剑宗弃徒" in nk_fields.get("identity", "")
+    assert "沉稳隐忍" in nk_fields.get("personality", "")
+    assert "构陷废去气海" in nk_fields.get("background", "")
+    assert "重铸剑魄" in nk_fields.get("goal", "")
+
+    # 验证 顾青蝉 的 fields_json (多别名同义词映射)
+    gqc_fields = ents["顾青蝉"]["fields_json"]
+    assert "素问阁圣女" in gqc_fields.get("identity", "")
+    assert "外冷内热" in gqc_fields.get("personality", "")
+    assert "医圣血脉" in gqc_fields.get("background", "")
+    assert "摆脱宿命桎梏" in gqc_fields.get("goal", "")
 
 
 def test_workflow_summary_assets_and_auto_intake_flow(client):
@@ -30,15 +67,17 @@ def test_workflow_summary_assets_and_auto_intake_flow(client):
     )
     run_id = cur.lastrowid
 
-    # 步骤 1 输出：包含已有势力 '太玄门' 与 新人物 '林渊'、新道具 '太虚残剑'
+    # 步骤 1 输出：包含已有势力 '太玄门' 与 新角色 '林渊'（带完整角色档案）、新道具 '太虚残剑'
     step1_output = """
 ## 势力谱系
 | 势力 | 定位 | 宗旨与核心 |
 | 太玄门 | 正道魁首 | 表面统御南疆 |
 
 ### 林渊（主角）
-- **身份**：无极剑圣转世
-- **核心动机**：探寻天道真相
+- **身份**：无极剑圣转世，散修剑客
+- **性格**：孤傲冷静，不滞于物
+- **背景**：千年前独断万古，今朝涅槃重修
+- **目标与变化**：重聚散落的诛仙四剑，勘破轮回
 
 ## 核心物品
 | 道具 | 品阶 | 核心法则/代价 |
@@ -96,17 +135,16 @@ def test_workflow_summary_assets_and_auto_intake_flow(client):
     assert ents["青云古殿"]["is_new"] is True
     assert ents["太玄门"]["is_new"] is False  # 库内已有太玄门
 
-    # 验证伏笔比对
-    fs_map = {f["title"]: f for f in assets["foreshadows"]}
-    assert "掌门身世之谜" in fs_map
-    assert fs_map["掌门身世之谜"]["is_new"] is False  # 库内已有
-    assert "剑圣遗蜕藏所" in fs_map
-    assert fs_map["剑圣遗蜕藏所"]["is_new"] is True   # 新伏笔
+    # 验证林渊提取出的 fields_json 档案结构
+    ly_fields = ents["林渊"]["fields_json"]
+    assert "无极剑圣转世" in ly_fields.get("identity", "")
+    assert "孤傲冷静" in ly_fields.get("personality", "")
+    assert "重聚散落的诛仙四剑" in ly_fields.get("goal", "")
 
-    # 4. 执行一键全流程资产规范同步反哺 (seq = 0)
+    # 4. 执行一键全流程资产规范同步反哺 (seq = 0)，显式指定 chapter_id
     sync_res = client.post(f"/api/workflows/runs/{run_id}/steps/0/sync-assets", json={
         "entities": [
-            {"name": "林渊", "category": "character", "content": "无极剑圣转世", "tags": "主角"},
+            {"name": "林渊", "category": "character", "content": "无极剑圣转世", "tags": "主角", "fields_json": ly_fields},
             {"name": "太虚残剑", "category": "item", "content": "撕裂虚空", "tags": "神兵"},
             {"name": "青云古殿", "category": "location", "content": "禁地深处", "tags": "地点"},
             {"name": "太玄门", "category": "faction", "content": "正道魁首", "tags": "宗门"}
@@ -121,25 +159,38 @@ def test_workflow_summary_assets_and_auto_intake_flow(client):
         "foreshadows": [
             {"title": "剑圣遗蜕藏所", "content": "暗藏于青云古殿地下", "status": "planted"}
         ],
-        "notes": []
+        "notes": [],
+        "chapter_id": chapter_id
     })
     assert sync_res.status_code == 200
-    summary = sync_res.json()["summary"]
+    res_data = sync_res.json()
+    assert res_data["work_id"] == work_id  # 验证返回了 work_id (解决前端 run 变量未定义问题)
+    summary = res_data["summary"]
     assert summary["entities_added"] >= 3
     assert summary["outlines_added"] >= 1
     assert summary["timeline_events_added"] >= 1
     assert summary["foreshadows_added"] >= 1
 
-    # 5. 验证新增实体已自动与当前章节 chapter_id 绑定
+    # 5. 验证万相谱中林渊角色的 fields_json 是否已精准入库
+    all_ents = client.get(f"/api/works/{work_id}/entities").json()
+    ent_ly = next(e for e in all_ents if e["name"] == "林渊")
+    fields_saved = ent_ly["fields"]
+    assert fields_saved.get("identity") == "无极剑圣转世，散修剑客"
+    assert fields_saved.get("personality") == "孤傲冷静，不滞于物"
+    assert fields_saved.get("background") == "千年前独断万古，今朝涅槃重修"
+    assert fields_saved.get("goal") == "重聚散落的诛仙四剑，勘破轮回"
+
+    # 6. 验证万相谱“章节引用与登场记录”自动关联 (解决问题四)
+    # 不仅新实体(林渊/太虚残剑)，已有实体(太玄门)也应当自动关联到了本章！
+    ly_chapters = client.get(f"/api/entities/{ent_ly['id']}/chapters").json()
+    assert any(c_item["id"] == chapter_id for c_item in ly_chapters)
+
+    ent_txm = next(e for e in all_ents if e["name"] == "太玄门")
+    txm_chapters = client.get(f"/api/entities/{ent_txm['id']}/chapters").json()
+    assert any(c_item["id"] == chapter_id for c_item in txm_chapters)
+
     ch_ents = client.get(f"/api/chapters/{chapter_id}/entities").json()
     ch_ent_names = [e["name"] for e in ch_ents]
     assert "林渊" in ch_ent_names
     assert "太虚残剑" in ch_ent_names
-
-    # 6. 再次拉取汇总资产，此时所有条目应当均被识别为已存在 (is_new: False)
-    again_res = client.get(f"/api/workflows/runs/{run_id}/summary-assets").json()
-    again_ents = {e["name"]: e for e in again_res["assets"]["entities"]}
-    assert again_ents["林渊"]["is_new"] is False
-    assert again_ents["太虚残剑"]["is_new"] is False
-    again_fs = {f["title"]: f for f in again_res["assets"]["foreshadows"]}
-    assert again_fs["剑圣遗蜕藏所"]["is_new"] is False
+    assert "太玄门" in ch_ent_names

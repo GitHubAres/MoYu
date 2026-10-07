@@ -180,16 +180,25 @@ registerPage("entities", async (view, { segs }) => {
       value: e.name,
     });
 
+    function resolveCharField(key, label) {
+      if (fields[key] && String(fields[key]).trim()) return String(fields[key]).trim();
+      if (!e.content) return "";
+      const reg = new RegExp(`(?:\\*\\*|【|\\[)?(?:${label}|${key})(?:\\*\\*|】|\\])?[：:\\s]+([^\\n]+)`);
+      const m = e.content.match(reg);
+      return m ? m[1].replace(/^[\\*\\s]+|[\\*\\s]+$/g, "") : "";
+    }
+
     /* 字段编辑区：角色模板 / 通用大文本 */
     let bodySection;
     const fieldInputs = {};
     if (e.category === "character") {
       bodySection = ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-space-sm" },
         CHAR_FIELDS.map((f) => {
+          const val = resolveCharField(f.key, f.label);
           const ta = ui.el("textarea", {
             class: "w-full bg-transparent outline-none font-body-sm text-body-sm text-on-surface resize-y min-h-[64px]",
             placeholder: `填写${f.label}…`,
-          }, fields[f.key] || "");
+          }, val);
           fieldInputs[f.key] = ta;
           return ui.el("div", { class: "bg-surface-container-low/70 rounded-xl p-space-sm flex flex-col gap-1" },
             ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, f.label), ta);

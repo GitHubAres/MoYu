@@ -3,9 +3,8 @@ registerPage("timeline", async (view, { segs }) => {
   const workId = Number(segs[0]) || null;
   if (!workId) return timelinePickWork(view);
 
-  let work, works, events, tree;
+  let work, works, events, tree, outlineTree = [];
   try {
-    let outlineTree = [];
     [work, works, tree, outlineTree] = await Promise.all([
       api.get(`/works/${workId}`),
       api.get("/works"),

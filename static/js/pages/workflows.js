@@ -618,6 +618,44 @@ async function renderRun(view, runId) {
       body.append(workInfoGroup);
     }
 
+    // 0.5 章节登场与引用绑定选择器
+    let chapterSelect = null;
+    let availableChapters = [];
+    try {
+      const curWorkId = (assets && assets.run_meta && assets.run_meta.work_id) || (typeof run !== "undefined" && run && run.work_id);
+      if (curWorkId) {
+        const tree = await api.get(`/works/${curWorkId}/tree`);
+        if (Array.isArray(tree)) {
+          for (const v of tree) {
+            for (const c of (v.chapters || [])) {
+              availableChapters.push({ id: c.id, label: `${v.title} · ${c.title}` });
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    if (availableChapters.length > 0) {
+      const defaultChapId = (assets && assets.run_meta && assets.run_meta.chapter_id) || (typeof run !== "undefined" && run && run.chapter_id);
+      chapterSelect = ui.el("select", {
+        class: "px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-body-sm font-label-sm outline-none text-on-surface",
+      },
+        ui.el("option", { value: "" }, "（自动智能关联首章或默认章节）"),
+        availableChapters.map(c => ui.el("option", { value: String(c.id), selected: c.id === defaultChapId }, `关联至本章: ${c.label}`))
+      );
+
+      const chapGroup = ui.el("div", {
+        class: "flex items-center justify-between p-3 rounded-xl bg-surface-container-low border border-outline-variant/60 gap-2 flex-wrap"
+      },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("bookmark", "text-[16px] text-secondary"),
+          "章节登场与引用绑定：",
+          ui.el("span", { class: "font-normal text-on-surface-variant text-[11px]" }, "本次同步的实体将自动添加至此章节登场记录")),
+        chapterSelect
+      );
+      body.append(chapGroup);
+    }
+
     // 1. 万相谱实体
     const entChecks = [];
     if ((assets.entities || []).length > 0) {
@@ -806,6 +844,9 @@ async function renderRun(view, runId) {
                 intro: workIntroInput ? workIntroInput.value.trim() : "",
               };
             }
+            if (chapterSelect && chapterSelect.value) {
+              payload.chapter_id = Number(chapterSelect.value);
+            }
             try {
               const res = await api.post(`/workflows/runs/${runId}/steps/${stepSeq}/sync-assets`, payload);
               const sm = res.summary || {};
@@ -817,8 +858,10 @@ async function renderRun(view, runId) {
               if (sm.timeline_events_added) tips.push(`时间线+${sm.timeline_events_added}`);
               if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
               if (sm.notes_added) tips.push(`设定+${sm.notes_added}`);
-              if (window.store && window.store.plot && run && run.work_id) {
-                window.store.plot.notifyChanged(run.work_id);
+              const targetWorkId = res.work_id || (assets && assets.run_meta && assets.run_meta.work_id);
+              if (window.store && targetWorkId) {
+                if (window.store.plot) window.store.plot.notifyChanged(targetWorkId);
+                if (window.store.events) window.store.events.emit("entity:changed", { workId: targetWorkId });
               }
               ui.toast("规范同步成功！" + (tips.join("，") || "已同步"), "ok");
               overlay.remove();
