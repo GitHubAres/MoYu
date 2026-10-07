@@ -516,6 +516,10 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         "chapter_synced": False,
     }
 
+    run_meta = db.execute("SELECT chapter_id, outline_node_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()
+    target_outline_id = run_meta["outline_node_id"] if run_meta else None
+    target_chap_id = run_meta["chapter_id"] if run_meta else None
+
     # 0. 故事立项：规范同步至作品基本信息 (works 表)
     if body.work_info:
         w_title = (body.work_info.title or "").strip()
@@ -558,8 +562,14 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
                 "INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?, ?, ?, ?, ?, ?)",
                 (work_id, ent.category or "character", name, ent.content, ent.fields_json or json.dumps({}, ensure_ascii=False), ent.tags),
             )
-            name_to_id[name] = cur.lastrowid
+            eid = cur.lastrowid
+            name_to_id[name] = eid
             summary["entities_added"] += 1
+            if target_chap_id:
+                db.execute(
+                    "INSERT OR IGNORE INTO chapter_entities (chapter_id, entity_id) VALUES (?, ?)",
+                    (target_chap_id, eid)
+                )
 
     # 2. 万相图谱关系同步
     for rel in body.relations:
@@ -600,9 +610,6 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
 
     # 3. 三位一体剧情脉络同步 (大纲 / 时间线 / 伏笔)，统一委托 plot_service
     from app.services.plot_service import batch_sync_triad_assets
-    run_meta = db.execute("SELECT chapter_id, outline_node_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()
-    target_outline_id = run_meta["outline_node_id"] if run_meta else None
-    target_chap_id = run_meta["chapter_id"] if run_meta else None
 
     triad_stats = batch_sync_triad_assets(
         db=db,
@@ -641,7 +648,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
             db.execute(
                 """INSERT INTO chapter_versions (chapter_id, content, word_count, source, label)
                    VALUES (?, ?, ?, 'workflow', ?)""",
-                (chapter_id, body.chapter_content, wc, f"工作流 #{run_id} 步骤 {seq + 1} 采纳"),
+                (chapter_id, body.chapter_content, wc, (f"工作流 #{run_id} 全流程汇总采纳" if seq == 0 else f"工作流 #{run_id} 步骤 {seq + 1} 采纳")),
             )
             db.execute(
                 "UPDATE chapters SET content=?, word_count=?, updated_at=datetime('now','localtime') WHERE id=?",

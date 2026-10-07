@@ -274,18 +274,74 @@ def get_extracted_assets(run_id: int, seq: int, body: Optional[ExtractContentIn]
 
 @router.get("/runs/{run_id}/summary-assets")
 def get_summary_assets(run_id: int):
-    """汇总工作流全流程所有步骤的产出，合并抽取全功能结构化资产"""
+    """汇总工作流全流程所有步骤的产出，合并抽取全功能结构化资产并进行库内差异比对"""
     db = get_db()
     run = db.execute("SELECT * FROM workflow_runs WHERE id = ?", (run_id,)).fetchone()
     if not run:
         raise HTTPException(404, "工作流运行实例不存在")
+    work_id = run["work_id"]
+
     steps = db.execute(
         "SELECT step_seq, output FROM workflow_run_steps WHERE run_id = ? ORDER BY step_seq ASC",
         (run_id,),
     ).fetchall()
     combined_texts = [r["output"] for r in steps if r["output"]]
     full_text = chr(10).join(combined_texts)
-    return {"ok": True, "assets": extract_structured_assets_from_text(full_text)}
+    raw_assets = extract_structured_assets_from_text(full_text)
+
+    # 查重比对与元数据增强
+    existing_entities = {
+        r["name"].strip().lower(): r["category"]
+        for r in db.execute("SELECT name, category FROM entities WHERE work_id=?", (work_id,)).fetchall()
+        if r["name"]
+    } if work_id else {}
+    existing_outlines = {
+        r["title"].strip().lower()
+        for r in db.execute("SELECT title FROM outline_nodes WHERE work_id=?", (work_id,)).fetchall()
+        if r["title"]
+    } if work_id else set()
+    existing_foreshadows = {
+        r["title"].strip().lower()
+        for r in db.execute("SELECT title FROM foreshadows WHERE work_id=?", (work_id,)).fetchall()
+        if r["title"]
+    } if work_id else set()
+
+    annotated_entities = []
+    for ent in raw_assets.get("entities", []):
+        d = dict(ent)
+        key = ent.get("name", "").strip().lower()
+        if key in existing_entities:
+            d["is_new"] = False
+            d["existing_category"] = existing_entities[key]
+        else:
+            d["is_new"] = True
+        annotated_entities.append(d)
+    raw_assets["entities"] = annotated_entities
+
+    annotated_outlines = []
+    for node in raw_assets.get("outline_nodes", []):
+        d = dict(node)
+        d["is_new"] = (node.get("title", "").strip().lower() not in existing_outlines)
+        annotated_outlines.append(d)
+    raw_assets["outline_nodes"] = annotated_outlines
+
+    annotated_fs = []
+    for fs in raw_assets.get("foreshadows", []):
+        d = dict(fs)
+        d["is_new"] = (fs.get("title", "").strip().lower() not in existing_foreshadows)
+        annotated_fs.append(d)
+    raw_assets["foreshadows"] = annotated_fs
+
+    return {
+        "ok": True,
+        "run_meta": {
+            "work_id": work_id,
+            "chapter_id": run["chapter_id"],
+            "outline_node_id": run["outline_node_id"],
+            "status": run["status"]
+        },
+        "assets": raw_assets
+    }
 
 @router.post("/runs/{run_id}/steps/{seq}/sync-assets")
 def sync_step_assets(run_id: int, seq: int, body: SyncAssetsIn):

@@ -31,4 +31,4 @@ def test_api_version_endpoint():
     assert res.status_code == 200
     data = res.json()
     assert data["ok"] is True
-    assert data["version"] == "1.9.2"
+    assert data["version"] == "1.9.3"

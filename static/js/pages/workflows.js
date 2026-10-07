@@ -424,6 +424,7 @@ async function renderRun(view, runId) {
 
   let pollTimer = null;
   let editingSeq = null;
+  let hasAutoOpenedSummary = false;
 
   async function tick() {
     let run;
@@ -477,6 +478,19 @@ async function renderRun(view, runId) {
         : null);
 
     if (run.status === "done") {
+      if (!hasAutoOpenedSummary) {
+        hasAutoOpenedSummary = true;
+        setTimeout(async () => {
+          try {
+            const res = await api.get(`/workflows/runs/${runId}/summary-assets`);
+            if (res && res.assets) {
+              showAssetSyncModal(runId, 0, res.assets, null, "🎉 写作工作流全流程资产一键自动反哺看板");
+            }
+          } catch (e) {
+            console.warn("自动提取全流程资产失败:", e);
+          }
+        }, 200);
+      }
       const summaryBanner = ui.el("div", {
         class: "p-4 rounded-2xl bg-primary/10 border border-primary/30 flex flex-col md:flex-row items-center justify-between gap-3 mt-1",
       },
@@ -620,7 +634,10 @@ async function renderRun(view, runId) {
           ui.el("div", { class: "flex flex-col min-w-0" },
             ui.el("div", { class: "flex items-center gap-1 font-label-sm text-label-sm font-medium" },
               ui.el("span", { class: "text-primary truncate font-semibold" }, ent.name),
-              ui.el("span", { class: "px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant text-[11px] shrink-0" }, catMap[ent.category] || ent.category)),
+              ui.el("span", { class: "px-1.5 py-0.2 rounded bg-surface-container-high text-on-surface-variant text-[11px] shrink-0" }, catMap[ent.category] || ent.category),
+              ent.is_new !== undefined ? ui.el("span", {
+                class: `px-1.5 py-0.2 rounded text-[10px] shrink-0 ${ent.is_new ? "bg-primary/10 text-primary font-semibold" : "bg-surface-container text-on-surface-variant"}`
+              }, ent.is_new ? "✨ 全新收录" : "已有 · 补充") : null),
             ent.content ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 mt-0.5" }, ent.content) : null));
         grid.append(label);
       });
@@ -666,7 +683,10 @@ async function renderRun(view, runId) {
           ui.el("div", { class: "flex flex-col min-w-0" },
             ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-medium" },
               ui.icon(node.is_volume ? "folder" : "description", "text-[14px] text-primary"),
-              ui.el("span", { class: "text-on-surface font-semibold" }, node.title)),
+              ui.el("span", { class: "text-on-surface font-semibold" }, node.title),
+              node.is_new !== undefined ? ui.el("span", {
+                class: `px-1.5 py-0.2 rounded text-[10px] shrink-0 ${node.is_new ? "bg-primary/10 text-primary font-semibold" : "bg-surface-container text-on-surface-variant"}`
+              }, node.is_new ? "✨ 新节点" : "已有节点") : null),
             node.synopsis ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-1 mt-0.5" }, node.synopsis) : null));
         list.append(item);
       });
@@ -713,7 +733,10 @@ async function renderRun(view, runId) {
           ui.el("div", { class: "flex flex-col min-w-0" },
             ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-medium" },
               ui.icon("flag", "text-[13px] text-primary"),
-              ui.el("span", { class: "text-primary font-semibold" }, fs.title)),
+              ui.el("span", { class: "text-primary font-semibold" }, fs.title),
+              fs.is_new !== undefined ? ui.el("span", {
+                class: `px-1.5 py-0.2 rounded text-[10px] shrink-0 ${fs.is_new ? "bg-primary/10 text-primary font-semibold" : "bg-surface-container text-on-surface-variant"}`
+              }, fs.is_new ? "✨ 新伏笔" : "已有伏笔") : null),
             fs.content ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 mt-0.5" }, fs.content) : null));
         list.append(item);
       });
