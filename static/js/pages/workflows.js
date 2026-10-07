@@ -688,8 +688,7 @@ async function renderRun(view, runId) {
                        (assets.entities || []).length +
                        (assets.relations || []).length +
                        (assets.outline_nodes || []).length +
-                       (assets.foreshadows || []).length +
-                       (assets.notes || []).length;
+                       (assets.foreshadows || []).length;
 
     const overlay = ui.el("div", {
       class: "fixed inset-0 bg-scrim/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in",
@@ -924,26 +923,7 @@ async function renderRun(view, runId) {
       body.append(fsGroup);
     }
 
-    // 5. 世界观与法则资料
     const noteChecks = [];
-    if ((assets.notes || []).length > 0) {
-      const noteGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
-        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
-          ui.icon("public", "text-[16px]"), `世界观与法则资料 (${assets.notes.length}条)`));
-      const list = ui.el("div", { class: "flex flex-col gap-1.5" });
-      assets.notes.forEach((note) => {
-        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
-        noteChecks.push({ cb, data: note });
-        const item = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
-          cb,
-          ui.el("div", { class: "flex flex-col min-w-0" },
-            ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, note.title),
-            ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 whitespace-pre-wrap mt-0.5" }, note.content)));
-        list.append(item);
-      });
-      noteGroup.append(list);
-      body.append(noteGroup);
-    }
 
     const allCheckboxes = [...entChecks, ...relChecks, ...outlineChecks, ...foreshadowChecks, ...noteChecks];
 

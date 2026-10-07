@@ -19,10 +19,10 @@ def version():
 
 
 from . import (ai, alchemy, announcement, audit, auth, board, chat, entities, gallery, graph,  # noqa: E402
-               io_export, notes, outlines, prefs, skills,
+               io_export, outlines, prefs, skills,
                search, seed, style, tasks, timeline, update, versions, workflows, works)
 
 for _m in (auth, prefs, works, ai, chat, outlines, entities, versions, board,
-           io_export, skills, audit, seed, notes, search,
+           io_export, skills, audit, seed, search,
            graph, timeline, style, alchemy, gallery, tasks, update, announcement, workflows):
     router.include_router(_m.router)

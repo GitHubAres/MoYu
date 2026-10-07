@@ -682,18 +682,6 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
     summary["foreshadows_added"] += triad_stats["foreshadows_added"]
     summary["timeline_events_added"] += triad_stats["timeline_events_added"]
 
-    # 4. 世界观资料便签同步
-    for note in body.notes:
-        title = note.title.strip() or "世界观设定"
-        content = note.content.strip()
-        tags = note.tags.strip() or "世界观"
-        if not content:
-            continue
-        full_text = f"【{title}】\n{content}"
-        dup = db.execute("SELECT id FROM notes WHERE work_id=? AND content LIKE ?", (work_id, f"%{title}%")).fetchone()
-        if not dup:
-            db.execute("INSERT INTO notes (work_id, content, tags) VALUES (?, ?, ?)", (work_id, full_text, tags))
-            summary["notes_added"] += 1
 
     # 5. 文章正文与版本沉淀同步
     run = db.execute("SELECT chapter_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()

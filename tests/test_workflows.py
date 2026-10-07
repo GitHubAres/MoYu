@@ -819,7 +819,7 @@ def test_sync_workflow_assets(client):
     assert summary["relations_added"] >= 1
     assert summary["outlines_added"] >= 2
     assert summary["foreshadows_added"] >= 1
-    assert summary["notes_added"] >= 1
+    assert summary["notes_added"] == 0
 
     # 5. 校验数据库各表是否真正写入！
     ents = db.execute("SELECT name, category FROM entities WHERE work_id=?", (work_id,)).fetchall()
@@ -838,8 +838,7 @@ def test_sync_workflow_assets(client):
     assert "第1章 江上捞尸" in out_titles
 
     notes = db.execute("SELECT content FROM notes WHERE work_id=?", (work_id,)).fetchall()
-    assert len(notes) >= 1
-    assert "死者因果律" in notes[0]["content"]
+    assert len(notes) == 0  # 验证灵感便签功能彻底清除，设定绝不污染写入 notes 表
 
     # 校验作品立项信息与伏笔库
     w = db.execute("SELECT title, genre FROM works WHERE id=?", (work_id,)).fetchone()

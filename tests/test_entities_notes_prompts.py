@@ -132,42 +132,12 @@ def test_foreshadow_crud_and_status_enum(client):
     assert client.get(f"/api/works/{w['id']}/foreshadows").json() == []
 
 
-# ---------- notes ----------
+# ---------- notes 彻底清除防护断言 ----------
 
-def test_notes_crud(client):
-    w = make_work(client, "便签测试")
-
-    r = client.post("/api/notes", json={"content": "一句高光台词", "tags": "台词", "work_id": w["id"]})
-    assert r.status_code == 201
-    n = r.json()
-    assert n["work_id"] == w["id"]
-
-    g = client.post("/api/notes", json={"content": "全局便签"})  # work_id 为空
-    assert g.status_code == 201
-
-    # 按作品过滤：含本作品便签 + 全局便签
-    lst = client.get("/api/notes", params={"work_id": w["id"]}).json()
-    assert {x["content"] for x in lst} == {"一句高光台词", "全局便签"}
-
-    r = client.patch(f"/api/notes/{n['id']}", json={"content": "改过的台词"})
-    assert r.json()["content"] == "改过的台词"
-    assert client.patch("/api/notes/99999", json={"content": "x"}).status_code == 404
-
-    assert client.delete(f"/api/notes/{n['id']}").status_code == 204
-    remaining = client.get("/api/notes", params={"work_id": w["id"]}).json()
-    assert [x["content"] for x in remaining] == ["全局便签"]
-
-    # 测试标签过滤与排除功能
-    w_note = client.post("/api/notes", json={"content": "世界观核心规则", "tags": "世界观", "work_id": w["id"]}).json()
-    all_notes = client.get("/api/notes").json()
-    assert any(x["id"] == w_note["id"] for x in all_notes)
-    excluded = client.get("/api/notes", params={"exclude_tag": "世界观"}).json()
-    assert not any(x["id"] == w_note["id"] for x in excluded)
-    filtered = client.get("/api/notes", params={"tag": "世界观"}).json()
-    assert any(x["id"] == w_note["id"] for x in filtered)
-    client.delete(f"/api/notes/{w_note['id']}")
-
-
+def test_notes_api_retired_returns_404(client):
+    """验证灵感便签功能已彻底下线，/api/notes 全面返回 404。"""
+    assert client.get("/api/notes").status_code == 404
+    assert client.post("/api/notes", json={"content": "test"}).status_code == 404
 # ---------- prompts ----------
 
 def test_old_prompts_api_retired_returns_404(client):

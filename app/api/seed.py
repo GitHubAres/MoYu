@@ -80,9 +80,6 @@ def seed_demo():
     db.execute("INSERT INTO foreshadows(work_id, title, content, status, chapter_id) VALUES (?,?,?,?,?)",
                (work_id, "剑阁旧印裂痕", "剑阁旧印上的裂痕指向三十年前的心魔折断之谜。", "pending", c2))
 
-    # 灵感便签
-    db.execute("INSERT INTO notes(work_id, content, tags) VALUES (?,?,?)",
-               (work_id, "文明并不是因为熄灭而寒冷，而是在遗忘彼此坐标的那一秒，就已经彻底死去了。", "高光台词"))
 
     db.commit()
     return {"ok": True, "work_id": work_id, "message": "示例作品《太虚仙途》已创建"}

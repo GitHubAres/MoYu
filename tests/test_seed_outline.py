@@ -35,9 +35,6 @@ def test_seed_demo_idempotent(client):
     foreshadows = client.get(f"/api/works/{work_id}/foreshadows").json()
     assert {f["status"] for f in foreshadows} == {"planted", "pending"}
 
-    notes = client.get("/api/notes", params={"work_id": work_id}).json()
-    assert any("文明并不是因为熄灭而寒冷" in n["content"] for n in notes)
-
 
 def test_outline_crud_and_enum(client):
     from conftest import make_work

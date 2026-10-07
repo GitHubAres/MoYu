@@ -324,39 +324,4 @@ const ui = {
     renderIdle();
     input.focus();
   },
-  /* 全局快速记录灵感便签，返回 Promise<saved|null> */
-  quickNoteDialog() {
-    return new Promise((resolve) => {
-      const root = document.getElementById("modal-root");
-      const input = ui.el("textarea", {
-        class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-sm text-[16px] sm:text-body-sm resize-none",
-        rows: "4", placeholder: "捕捉掠过脑海的伏笔、绝妙对白或世界法则…",
-      });
-      const close = (val) => { overlay.remove(); resolve(val); };
-      const overlay = ui.el("div", {
-        class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
-        onclick: (e) => { if (e.target === overlay) close(null); },
-      },
-        ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[420px] max-w-[calc(100vw-2rem)] mx-4 shadow-[0_12px_32px_rgba(27,42,56,0.12)] flex flex-col gap-space-md" },
-          ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "快速记录"),
-          input,
-          ui.el("div", { class: "flex justify-end gap-2" },
-            ui.el("button", { class: "px-4 py-2 rounded-lg bg-surface-container hover:bg-surface-container-high font-label-md text-label-md", onclick: () => close(null) }, "取消"),
-            ui.el("button", {
-              class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-md text-label-md",
-              onclick: async () => {
-                const text = input.value.trim();
-                if (!text) { close(null); return; }
-                try {
-                  const saved = await api.post("/notes", { content: text });
-                  ui.toast("已记录灵感便签", "ok");
-                  window.dispatchEvent(new CustomEvent("moyu:note-added", { detail: saved }));
-                  close(saved);
-                } catch (e) { ui.toast(e.message, "err"); }
-              },
-            }, "记录"))));
-      root.append(overlay);
-      input.focus();
-    });
-  },
 };

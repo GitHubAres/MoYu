@@ -8,88 +8,15 @@
     ui.toast("网络连接已恢复", "ok");
   });
 
-  // 全局快捷键：Ctrl+K / Cmd+K 打开搜索面板；Ctrl+J / Cmd+J 快速记录
+  // 全局快捷键：Ctrl+K / Cmd+K 命令面板
   window.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K")) {
       e.preventDefault();
       ui.palette();
     }
-    if ((e.ctrlKey || e.metaKey) && (e.key === "j" || e.key === "J")) {
-      e.preventDefault();
-      ui.quickNoteDialog();
-    }
   });
 
-  // 全局悬浮记录按钮（FAB）：可按住拖动摆放，位置本地持久化
-  const fab = ui.el("button", {
-    id: "global-quick-note-fab",
-    class: "fixed bottom-6 right-4 sm:bottom-6 sm:left-6 z-[80] w-12 h-12 rounded-full bg-primary text-on-primary shadow-lg flex items-center justify-center hover:bg-primary-container transition-colors cursor-pointer",
-    title: "快速记录 (Ctrl+J)，可按住拖动",
-  }, ui.icon("edit_note", "text-[24px]"));
-  document.body.append(fab);
 
-  (function makeFabDraggable() {
-    const POS_KEY = "moyu_quicknote_fab_pos";
-    let dragMoved = false;
-
-    function applyPos(x, y) {
-      const r = fab.getBoundingClientRect();
-      const maxX = window.innerWidth - r.width - 4;
-      const maxY = window.innerHeight - r.height - 4;
-      const cx = Math.min(Math.max(4, x), Math.max(4, maxX));
-      const cy = Math.min(Math.max(4, y), Math.max(4, maxY));
-      fab.style.setProperty("left", cx + "px", "important");
-      fab.style.setProperty("top", cy + "px", "important");
-      fab.style.setProperty("right", "auto", "important");
-      fab.style.setProperty("bottom", "auto", "important");
-    }
-    try {
-      const saved = JSON.parse(localStorage.getItem(POS_KEY) || "null");
-      if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) applyPos(saved.x, saved.y);
-    } catch (_) {}
-
-    fab.style.touchAction = "none";
-    fab.addEventListener("pointerdown", (e) => {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
-      const r = fab.getBoundingClientRect();
-      const offX = e.clientX - r.left, offY = e.clientY - r.top;
-      dragMoved = false;
-      try { fab.setPointerCapture(e.pointerId); } catch (_) {}
-      const onMove = (ev) => {
-        const nx = ev.clientX - offX, ny = ev.clientY - offY;
-        if (!dragMoved && Math.abs(nx - r.left) < 5 && Math.abs(ny - r.top) < 5) return;
-        dragMoved = true;
-        applyPos(nx, ny);
-      };
-      const onUp = (ev) => {
-        fab.removeEventListener("pointermove", onMove);
-        fab.removeEventListener("pointerup", onUp);
-        fab.removeEventListener("pointercancel", onUp);
-        if (dragMoved) {
-          // 部分环境抬起前最后一段 move 不派发，用抬起坐标补一次落点
-          if (ev && Number.isFinite(ev.clientX)) applyPos(ev.clientX - offX, ev.clientY - offY);
-          const r2 = fab.getBoundingClientRect();
-          try { localStorage.setItem(POS_KEY, JSON.stringify({ x: r2.left, y: r2.top })); } catch (_) {}
-          // 拖动后的抬起会触发一次 click，吞掉以免误开弹窗
-          const swallow = (ce) => { ce.stopPropagation(); ce.preventDefault(); };
-          fab.addEventListener("click", swallow, true);
-          setTimeout(() => fab.removeEventListener("click", swallow, true), 0);
-        }
-      };
-      fab.addEventListener("pointermove", onMove);
-      fab.addEventListener("pointerup", onUp);
-      fab.addEventListener("pointercancel", onUp);
-    });
-    fab.addEventListener("click", () => { if (!dragMoved) ui.quickNoteDialog(); });
-    // 视口尺寸变化时把已保存位置钳制回可视范围
-    window.addEventListener("resize", () => {
-      try {
-        const saved = JSON.parse(localStorage.getItem(POS_KEY) || "null");
-        if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) applyPos(saved.x, saved.y);
-      } catch (_) {}
-    });
-  })();
-  
   // 移动端侧边抽屉导航控制
   const drawer = document.getElementById("sidebar-drawer");
   const backdrop = document.getElementById("sidebar-backdrop");
