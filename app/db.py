@@ -199,19 +199,7 @@ CREATE TABLE IF NOT EXISTS foreshadows (
 
 );
 
-CREATE TABLE IF NOT EXISTS notes (
 
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-    work_id INTEGER REFERENCES works(id) ON DELETE SET NULL,
-
-    content TEXT NOT NULL,
-
-    tags TEXT DEFAULT '',
-
-    created_at TEXT DEFAULT (datetime('now','localtime'))
-
-);
 
 CREATE TABLE IF NOT EXISTS exports (
 
@@ -639,6 +627,7 @@ def init_db():
     conn = get_db()
 
     conn.executescript(SCHEMA)
+    conn.execute("DROP TABLE IF EXISTS notes")
 
     for table, cols in MIGRATIONS.items():
 

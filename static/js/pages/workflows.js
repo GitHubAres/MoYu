@@ -675,7 +675,7 @@ async function renderRun(view, runId) {
     if (!assets) {
       try {
         const res = await api.get(`/workflows/runs/${runId}/steps/${stepSeq}/extracted-assets`);
-        assets = res.assets || { work_info: {}, entities: [], relations: [], outline_nodes: [], foreshadows: [], notes: [] };
+        assets = res.assets || { work_info: {}, entities: [], relations: [], outline_nodes: [], foreshadows: [] };
       } catch (e) {
         ui.toast("提取创作资产失败：" + e.message, "err");
         return;

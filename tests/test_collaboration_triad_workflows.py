@@ -5,7 +5,6 @@
 import pytest
 from app.db import get_db
 from app.services.context_service import assemble_workflow_context
-from app.services.plot_service import get_node_plot_triad
 
 
 def test_e2e_triad_workflow_collaboration(client):

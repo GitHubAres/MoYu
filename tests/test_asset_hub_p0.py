@@ -2,7 +2,8 @@
 """P0 阶段止血回归测试：大纲事件、双键补全、聚合读侧放宽、回流幂等、删除知情"""
 import pytest
 from app import db as db_module
-from app.services.plot_service import get_node_plot_triad, batch_sync_triad_assets
+from app.services.plot_service import batch_sync_triad_assets
+from app.services.asset_hub import aggregate_for_node
 from conftest import make_wvc
 
 
@@ -52,7 +53,7 @@ def test_plot_triad_aggregate_includes_chapter_only_assets(client):
     assert any(f["title"] == "仅绑章节的旧伏笔" for f in items["foreshadows"])
 
     # 2. 领域服务读侧：get_node_plot_triad
-    triad = get_node_plot_triad(db, work_id, node["id"])
+    triad = aggregate_for_node(db, work_id, node["id"])
     assert any(e["event"] == "仅绑章节的旧事件" for e in triad["timeline_events"])
     assert any(f["title"] == "仅绑章节的旧伏笔" for f in triad["foreshadows"])
 

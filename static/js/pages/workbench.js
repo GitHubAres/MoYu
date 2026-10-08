@@ -881,12 +881,17 @@ registerPage("workbench", async (view, { segs, params }) => {
 
 
 
-  function findCurrentOutlineNode() {
+  function findCurrentOutlineNodes() {
+    if (!chapter) return [];
     const flat = [];
     (function walk(nodes) {
       for (const n of nodes) { flat.push(n); walk(n.children || []); }
     })(outlineNodes);
-    return flat.find((n) => n.chapter_id === chapter.id) || null;
+    return flat.filter((n) => n.chapter_id === chapter.id);
+  }
+
+  function findCurrentOutlineNode() {
+    return findCurrentOutlineNodes()[0] || null;
   }
 
   function saveRecentInstruction(text) {
@@ -1703,8 +1708,8 @@ registerPage("workbench", async (view, { segs, params }) => {
   function renderRelated() {
     relatedBox.innerHTML = "";
     if (!chapter) return;
-    const node = findCurrentOutlineNode();
-    if (node) {
+    const nodes = findCurrentOutlineNodes();
+    for (const node of nodes) {
       relatedBox.append(ui.el("div", { class: "flex items-start gap-2 px-2 py-1.5 rounded-lg bg-surface-container-low" },
         ui.icon("account_tree", "text-[16px] text-secondary mt-0.5"),
         ui.el("div", { class: "flex flex-col min-w-0" },

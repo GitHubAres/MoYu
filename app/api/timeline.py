@@ -86,37 +86,22 @@ class EventIn(BaseModel):
 @router.post("/works/{work_id}/timeline", status_code=201)
 def create_event(work_id: int, body: EventIn):
     _one("SELECT id FROM works WHERE id=?", (work_id,))
-    db = get_db()
-    chapter_id = body.chapter_id
-    outline_node_id = body.outline_node_id
-    if not outline_node_id and chapter_id:
-        node_row = db.execute(
-            "SELECT id FROM outline_nodes WHERE work_id=? AND chapter_id=? ORDER BY id ASC LIMIT 1",
-            (work_id, chapter_id)
-        ).fetchone()
-        if node_row:
-            outline_node_id = node_row[0]
-    if not chapter_id and outline_node_id:
-        ch_row = db.execute(
-            "SELECT chapter_id FROM outline_nodes WHERE work_id=? AND id=?",
-            (work_id, outline_node_id)
-        ).fetchone()
-        if ch_row and ch_row[0]:
-            chapter_id = ch_row[0]
-    _check_chapter(work_id, chapter_id)
-    _check_outline_node(work_id, outline_node_id)
     if not body.event.strip():
         raise HTTPException(400, "事件内容不能为空")
-    n = db.execute(
-        "SELECT COALESCE(MAX(sort_order),0)+1 FROM timeline_events WHERE work_id=?",
-        (work_id,)).fetchone()[0]
-    cur = db.execute(
-        "INSERT INTO timeline_events(work_id, chapter_id, outline_node_id, time_label, event, characters, sort_order) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (work_id, chapter_id, outline_node_id, body.time_label.strip(),
-         body.event.strip(), body.characters.strip(), n))
-    db.commit()
-    return _event(work_id, cur.lastrowid)
+    db = get_db()
+    from app.services.asset_hub import upsert_timeline_event
+    try:
+        return upsert_timeline_event(
+            db,
+            work_id=work_id,
+            event=body.event,
+            time_label=body.time_label,
+            characters=body.characters,
+            chapter_id=body.chapter_id,
+            outline_node_id=body.outline_node_id,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 class EventPatch(BaseModel):
@@ -236,35 +221,20 @@ def import_events(body: ImportIn):
     if not events:
         raise HTTPException(400, "没有可入库的事件")
     db = get_db()
-    n = db.execute(
-        "SELECT COALESCE(MAX(sort_order),0) FROM timeline_events WHERE work_id=?",
-        (body.work_id,)).fetchone()[0]
+    from app.services.asset_hub import upsert_timeline_event
     created = []
     for e in events:
-        outline_node_id = e.outline_node_id
-        chapter_id = e.chapter_id
-        if not outline_node_id and chapter_id:
-            node_row = db.execute(
-                "SELECT id FROM outline_nodes WHERE work_id=? AND chapter_id=? ORDER BY id ASC LIMIT 1",
-                (body.work_id, chapter_id)
-            ).fetchone()
-            if node_row:
-                outline_node_id = node_row[0]
-        if not chapter_id and outline_node_id:
-            ch_row = db.execute(
-                "SELECT chapter_id FROM outline_nodes WHERE work_id=? AND id=?",
-                (body.work_id, outline_node_id)
-            ).fetchone()
-            if ch_row and ch_row[0]:
-                chapter_id = ch_row[0]
-        _check_chapter(body.work_id, chapter_id)
-        _check_outline_node(body.work_id, outline_node_id)
-        n += 1
-        cur = db.execute(
-            "INSERT INTO timeline_events(work_id, chapter_id, outline_node_id, time_label, event, characters, sort_order) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (body.work_id, chapter_id, outline_node_id, e.time_label.strip(),
-             e.event.strip(), e.characters.strip(), n))
-        created.append(cur.lastrowid)
-    db.commit()
-    return [_event(body.work_id, i) for i in created]
+        try:
+            res = upsert_timeline_event(
+                db,
+                work_id=body.work_id,
+                event=e.event,
+                time_label=e.time_label,
+                characters=e.characters,
+                chapter_id=e.chapter_id,
+                outline_node_id=e.outline_node_id,
+            )
+            created.append(res)
+        except ValueError as err:
+            raise HTTPException(400, str(err))
+    return created

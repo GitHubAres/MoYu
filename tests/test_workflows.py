@@ -837,8 +837,9 @@ def test_sync_workflow_assets(client):
     assert "第1卷 绝处逢生" in out_titles
     assert "第1章 江上捞尸" in out_titles
 
-    notes = db.execute("SELECT content FROM notes WHERE work_id=?", (work_id,)).fetchall()
-    assert len(notes) == 0  # 验证灵感便签功能彻底清除，设定绝不污染写入 notes 表
+    # 验证灵感便签功能彻底清除，notes 表已物理移除且绝不污染写入
+    notes_table = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'").fetchone()
+    assert notes_table is None
 
     # 校验作品立项信息与伏笔库
     w = db.execute("SELECT title, genre FROM works WHERE id=?", (work_id,)).fetchone()

@@ -74,11 +74,10 @@ def seed_demo():
                (work_id, "item", "龙渊剑", "{}", "凡铁铸就的古剑，内蕴祖师一缕剑意，可引九天罡风。", "关键道具"))
     db.execute("INSERT INTO chapter_entities(chapter_id, entity_id) VALUES (?,?)", (c1, e1))
 
-    # 伏笔
-    db.execute("INSERT INTO foreshadows(work_id, title, content, status, chapter_id, outline_node_id) VALUES (?,?,?,?,?,?)",
-               (work_id, "传讯符灰烬", "大长老袖袍中的传讯符悄然化为灰烬，魔道暗影潜伏的暗线被无声埋下。", "planted", c1, node1))
-    db.execute("INSERT INTO foreshadows(work_id, title, content, status, chapter_id, outline_node_id) VALUES (?,?,?,?,?,?)",
-               (work_id, "剑阁旧印裂痕", "剑阁旧印上的裂痕指向三十年前的心魔折断之谜。", "pending", c2, node2))
+    # 伏笔（统一委托 asset_hub）
+    from app.services.asset_hub import upsert_foreshadow
+    upsert_foreshadow(db, work_id, "传讯符灰烬", "大长老袖袍中的传讯符悄然化为灰烬，魔道暗影潜伏的暗线被无声埋下。", "planted", c1, node1)
+    upsert_foreshadow(db, work_id, "剑阁旧印裂痕", "剑阁旧印上的裂痕指向三十年前的心魔折断之谜。", "pending", c2, node2)
 
 
     db.commit()

@@ -66,15 +66,20 @@ class ForeshadowIn(BaseModel):
 def create_foreshadow(work_id: int, body: ForeshadowIn):
     _one("SELECT id FROM works WHERE id=?", (work_id,))
     _check_status(body.status)
-    if body.chapter_id is not None:
-        _one("SELECT id FROM chapters WHERE id=?", (body.chapter_id,))
-    _check_outline_node(work_id, body.outline_node_id)
     db = get_db()
-    cur = db.execute(
-        "INSERT INTO foreshadows(work_id, title, content, status, chapter_id, outline_node_id) VALUES (?,?,?,?,?,?)",
-        (work_id, body.title, body.content, body.status, body.chapter_id, body.outline_node_id))
-    db.commit()
-    return _foreshadow(cur.lastrowid)
+    from app.services.asset_hub import upsert_foreshadow
+    try:
+        return upsert_foreshadow(
+            db,
+            work_id=work_id,
+            title=body.title,
+            content=body.content,
+            status=body.status,
+            chapter_id=body.chapter_id,
+            outline_node_id=body.outline_node_id,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.patch("/foreshadows/{foreshadow_id}")

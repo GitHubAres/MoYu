@@ -241,24 +241,13 @@ def get_chapter_delete_impact(chapter_id: int):
 def delete_chapter(chapter_id: int):
     _one("SELECT id FROM chapters WHERE id=?", (chapter_id,))
     db = get_db()
-    foreshadows_count = db.execute("SELECT COUNT(*) FROM foreshadows WHERE chapter_id=?", (chapter_id,)).fetchone()[0]
-    timeline_events_count = db.execute("SELECT COUNT(*) FROM timeline_events WHERE chapter_id=?", (chapter_id,)).fetchone()[0]
-    outline_nodes_count = db.execute("SELECT COUNT(*) FROM outline_nodes WHERE chapter_id=?", (chapter_id,)).fetchone()[0]
-    total = foreshadows_count + timeline_events_count + outline_nodes_count
-
-    db.execute("UPDATE foreshadows SET chapter_id=NULL WHERE chapter_id=?", (chapter_id,))
-    db.execute("UPDATE timeline_events SET chapter_id=NULL WHERE chapter_id=?", (chapter_id,))
-    db.execute("UPDATE outline_nodes SET chapter_id=NULL WHERE chapter_id=?", (chapter_id,))
+    from app.services.asset_hub import detach_chapter
+    impact = detach_chapter(db, chapter_id)
     db.execute("DELETE FROM chapters WHERE id=?", (chapter_id,))
     db.commit()
     return {
         "ok": True,
-        "impact": {
-            "foreshadows": foreshadows_count,
-            "timeline_events": timeline_events_count,
-            "outline_nodes": outline_nodes_count,
-            "total": total,
-        }
+        "impact": impact,
     }
 
 

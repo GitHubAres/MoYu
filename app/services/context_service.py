@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """统一上下文装配服务"""
 from typing import Optional
-from app.services.plot_service import get_node_plot_triad
+from app.services.asset_hub import aggregate_for_node
 
 
 def assemble_plot_triad_block(db, work_id: int, outline_node_id: Optional[int]) -> str:
     """提取并格式化目标大纲节点的剧情脉络三位一体卡片。"""
     if not outline_node_id:
         return ""
-    triad = get_node_plot_triad(db, work_id, outline_node_id)
+    triad = aggregate_for_node(db, work_id, outline_node_id)
     if not triad or not triad.get("node"):
         return ""
 
