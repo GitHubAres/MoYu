@@ -6,30 +6,47 @@ from typing import Optional, Any
 def get_node_plot_triad(db, work_id: int, node_id: int) -> dict[str, Any]:
     """获取指定大纲节点的三位一体剧情聚合全貌（大纲详情 + 绑定事件 + 关联伏笔）。"""
     node = db.execute(
-        "SELECT id, work_id, parent_id, title, synopsis, status FROM outline_nodes WHERE id = ? AND work_id = ?",
+        "SELECT id, work_id, parent_id, title, synopsis, status, chapter_id FROM outline_nodes WHERE id = ? AND work_id = ?",
         (node_id, work_id),
     ).fetchone()
     if not node:
         return {}
 
-    events = db.execute(
-        """SELECT id, time_label, event, characters, chapter_id, outline_node_id, created_at
-           FROM timeline_events
-           WHERE work_id = ? AND outline_node_id = ?
-           ORDER BY sort_order ASC, id ASC""",
-        (work_id, node_id),
-    ).fetchall()
-
-    foreshadows = db.execute(
-        """SELECT id, title, content, status, chapter_id, outline_node_id, created_at
-           FROM foreshadows
-           WHERE work_id = ? AND outline_node_id = ?
-           ORDER BY id ASC""",
-        (work_id, node_id),
-    ).fetchall()
+    node_dict = dict(node)
+    ch_id = node_dict.get("chapter_id")
+    if ch_id is not None:
+        events = db.execute(
+            """SELECT id, time_label, event, characters, chapter_id, outline_node_id, created_at
+               FROM timeline_events
+               WHERE work_id = ? AND (outline_node_id = ? OR chapter_id = ?)
+               ORDER BY sort_order ASC, id ASC""",
+            (work_id, node_id, ch_id),
+        ).fetchall()
+        foreshadows = db.execute(
+            """SELECT id, title, content, status, chapter_id, outline_node_id, created_at
+               FROM foreshadows
+               WHERE work_id = ? AND (outline_node_id = ? OR chapter_id = ?)
+               ORDER BY id ASC""",
+            (work_id, node_id, ch_id),
+        ).fetchall()
+    else:
+        events = db.execute(
+            """SELECT id, time_label, event, characters, chapter_id, outline_node_id, created_at
+               FROM timeline_events
+               WHERE work_id = ? AND outline_node_id = ?
+               ORDER BY sort_order ASC, id ASC""",
+            (work_id, node_id),
+        ).fetchall()
+        foreshadows = db.execute(
+            """SELECT id, title, content, status, chapter_id, outline_node_id, created_at
+               FROM foreshadows
+               WHERE work_id = ? AND outline_node_id = ?
+               ORDER BY id ASC""",
+            (work_id, node_id),
+        ).fetchall()
 
     return {
-        "node": dict(node),
+        "node": node_dict,
         "timeline_events": [dict(e) for e in events],
         "foreshadows": [dict(f) for f in foreshadows],
     }
@@ -133,16 +150,21 @@ def batch_sync_triad_assets(
         chars = (ev.get("characters") or "").strip()
         node_id = ev.get("outline_node_id") or default_outline_node_id
         chap_id = ev.get("chapter_id") or default_chapter_id
-        add_timeline_event(
-            db,
-            work_id=work_id,
-            time_label=time_label,
-            event=event_text,
-            characters=chars,
-            chapter_id=chap_id,
-            outline_node_id=node_id,
-        )
-        stats["timeline_events_added"] += 1
+        dup = db.execute(
+            "SELECT id FROM timeline_events WHERE work_id = ? AND event = ? AND (chapter_id IS ? OR chapter_id = ?) AND (outline_node_id IS ? OR outline_node_id = ?)",
+            (work_id, event_text, chap_id, chap_id, node_id, node_id),
+        ).fetchone()
+        if not dup:
+            add_timeline_event(
+                db,
+                work_id=work_id,
+                time_label=time_label,
+                event=event_text,
+                characters=chars,
+                chapter_id=chap_id,
+                outline_node_id=node_id,
+            )
+            stats["timeline_events_added"] += 1
 
     # 3. 伏笔记录入库
     for fs in foreshadows:
@@ -153,15 +175,20 @@ def batch_sync_triad_assets(
         status = fs.get("status") or "planted"
         node_id = fs.get("outline_node_id") or default_outline_node_id
         chap_id = fs.get("chapter_id") or default_chapter_id
-        add_foreshadow(
-            db,
-            work_id=work_id,
-            title=title,
-            content=content,
-            status=status,
-            chapter_id=chap_id,
-            outline_node_id=node_id,
-        )
-        stats["foreshadows_added"] += 1
+        dup = db.execute(
+            "SELECT id FROM foreshadows WHERE work_id = ? AND title = ? AND (chapter_id IS ? OR chapter_id = ?) AND (outline_node_id IS ? OR outline_node_id = ?)",
+            (work_id, title, chap_id, chap_id, node_id, node_id),
+        ).fetchone()
+        if not dup:
+            add_foreshadow(
+                db,
+                work_id=work_id,
+                title=title,
+                content=content,
+                status=status,
+                chapter_id=chap_id,
+                outline_node_id=node_id,
+            )
+            stats["foreshadows_added"] += 1
 
     return stats

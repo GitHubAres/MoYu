@@ -762,7 +762,7 @@ registerPage("outline", async (view, { segs, query }) => {
             onclick: async () => {
               if (!eventInput.value.trim()) { ui.toast("事件内容不能为空", "err"); return; }
               try {
-                await api.post(`/works/${workId}/timeline/events`, {
+                await api.post(`/works/${workId}/timeline`, {
                   time_label: timeInput.value.trim(),
                   event: eventInput.value.trim(),
                   characters: charsInput.value.trim(),

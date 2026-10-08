@@ -51,12 +51,12 @@ def seed_demo():
     # 大纲节点
     n1 = db.execute("INSERT INTO outline_nodes(work_id, parent_id, title, synopsis, status, chapter_id, sort_order) VALUES (?,?,?,?,?,?,1)",
                     (work_id, None, "卷一：问道青云", "凡尘问道，起承转合已闭环", "done", None)).lastrowid
-    db.execute("INSERT INTO outline_nodes(work_id, parent_id, title, synopsis, status, chapter_id, sort_order) VALUES (?,?,?,?,?,?,1)",
-               (work_id, n1, "第一章 剑斩云霄", "叶临渊护宗大阵前顿悟太虚剑经第七层，一剑斩落敌方先锋长老。", "done", c1))
+    node1 = db.execute("INSERT INTO outline_nodes(work_id, parent_id, title, synopsis, status, chapter_id, sort_order) VALUES (?,?,?,?,?,?,1)",
+               (work_id, n1, "第一章 剑斩云霄", "叶临渊护宗大阵前顿悟太虚剑经第七层，一剑斩落敌方先锋长老。", "done", c1)).lastrowid
     n2 = db.execute("INSERT INTO outline_nodes(work_id, parent_id, title, synopsis, status, chapter_id, sort_order) VALUES (?,?,?,?,?,?,2)",
                     (work_id, None, "卷二：逆天改命", "当篇推进中：宗门内乱暗涌", "active", None)).lastrowid
-    db.execute("INSERT INTO outline_nodes(work_id, parent_id, title, synopsis, status, chapter_id, sort_order) VALUES (?,?,?,?,?,?,1)",
-               (work_id, n2, "第四十二章 霜夜回响", "林惊玄雪夜复仇，雁翎阵中初露锋芒。", "active", c2))
+    node2 = db.execute("INSERT INTO outline_nodes(work_id, parent_id, title, synopsis, status, chapter_id, sort_order) VALUES (?,?,?,?,?,?,1)",
+               (work_id, n2, "第四十二章 霜夜回响", "林惊玄雪夜复仇，雁翎阵中初露锋芒。", "active", c2)).lastrowid
 
     # 设定
     e1 = db.execute("""INSERT INTO entities(work_id, category, name, fields_json, content, tags)
@@ -75,10 +75,10 @@ def seed_demo():
     db.execute("INSERT INTO chapter_entities(chapter_id, entity_id) VALUES (?,?)", (c1, e1))
 
     # 伏笔
-    db.execute("INSERT INTO foreshadows(work_id, title, content, status, chapter_id) VALUES (?,?,?,?,?)",
-               (work_id, "传讯符灰烬", "大长老袖袍中的传讯符悄然化为灰烬，魔道暗影潜伏的暗线被无声埋下。", "planted", c1))
-    db.execute("INSERT INTO foreshadows(work_id, title, content, status, chapter_id) VALUES (?,?,?,?,?)",
-               (work_id, "剑阁旧印裂痕", "剑阁旧印上的裂痕指向三十年前的心魔折断之谜。", "pending", c2))
+    db.execute("INSERT INTO foreshadows(work_id, title, content, status, chapter_id, outline_node_id) VALUES (?,?,?,?,?,?)",
+               (work_id, "传讯符灰烬", "大长老袖袍中的传讯符悄然化为灰烬，魔道暗影潜伏的暗线被无声埋下。", "planted", c1, node1))
+    db.execute("INSERT INTO foreshadows(work_id, title, content, status, chapter_id, outline_node_id) VALUES (?,?,?,?,?,?)",
+               (work_id, "剑阁旧印裂痕", "剑阁旧印上的裂痕指向三十年前的心魔折断之谜。", "pending", c2, node2))
 
 
     db.commit()

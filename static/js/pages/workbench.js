@@ -602,7 +602,14 @@ registerPage("workbench", async (view, { segs, params }) => {
       }),
       iconBtn("delete", "删除章节", async (e) => {
         e.stopPropagation();
-        const ok = await ui.confirm("删除章节", `将删除章节「${c.title}」及其全部版本快照，且不可恢复。确定继续？`, "删除", true);
+        let bindMsg = "";
+        try {
+          const impact = await api.get(`/chapters/${c.id}/delete-impact`);
+          if (impact && impact.total > 0) {
+            bindMsg = `，将解除 ${impact.total} 条绑定`;
+          }
+        } catch (_) {}
+        const ok = await ui.confirm("删除章节", `将删除章节「${c.title}」及其全部版本快照${bindMsg}，且不可恢复。确定继续？`, "删除", true);
         if (!ok) return;
         await api.del(`/chapters/${c.id}`);
         vol.chapters = vol.chapters.filter((x) => x.id !== c.id);

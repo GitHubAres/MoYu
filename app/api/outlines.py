@@ -175,24 +175,45 @@ def get_node_plot_items(work_id: int, node_id: int):
     """聚合返回大纲节点名下的剧情时间线事件与关联伏笔。"""
     _one("SELECT id FROM works WHERE id=?", (work_id,))
     node = _one("SELECT * FROM outline_nodes WHERE id=? AND work_id=?", (node_id, work_id))
-    timeline_events = _all(
-        """SELECT te.*, c.title AS chapter_title, n.title AS outline_title
-           FROM timeline_events te
-           LEFT JOIN chapters c ON c.id = te.chapter_id
-           LEFT JOIN outline_nodes n ON n.id = te.outline_node_id
-           WHERE te.work_id=? AND te.outline_node_id=?
-           ORDER BY te.sort_order, te.id""",
-        (work_id, node_id)
-    )
-    foreshadows = _all(
-        """SELECT f.*, c.title AS chapter_title, n.title AS outline_title
-           FROM foreshadows f
-           LEFT JOIN chapters c ON c.id = f.chapter_id
-           LEFT JOIN outline_nodes n ON n.id = f.outline_node_id
-           WHERE f.work_id=? AND f.outline_node_id=?
-           ORDER BY f.id DESC""",
-        (work_id, node_id)
-    )
+    ch_id = node.get("chapter_id")
+    if ch_id is not None:
+        timeline_events = _all(
+            """SELECT te.*, c.title AS chapter_title, n.title AS outline_title
+               FROM timeline_events te
+               LEFT JOIN chapters c ON c.id = te.chapter_id
+               LEFT JOIN outline_nodes n ON n.id = te.outline_node_id
+               WHERE te.work_id=? AND (te.outline_node_id=? OR te.chapter_id=?)
+               ORDER BY te.sort_order, te.id""",
+            (work_id, node_id, ch_id)
+        )
+        foreshadows = _all(
+            """SELECT f.*, c.title AS chapter_title, n.title AS outline_title
+               FROM foreshadows f
+               LEFT JOIN chapters c ON c.id = f.chapter_id
+               LEFT JOIN outline_nodes n ON n.id = f.outline_node_id
+               WHERE f.work_id=? AND (f.outline_node_id=? OR f.chapter_id=?)
+               ORDER BY f.id DESC""",
+            (work_id, node_id, ch_id)
+        )
+    else:
+        timeline_events = _all(
+            """SELECT te.*, c.title AS chapter_title, n.title AS outline_title
+               FROM timeline_events te
+               LEFT JOIN chapters c ON c.id = te.chapter_id
+               LEFT JOIN outline_nodes n ON n.id = te.outline_node_id
+               WHERE te.work_id=? AND te.outline_node_id=?
+               ORDER BY te.sort_order, te.id""",
+            (work_id, node_id)
+        )
+        foreshadows = _all(
+            """SELECT f.*, c.title AS chapter_title, n.title AS outline_title
+               FROM foreshadows f
+               LEFT JOIN chapters c ON c.id = f.chapter_id
+               LEFT JOIN outline_nodes n ON n.id = f.outline_node_id
+               WHERE f.work_id=? AND f.outline_node_id=?
+               ORDER BY f.id DESC""",
+            (work_id, node_id)
+        )
     return {
         "node_id": node_id,
         "timeline_events": timeline_events,

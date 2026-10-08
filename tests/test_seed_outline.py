@@ -34,6 +34,9 @@ def test_seed_demo_idempotent(client):
 
     foreshadows = client.get(f"/api/works/{work_id}/foreshadows").json()
     assert {f["status"] for f in foreshadows} == {"planted", "pending"}
+    for f in foreshadows:
+        assert f["outline_node_id"] is not None
+        assert f["outline_title"] is not None
 
 
 def test_outline_crud_and_enum(client):
