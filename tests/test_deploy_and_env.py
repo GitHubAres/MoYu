@@ -1,4 +1,4 @@
-import os
+﻿import os
 from fastapi.testclient import TestClient
 from app.main import create_app
 import app.paths as paths
@@ -31,4 +31,5 @@ def test_api_version_endpoint():
     assert res.status_code == 200
     data = res.json()
     assert data["ok"] is True
-    assert data["version"] == "1.9.7"
+    from app.version import APP_VERSION
+    assert data["version"] == APP_VERSION
