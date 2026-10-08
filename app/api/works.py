@@ -290,3 +290,37 @@ def dashboard_stats():
     chapters = db.execute("SELECT COUNT(*) FROM chapters").fetchone()[0]
     return {"total_words": total, "today_words": today,
             "work_count": works, "chapter_count": chapters}
+
+
+class ContextPreviewIn(BaseModel):
+    entity_ids: list[int] = []
+    include_current_chapter: bool = True
+    include_prev_chapter: bool = True
+    include_outline: bool = True
+    include_style: bool = True
+
+
+@router.post("/chapters/{chapter_id}/context/preview")
+def preview_chapter_context(chapter_id: int, body: ContextPreviewIn | None = None):
+    """根据勾选项后端装配并预览章节上下文。"""
+    ch = _one("SELECT c.*, v.work_id FROM chapters c JOIN volumes v ON c.volume_id = v.id WHERE c.id=?", (chapter_id,))
+    work_id = ch["work_id"]
+    db = get_db()
+    from app.services.context_service import assemble_writing_context
+    b = body or ContextPreviewIn()
+    ctx = assemble_writing_context(
+        db=db,
+        work_id=work_id,
+        chapter_id=chapter_id,
+        entity_ids=b.entity_ids,
+        include_current_chapter=b.include_current_chapter,
+        include_prev_chapter=b.include_prev_chapter,
+        include_outline=b.include_outline,
+        include_style=b.include_style,
+    )
+    blocks = [s.strip() for s in ctx.split("\n\n----\n\n") if s.strip()]
+    return {
+        "context": ctx,
+        "items_count": len(blocks),
+        "blocks": blocks,
+    }

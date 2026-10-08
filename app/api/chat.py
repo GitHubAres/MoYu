@@ -24,6 +24,11 @@ class ChatIn(BaseModel):
     selection: str = ""
     skill_id: Optional[int] = None
     context: str = ""
+    entity_ids: list[int] = []
+    include_current_chapter: bool = True
+    include_prev_chapter: bool = True
+    include_outline: bool = True
+    include_style: bool = True
     length: str = "medium"
     candidates: int = 1
     stream: bool = True
@@ -166,6 +171,21 @@ async def send_chat_message(body: ChatIn):
            ORDER BY id ASC""",
         (session_id, user_msg_id),
     ).fetchall()
+
+    # 后端统一装配领域知识上下文 (context_service)
+    from app.services.context_service import assemble_writing_context
+    assembled_ctx = assemble_writing_context(
+        db=db,
+        work_id=work_id,
+        chapter_id=body.chapter_id,
+        entity_ids=body.entity_ids,
+        include_current_chapter=body.include_current_chapter,
+        include_prev_chapter=body.include_prev_chapter,
+        include_outline=body.include_outline,
+        include_style=body.include_style,
+    )
+    if assembled_ctx:
+        body.context = f"{assembled_ctx}\n\n----\n\n{body.context}".strip() if body.context else assembled_ctx
 
     # 组装 System Prompt 与长度要求
     task = body.task if body.task in AIOrchestrator.BASIC_PROMPTS else "continue"

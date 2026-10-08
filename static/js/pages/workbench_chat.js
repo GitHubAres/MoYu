@@ -26,6 +26,7 @@ window.WorkbenchChat = (() => {
       clearSelection,
       getContext,
       getContextCount,
+      getContextOptions,
       contextDrawerEl,
       onAdopt,
       onUndoAdopt,
@@ -803,7 +804,7 @@ window.WorkbenchChat = (() => {
 
       const selObj = customSelection !== null ? { text: customSelection } : (getSelection ? getSelection() : null);
       const selText = selObj && selObj.text ? selObj.text.trim() : "";
-      const contextText = getContext ? getContext() : "";
+      const ctxOpts = getContextOptions ? getContextOptions() : {};
 
       const userDisplay = instructionText || (selText ? `针对选区（${selText.length}字）执行${TASK_LABELS[taskType] || taskType}` : `执行${TASK_LABELS[taskType] || taskType}`);
 
@@ -849,7 +850,11 @@ window.WorkbenchChat = (() => {
         message: instructionText,
         task: taskType,
         selection: selText,
-        context: contextText,
+        entity_ids: ctxOpts.entity_ids || [],
+        include_current_chapter: ctxOpts.include_current_chapter !== false,
+        include_prev_chapter: ctxOpts.include_prev_chapter !== false,
+        include_outline: ctxOpts.include_outline !== false,
+        include_style: ctxOpts.include_style !== false,
         length: aiLength || "2000",
         candidates: aiCandidates || 1,
         skill_id: window.aiActiveSkillId || null,

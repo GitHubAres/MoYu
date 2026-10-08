@@ -23,6 +23,12 @@ class _GenIn(BaseModel):
     instruction: str = ""
     context: str = ""
     selection: str = ""
+    chapter_id: int | None = None
+    entity_ids: list[int] = []
+    include_current_chapter: bool = True
+    include_prev_chapter: bool = True
+    include_outline: bool = True
+    include_style: bool = True
     length: str = "medium"
     candidates: int = 1
     stream: bool = False
@@ -247,6 +253,24 @@ class AIOrchestrator:
         return AIOrchestrator.LENGTH_HINTS.get(s, AIOrchestrator.LENGTH_HINTS["medium"])
 
     async def generate(self, body: _GenIn):
+        db = get_db()
+        if body.chapter_id:
+            chap = db.execute("SELECT c.id, v.work_id FROM chapters c JOIN volumes v ON c.volume_id = v.id WHERE c.id = ?", (body.chapter_id,)).fetchone()
+            if chap:
+                work_id = chap["work_id"]
+                from app.services.context_service import assemble_writing_context
+                assembled = assemble_writing_context(
+                    db=db,
+                    work_id=work_id,
+                    chapter_id=body.chapter_id,
+                    entity_ids=body.entity_ids,
+                    include_current_chapter=body.include_current_chapter,
+                    include_prev_chapter=body.include_prev_chapter,
+                    include_outline=body.include_outline,
+                    include_style=body.include_style,
+                )
+                if assembled:
+                    body.context = f"{assembled}\n\n----\n\n{body.context}".strip() if body.context else assembled
         task = body.task if body.task in self.BASIC_PROMPTS else "continue"
         sys_prompt, consumed = build_skill_system_prompt(
             skill_id=body.skill_id,

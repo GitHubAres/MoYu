@@ -44,6 +44,13 @@ registerPage("workbench", async (view, { segs, params }) => {
   let linkedEntities = [];                // 当前章节已持久化关联的设定
   let detectedEntities = [];              // 正文中智能探测到但未固定关联的设定
   let uncheckedEntityIds = new Set();     // 用户手动取消勾选的实体 id（跨刷新保持）
+  let ctxOptionsState = {
+    includeCurrentChapter: true,
+    includePrevChapter: true,
+    includeOutline: true,
+    includeStyle: true,
+  };
+  let allDisplayedEntities = [];
   let entityDetectTimer = null;           // 正文实体探测防抖定时器
 
   const ENTITY_CATS = {
@@ -1076,21 +1083,32 @@ registerPage("workbench", async (view, { segs, params }) => {
     stopBtn.classList.toggle("hidden", !generating);
   }
 
-  /* ---------- 实体上下文联动 ---------- */
+  /* ---------- 实体与上下文联动 (P2: 统一后端装配与预览) ---------- */
 
-  function formatEntityContext(e) {
-    const meta = ENTITY_CATS[e.category] || ENTITY_CATS.custom;
-    const lines = [`【${meta.label}设定 · ${e.name}】`];
-    if (e.tags) lines.push(`标签：${e.tags}`);
-    if (e.fields && typeof e.fields === "object") {
-      const fl = [];
-      for (const [k, v] of Object.entries(e.fields)) {
-        if (v && typeof v === "string" && v.trim()) fl.push(`- ${k}：${v.trim()}`);
-      }
-      if (fl.length) lines.push("关键属性：\n" + fl.join("\n"));
-    }
-    if (e.content && e.content.trim()) lines.push(`设定描述：\n${e.content.trim()}`);
-    return lines.join("\n");
+  function getSelectedEntityIds() {
+    return allDisplayedEntities
+      .filter((it) => it.cb && it.cb.checked)
+      .map((it) => it.entity.id);
+  }
+
+  function getContextOptions() {
+    return {
+      entity_ids: getSelectedEntityIds(),
+      include_current_chapter: !!ctxOptionsState.includeCurrentChapter,
+      include_prev_chapter: !!ctxOptionsState.includePrevChapter,
+      include_outline: !!ctxOptionsState.includeOutline,
+      include_style: !!ctxOptionsState.includeStyle,
+    };
+  }
+
+  function getActiveContextCount() {
+    let count = 0;
+    if (ctxOptionsState.includeCurrentChapter) count++;
+    if (ctxOptionsState.includePrevChapter) count++;
+    if (ctxOptionsState.includeOutline) count++;
+    if (ctxOptionsState.includeStyle) count++;
+    count += getSelectedEntityIds().length;
+    return count;
   }
 
   function detectEntitiesInContent(text) {
@@ -1132,9 +1150,12 @@ registerPage("workbench", async (view, { segs, params }) => {
     }
   }
 
-  function ctxRow(label, checked) {
-    const cb = ui.el("input", { type: "checkbox", class: "accent-[#316bf3]" });
+  function ctxRow(label, checked, onChange) {
+    const cb = ui.el("input", { type: "checkbox", class: "accent-[#316bf3] shrink-0" });
     cb.checked = checked;
+    if (onChange) {
+      cb.addEventListener("change", () => onChange(cb.checked));
+    }
     return {
       cb,
       row: ui.el("label", { class: "flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-surface-container-low cursor-pointer" },
@@ -1142,58 +1163,110 @@ registerPage("workbench", async (view, { segs, params }) => {
     };
   }
 
+  async function showContextPreviewModal() {
+    if (!chapter) {
+      ui.toast("请先选择章节", "info");
+      return;
+    }
+    const root = document.getElementById("modal-root");
+    let previewData = null;
+    try {
+      previewData = await api.post(`/chapters/${chapter.id}/context/preview`, getContextOptions());
+    } catch (err) {
+      ui.toast("获取上下文预览失败: " + err.message, "err");
+      return;
+    }
+
+    const modalBox = ui.el("div", {
+      class: "bg-surface rounded-2xl border border-border-feather shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden",
+      onclick: (e) => e.stopPropagation(),
+    });
+
+    const header = ui.el("div", { class: "flex items-center justify-between p-4 border-b border-border-feather" },
+      ui.el("div", { class: "flex items-center gap-2" },
+        ui.icon("visibility", "text-[20px] text-primary"),
+        ui.el("h3", { class: "font-title-sm text-title-sm text-on-surface font-semibold" }, "上下文装配预览"),
+        ui.el("span", { class: "text-[12px] px-2 py-0.5 rounded-full bg-surface-container text-on-surface-variant" },
+          `已装配 ${previewData.items_count || 0} 个区块 · ${previewData.context ? previewData.context.length : 0} 字`)),
+      ui.el("button", {
+        class: "p-1 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-colors",
+        onclick: () => overlay.remove(),
+      }, ui.icon("close", "text-[18px]"))
+    );
+
+    const bodyContent = ui.el("div", { class: "p-4 overflow-y-auto flex flex-col gap-3 flex-1 font-body-sm text-body-sm text-on-surface" });
+    if (!previewData.blocks || !previewData.blocks.length) {
+      bodyContent.append(ui.el("div", { class: "text-center py-8 text-on-surface-variant" }, "当前勾选条件下未装配任何上下文内容"));
+    } else {
+      previewData.blocks.forEach((blk, idx) => {
+        const itemBox = ui.el("div", { class: "p-3 rounded-xl bg-surface-container-lowest border border-border-feather/70 flex flex-col gap-1.5" },
+          ui.el("div", { class: "flex items-center justify-between text-[11px] text-outline font-label-sm border-b border-border-feather/40 pb-1" },
+            ui.el("span", null, `区块 #${idx + 1}`),
+            ui.el("span", null, `${blk.length} 字`)),
+          ui.el("pre", { class: "font-mono text-[12px] whitespace-pre-wrap break-words text-on-surface leading-relaxed max-h-48 overflow-y-auto" }, blk)
+        );
+        bodyContent.append(itemBox);
+      });
+    }
+
+    modalBox.append(header, bodyContent);
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4",
+      onclick: () => overlay.remove(),
+    }, modalBox);
+    root.append(overlay);
+  }
+
   async function renderContext() {
     ctxBox.innerHTML = "";
     ctxItems = [];
 
-    /* ---- 基础上下文组 ---- */
-    const baseGroup = ui.el("div", { class: "flex flex-col gap-0.5 pb-2 border-b border-border-feather" });
+    /* ---- 头部与装配预览按钮 ---- */
+    const topBar = ui.el("div", { class: "flex items-center justify-between pb-1.5 border-b border-border-feather" },
+      ui.el("div", { class: "flex items-center gap-1.5" },
+        ui.icon("layers", "text-[16px] text-primary"),
+        ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, "创作上下文")),
+      ui.el("button", {
+        class: "flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface-container-low hover:bg-surface-container text-secondary text-[12px] font-label-sm transition-colors",
+        title: "查看后端统一装配后的完整提示词上下文",
+        onclick: () => showContextPreviewModal(),
+      }, ui.icon("visibility", "text-[14px]"), "装配预览")
+    );
+    ctxBox.append(topBar);
 
-    const cur = ctxRow("当前章节（前 3000 字）", true);
-    cur.getText = () => editorText().slice(0, 3000);
+    /* ---- 基础上下文组 ---- */
+    const baseGroup = ui.el("div", { class: "flex flex-col gap-0.5 py-1.5 border-b border-border-feather" });
+
+    const cur = ctxRow("当前章节（前 3000 字）", ctxOptionsState.includeCurrentChapter, (v) => {
+      ctxOptionsState.includeCurrentChapter = v;
+      if (workbenchChatInstance && workbenchChatInstance.updateContextCount) workbenchChatInstance.updateContextCount();
+    });
     ctxItems.push(cur);
     baseGroup.append(cur.row);
 
-    if (prevChapterText) {
-      const prev = ctxRow("前情摘要（上一章末 500 字）", true);
-      prev.getText = () => prevChapterText;
-      ctxItems.push(prev);
-      baseGroup.append(prev.row);
-    }
+    const prev = ctxRow("前情摘要（上一章末 500 字）", ctxOptionsState.includePrevChapter, (v) => {
+      ctxOptionsState.includePrevChapter = v;
+      if (workbenchChatInstance && workbenchChatInstance.updateContextCount) workbenchChatInstance.updateContextCount();
+    });
+    ctxItems.push(prev);
+    baseGroup.append(prev.row);
 
     const node = findCurrentOutlineNode();
-    if (node && (node.title || node.synopsis)) {
-      const preview = node.synopsis ? `（${node.synopsis.replace(/\s+/g, " ").slice(0, 20)}…）` : "";
-      const outRow = ctxRow(`大纲 · ${node.title}${preview}`, true);
-      outRow.getText = () => `【关联大纲 · ${node.title}】\n${node.synopsis || "（本节暂无细纲）"}`;
-      ctxItems.push(outRow);
-      baseGroup.append(outRow.row);
+    const outLabel = node && node.title ? `故事大纲 · ${node.title}` : "故事大纲与剧情脉络";
+    const outRow = ctxRow(outLabel, ctxOptionsState.includeOutline, (v) => {
+      ctxOptionsState.includeOutline = v;
+      if (workbenchChatInstance && workbenchChatInstance.updateContextCount) workbenchChatInstance.updateContextCount();
+    });
+    ctxItems.push(outRow);
+    baseGroup.append(outRow.row);
 
-      // 三位一体深度联动：自动加载当前大纲节点关联的时间线事件与伏笔
-      try {
-        const plotData = await api.get(`/works/${workId}/outline/nodes/${node.id}/plot-items`);
-        if (plotData) {
-          if (Array.isArray(plotData.timeline_events) && plotData.timeline_events.length > 0) {
-            plotData.timeline_events.forEach((ev) => {
-              const tLabel = ev.time_label ? `[${ev.time_label}] ` : "";
-              const evRow = ctxRow(`事件 · ${tLabel}${ev.event}`, true);
-              evRow.getText = () => `【时间线事件】${tLabel}${ev.event}${ev.characters ? ` (涉及人物: ${ev.characters})` : ""}`;
-              ctxItems.push(evRow);
-              baseGroup.append(evRow.row);
-            });
-          }
-          if (Array.isArray(plotData.foreshadows) && plotData.foreshadows.length > 0) {
-            plotData.foreshadows.forEach((fs) => {
-              const st = fs.status === "resolved" ? "已回收" : "埋设中";
-              const fsRow = ctxRow(`伏笔 · 《${fs.title}》（${st}）`, true);
-              fsRow.getText = () => `【关联伏笔】《${fs.title}》（${st}）${fs.content ? `：${fs.content}` : ""}`;
-              ctxItems.push(fsRow);
-              baseGroup.append(fsRow.row);
-            });
-          }
-        }
-      } catch (_) {}
-    }
+    const styleRow = ctxRow("文风档案与风格指引", ctxOptionsState.includeStyle, (v) => {
+      ctxOptionsState.includeStyle = v;
+      if (workbenchChatInstance && workbenchChatInstance.updateContextCount) workbenchChatInstance.updateContextCount();
+    });
+    ctxItems.push(styleRow);
+    baseGroup.append(styleRow.row);
+
     ctxBox.append(baseGroup);
 
     /* ---- 设定库联动组 ---- */
@@ -1235,6 +1308,7 @@ registerPage("workbench", async (view, { segs, params }) => {
   async function refreshEntityList(container, countBadge) {
     if (!container) return;
     container.innerHTML = "";
+    allDisplayedEntities = [];
     if (!chapter) return;
 
     try { linkedEntities = await api.get(`/chapters/${chapter.id}/entities`); }
@@ -1250,8 +1324,11 @@ registerPage("workbench", async (view, { segs, params }) => {
     ];
 
     function updateBadge() {
-      const active = allToShow.filter((it) => it.ctxEntry && it.ctxEntry.cb.checked).length;
+      const active = allDisplayedEntities.filter((it) => it.cb && it.cb.checked).length;
       if (countBadge) countBadge.textContent = `${active}/${allToShow.length}项`;
+      if (workbenchChatInstance && workbenchChatInstance.updateContextCount) {
+        workbenchChatInstance.updateContextCount();
+      }
     }
 
     if (!allToShow.length) {
@@ -1277,9 +1354,9 @@ registerPage("workbench", async (view, { segs, params }) => {
         updateBadge();
       });
 
-      const ctxEntry = { cb, getText: () => formatEntityContext(ent) };
-      item.ctxEntry = ctxEntry;
-      ctxItems.push(ctxEntry);
+      const displayedItem = { entity: ent, isLinked, cb };
+      allDisplayedEntities.push(displayedItem);
+      ctxItems.push({ cb });
 
       const catIcon = ui.el("span", {
         class: `inline-flex items-center justify-center w-5 h-5 rounded text-[12px] shrink-0 ${meta.badge}`,
