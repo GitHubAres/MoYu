@@ -198,3 +198,58 @@ C 级清洗随 P0/P1 顺带完成；D 级由用户决策，不阻塞任何阶段
 2. P0-3 放宽读侧后，历史"只绑章节"的数据会重新出现在大纲聚合视图——这是**预期行为**（找回丢失产物），不是数据错乱。
 3. C-4 的 `DROP TABLE notes` 走 `MIGRATIONS` 增量迁移，符合 `AGENTS.md`"严禁破坏现有用户数据"红线（表内已无有效数据，v1.9.6 实测确认）。
 4. `data/` 用户数据、`dist/` 历史发布包在任何阶段都不在清洗范围内，除非用户对 D 级明确拍板。
+
+
+---
+
+## 阶段执行记录与验收归档
+
+- **执行日期**：2026-10-08
+- **执行规范依据**：严格依照《墨语MoYu_资产中枢修复计划书》及 `AGENTS.md` 工程红线执行。
+
+### 阶段 0：清洗（A/B/C-3 级）
+- **Commit**：`d428df4 chore: 清理报告垃圾脚本与作废/重复文档（计划书A/B/C-3级）`
+- **改动文件**：
+  - A 级删除：`scripts/build_full_report.py`、`scripts/build_architecture_report.py`、`scripts/build_report_sections.py`、`scripts/generate_report.py`、`scripts/append_chapters.py`、`scripts/generate_all.py`、`scripts/test.ps1`、`scripts/test.txt`、`scripts/report_parts/`、`scripts/__pycache__/`。
+  - B 级归档：将作废全景报告移动至仓库外 `../墨语归档/作废报告/`。
+  - C-3 级删除：`docs/墨语 MoYu 功能去重与体验一体化重构开发计划书 (v1.9.0).md`、`docs/写作工作流全功能技术设计报告与程序清单.md`。
+- **回归测试**：161 项测试全绿。
+
+### 阶段 1：P0 止血
+- **Commit**：`c998ca4 fix(P0): 修复大纲事件404/产物双键补全/聚合读侧放宽/回流幂等/删除知情`
+- **改动文件**：
+  - `static/js/pages/outline.js`：修改事件创建路由为 `POST /api/works/{work_id}/timeline`，修复 404；
+  - `app/api/seed.py`、`app/api/timeline.py`：资产产物补全 `outline_node_id` 双键回填；
+  - `app/api/outlines.py`、`app/services/plot_service.py`：放宽剧情聚合读侧（直接绑定节点或属于所属章节）；
+  - `app/services/plot_service.py`：资产回流防重复写入幂等去重；
+  - `app/api/works.py`、`static/js/pages/workbench.js`：删除章节前统计关联伏笔/事件/大纲节点并返回影响面，前端确认弹窗显示解除影响项数。
+  - 新增测试：`tests/test_asset_hub_p0.py`。
+- **回归测试**：166 项测试全绿。
+
+### 阶段 2：P1 资产中枢收口
+- **Commit**：`7e11de8 refactor(P1): 引入AssetHub统一资产绑定契约与聚合读侧，清理notes死schema`
+- **改动文件**：
+  - 新增中枢：`app/services/asset_hub.py`（封装 `resolve_binding`、`upsert_foreshadow`、`upsert_timeline_event`、`aggregate_for_node`、`aggregate_for_chapter`、`detach_chapter`）；
+  - 写侧收口：`app/api/board.py`、`app/api/timeline.py`、`app/api/seed.py`、`app/services/plot_service.py` 裸 INSERT 全部收口至 `asset_hub.py`；
+  - 读侧收口：`app/api/outlines.py` 剧情项接口委托 `asset_hub`，消除 `plot_service.py` 中的重复聚合逻辑；
+  - 删章节改走 `asset_hub.detach_chapter()`；`link-chapter` 绑定已有章节返回警告；前端支持多对一节点展示；
+  - C-4 & C-5 死代码清理：`app/db.py` 引入 `DROP TABLE IF EXISTS notes` 增量迁移并删除死表；`static/js/pages/workflows.js` 移除 `notes: []` 死字段。
+  - 新增测试：`tests/test_asset_hub_p1.py`（含全库裸 INSERT 静态守护）。
+- **回归测试**：173 项测试全绿。
+
+### 阶段 3：P2 上下文统一
+- **Commit**：`a9fa98b refactor(P2): 上下文装配收口至后端context_service，消除前后端双链路`
+- **改动文件**：
+  - `app/services/context_service.py`：扩展 `assemble_writing_context` 与 `format_entity_block`，统一为正文、前情摘要、大纲三位一体卡片、万相谱实体设定、文风档案的领域知识组装；
+  - `app/api/works.py`：新增 `POST /api/chapters/{chapter_id}/context/preview` 上下文装配预览端点；
+  - `app/api/chat.py` 与 `app/features.py`：修撰使对话与划词生成统一接入 `context_service.assemble_writing_context`；
+  - `static/js/pages/workbench.js` & `static/js/pages/workbench_chat.js`：删除前端 150+ 行手工拼接逻辑，上下文抽屉重构为纯“勾选+预览”UI，透传实体 ID 与配置开关；
+  - 新增测试：`tests/test_asset_hub_p2.py`（验证装配组件完整性与预览接口）。
+- **回归测试**：175 项测试全绿。
+
+### 阶段 4：P3 规范治理收尾
+- **Commit**：`docs(P3): AGENTS.md规范与资产中枢契约同步，计划书执行记录归档`
+- **改动文件**：
+  - `AGENTS.md`：测试计数转为动态表述、写入资产中枢契约与 `scripts/` 目录治理红线、标注实验 API；
+  - `docs/墨语MoYu_资产中枢修复计划书.md`：追加执行记录小节。
+- **全量测试验收**：175 项全绿。

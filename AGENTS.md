@@ -19,7 +19,7 @@ moyu/
 │   ├── features.py       # AI 助手、提示词及扩展页面 API 实现
 │   └── api/              # 业务路由（作品、大纲、设定、看板、图谱、时间线等）
 ├── static/               # 原生 JS 单页应用和本地前端资源
-├── tests/                # pytest 回归测试（含 158 项 API、编码守护与桌面端测试）
+├── tests/                # pytest 回归测试（数量以 pytest --collect-only 实测为准，只增不减）
 ├── scripts/              # 前端依赖本地化与 AI 联调工具
 ├── docs/                 # PRD、产品介绍、设计和开发计划
 ├── data/                 # 本地运行数据，gitignore
@@ -34,7 +34,7 @@ moyu/
 pip install -r requirements.txt
 python scripts/fetch_vendor.py   # 首次运行或更新前端依赖时需要联网
 python run.py                    # 启动本地服务：http://127.0.0.1:8321
-python -m pytest -q              # 158 项 API & 桌面端生命周期回归测试
+python -m pytest -q              # 全量回归测试（数量以 pytest --collect-only 实测为准，只增不减）
 python build_exe.py              # 构建单文件 exe（墨语MoYu-v1.9.7-win64.exe）
 python build_exe.py --onedir     # 文件夹形态
 `
@@ -44,6 +44,8 @@ python build_exe.py --onedir     # 文件夹形态
 ## 4. 架构约定
 
 - 数据层使用裸 sqlite3，新增字段必须通过 MIGRATIONS 增量迁移。
+- **资产中枢契约**：全库关于伏笔 (foreshadows) 与时间线事件 (timeline_events) 的写入与绑定契约严格以 app/services/asset_hub.py 为准，禁止裸 INSERT。
+- **内部实验接口规范**：/api/ai/brew/complete 标注为内部实验 API，非通用长篇写作上下文装配链路。
 - word_count() 按去空白后的字符数计数，含标点和中英文。
 - AI 工作流遵循“生成 → 预览/差异对比 → 用户采纳 → 写入版本记录 → 可撤销”。
 - AI 客户端使用 httpx 异步请求；不要传 	emperature，部分模型只接受固定值。
@@ -93,6 +95,7 @@ moyu/ 是本地版主项目；上级目录的 moyu-cloud/ 是独立部署变体�
 - 不静默修改 dist/、
 elease/ 中的产物。
 - 不删除用户数据或重置数据库。
+- **scripts/ 工程红线**：只放构建、部署、前端依赖本地化及核心 AI 联调工具；一次性报告/探测脚本用完即删，严禁在仓库内堆积垃圾脚本。
 
 ## 9. 接手任务与 AI 读档顺序
 
