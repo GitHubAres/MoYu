@@ -2,7 +2,7 @@
 
 ## 1. 项目简介
 
-墨语是本地优先的 AI 长篇小说写作工作台：Python FastAPI + SQLite + 原生 JavaScript 单页应用，可用 PyInstaller 打包为 Windows 纯轻量原生桌面应用（墨语MoYu-v2.0.0-win64.exe），依托 Windows 10/11 内置 WebView2 内核，无控制台黑框闪烁，点叉即退，关闭窗体自动退出后台服务；亦支持 --browser 回退至外部浏览器运行模式。作品与设置默认存储在本机 data/；使用外部 AI 时，用户选择的正文和上下文会发送给其配置的服务商。
+墨语是本地优先的 AI 长篇小说写作工作台：Python FastAPI + SQLite + 原生 JavaScript 单页应用，可用 PyInstaller 打包为 Windows 纯轻量原生桌面应用（墨语MoYu-v2.0.1-win64.exe），依托 Windows 10/11 内置 WebView2 内核，无控制台黑框闪烁，点叉即退，关闭窗体自动退出后台服务；亦支持 --browser 回退至外部浏览器运行模式。作品与设置默认存储在本机 data/；使用外部 AI 时，用户选择的正文和上下文会发送给其配置的服务商。
 
 **内容安全原则：** AI 生成内容必须先预览，经用户确认后才写入作品；任何路径都不得静默改写或覆盖正文。
 
@@ -30,16 +30,16 @@ moyu/
 
 ## 3. 开发工作流
 
-`ash
+```bash
 pip install -r requirements.txt
 python scripts/fetch_vendor.py   # 首次运行或更新前端依赖时需要联网
 python run.py                    # 启动本地服务：http://127.0.0.1:8321
 python -m pytest -q              # 全量回归测试（数量以 pytest --collect-only 实测为准，只增不减）
-python build_exe.py              # 构建单文件 exe（墨语MoYu-v2.0.0-win64.exe）
+python build_exe.py              # 构建单文件 exe（墨语MoYu-v2.0.1-win64.exe）
 python build_exe.py --onedir     # 文件夹形态
-`
+```
 
-运行配置（Base URL / API Key / 模型名）保存在 pp_settings 表。测试数据库和文件目录应重定向到临时位置，不能触碰真实 data/。
+运行配置（Base URL / API Key / 模型名）保存在 app_settings 表。测试数据库和文件目录应重定向到临时位置，不能触碰真实 data/。
 
 ## 4. 架构约定
 
@@ -81,7 +81,7 @@ python build_exe.py --onedir     # 文件夹形态
 
 1. 用户账号下预设模型名可能不可用；“测试连接”通过不代表具体模型可用。
 2. 模型可能返回空壳对象，解析时过滤空条目。
-3. **测试配置争用**：测试进程与联调脚本同时运行时会争用 pp_settings 的 AI 配置，自动化测试应使用临时隔离库，联调前核对设置页。
+3. **测试配置争用**：测试进程与联调脚本同时运行时会争用 app_settings 的 AI 配置，自动化测试应使用临时隔离库，联调前核对设置页。
 
 ## 7. 本地版与云端版
 
@@ -101,7 +101,7 @@ elease/ 中的产物。
 
 当 AI 或协作者进入本仓库执行任务时，必须严格按以下顺序读档建立上下文：
 1. **AGENTS.md**（入口与全局规范，了解全局约定、设计语言与版本迭代规约）
-2. **最新版本开发说明与进度产物**（首要确认：当前版本号、已完成功能与待办事项，见 docs/v2.0.0-development-notes.md 与 docs/development-plan.md）
+2. **最新版本开发说明与进度产物**（首要确认：当前版本号、已完成功能与待办事项，见 docs/v2.0.1-development-notes.md 与 docs/development-plan.md）
 3. **README.md**（产品定位与开发操作指南）
 4. **docs/PRD-本地版.md**（真实业务功能基准，以代码实际功能为准）
 5. **docs/KimiCode防抄袭改造移交报告.md**（仅历史考古时查阅）
