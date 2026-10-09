@@ -108,3 +108,77 @@ def test_sanitize_rejects_dirty_data():
     # 纯标点
     ok_punc, r_punc = sanitize_asset_item({"name": "---***"}, "entity")
     assert not ok_punc and "有效" in r_punc
+
+
+def test_four_writing_styles_extraction():
+    """5. 同一条事件用四种写法输入：断言契约块写法必被抽出，其余写法不产生以套话为标题的条目"""
+    # 写法 1：契约块
+    style_contract = """
+<!-- MOYU:ASSETS
+{
+  "timeline_events": [{"time_label": "开元三年", "event": "登太玄峰"}]
+}
+MOYU:ASSETS -->
+"""
+    res1 = extract_structured_assets_from_text(style_contract)
+    assert any("登太玄峰" in e.get("event", "") for e in res1.get("timeline_events", []))
+
+    # 写法 2：列表 + 中文冒号
+    style_list_colon = """
+- 时间线：开元三年，顾风登太玄峰决战
+"""
+    res2 = extract_structured_assets_from_text(style_list_colon)
+    for k in ["entities", "timeline_events", "foreshadows", "outline_nodes", "notes"]:
+        for item in res2.get(k, []):
+            name = item.get("name") or item.get("title") or item.get("event") or ""
+            assert "好的" not in name and "以下是" not in name
+
+    # 写法 3：无标题纯文本
+    style_plain = """
+漫天风雪之中，少年一人一剑，踏上了太玄峰之巅。
+"""
+    res3 = extract_structured_assets_from_text(style_plain)
+    for k in ["entities", "timeline_events", "foreshadows", "outline_nodes", "notes"]:
+        for item in res3.get(k, []):
+            name = item.get("name") or item.get("title") or item.get("event") or ""
+            assert "好的" not in name and "以下是" not in name
+
+    # 写法 4：套话开头
+    style_chatter = """
+好的，这是为您整理的时间线事件：
+- 开元三年 · 登太玄峰
+希望对您有所帮助！
+"""
+    res4 = extract_structured_assets_from_text(style_chatter)
+    for k in ["entities", "timeline_events", "foreshadows", "outline_nodes", "notes"]:
+        for item in res4.get(k, []):
+            name = item.get("name") or item.get("title") or item.get("event") or ""
+            assert not name.startswith("好的")
+            assert not name.startswith("希望")
+
+
+def test_upsert_foreshadow_rejects_chatter_title(client):
+    """6. upsert_foreshadow 传入套话标题时被拒绝且返回 _rejected == True，不写库"""
+    from conftest import make_wvc
+    from app.services.asset_hub import upsert_foreshadow
+    import app.db as db_module
+
+    w, v, c = make_wvc(client, "测试中枢拒绝套话作品")
+    work_id = w["id"]
+    db = db_module.get_db()
+
+    # 传入套话标题
+    res = upsert_foreshadow(
+        db=db,
+        work_id=work_id,
+        title="好的，这是为您修改后的伏笔内容",
+        content="潜藏的危机",
+    )
+    assert res.get("_rejected") is True
+    assert "套话" in res.get("_reason", "")
+    assert res.get("_is_new") is False
+    assert res.get("id") is None
+
+    # 验证数据库中未写入
+    row = db.execute("SELECT id FROM foreshadows WHERE work_id = ? AND title LIKE '%好的%'", (work_id,)).fetchone()
+    assert row is None
