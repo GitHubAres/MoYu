@@ -17,6 +17,7 @@ from app.ai_tasks import create_task, fail_task, finish_task, start_task
 from app.db import get_db
 from app.features import build_skill_system_prompt
 from app.services.output_normalizer import (
+    build_contract_clause,
     extract_assets_block,
     sanitize_asset_item,
     strip_ai_chatter,
@@ -285,24 +286,27 @@ async def _execute(run_id: int):
                     parts.append("【写作要求】\n" + instruction)
 
                 # B-3: 仅当该步骤 instruction 或技能手册涉及产出资产时追加输出契约要求
-                asset_kws = ["实体", "人物", "角色", "设定", "世界观", "时间线", "伏笔", "暗线", "大纲", "关系", "分卷", "细纲", "立项", "势力", "道具", "场景"]
                 target_check = (instruction or "") + " " + (sys_prompt or "")
-                if any(k in target_check for k in asset_kws):
-                    contract_clause = (
-                        "【输出契约】若本步骤产出可入库资产（实体/关系/时间线事件/伏笔/大纲节点/章节梗概），"
-                        "必须在回答末尾追加如下契约块，正文里写什么都可以，但契约块必须存在且为合法 JSON：\n"
-                        "<!-- MOYU:ASSETS\n"
-                        "{\n"
-                        '  "entities": [],\n'
-                        '  "relations": [],\n'
-                        '  "timeline_events": [],\n'
-                        '  "foreshadows": [],\n'
-                        '  "outline_nodes": [],\n'
-                        '  "chapter_synopses": []\n'
-                        "}\n"
-                        "MOYU:ASSETS -->\n"
-                        "没有对应资产的种类填空数组，不要省略键；chapter_synopses 用于更新同名大纲节点的剧情梗概。"
-                    )
+                ledger_kws = ["实体", "人物", "角色", "设定", "世界观", "时间线", "伏笔", "暗线", "关系", "立项", "势力", "道具", "场景"]
+                outline_kws = ["大纲", "细纲", "分卷"]
+                synopsis_kws = ["梗概"]
+
+                required_keys: list[str] = []
+                if any(k in target_check for k in ledger_kws):
+                    for k in ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes"]:
+                        if k not in required_keys:
+                            required_keys.append(k)
+
+                if any(k in target_check for k in outline_kws):
+                    if "outline_nodes" not in required_keys:
+                        required_keys.append("outline_nodes")
+
+                if any(k in target_check for k in synopsis_kws):
+                    if "chapter_synopses" not in required_keys:
+                        required_keys.append("chapter_synopses")
+
+                if required_keys:
+                    contract_clause = build_contract_clause(required_keys)
                     parts.append(contract_clause)
                 # 写作工作流多为长篇小说草稿生成、长章精修或世界观设定等任务，
                 # 需充分的等待窗口，默认放宽至 600 秒（10分钟），或取用户设置中更大的配置

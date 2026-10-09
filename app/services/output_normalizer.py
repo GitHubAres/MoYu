@@ -247,3 +247,21 @@ def strip_assets_blocks(text: str) -> str:
     text = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?MOYU:ASSETS\s*-->', '', text, flags=re.IGNORECASE)
     text = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?-->', '', text, flags=re.IGNORECASE)
     return text
+
+
+def build_contract_clause(required_keys: list[str]) -> str:
+    """构建按任务声明产物键的 MOYU:ASSETS 契约提示词模板。"""
+    if not required_keys:
+        return ""
+    lines = [f'  "{k}": []' for k in required_keys]
+    json_body = ",\n".join(lines)
+    return (
+        "【输出契约】若本步骤产出可入库资产，"
+        "必须在回答末尾追加如下契约块，正文可自由书写，但契约块必须存在且为合法 JSON：\n"
+        "<!-- MOYU:ASSETS\n"
+        "{\n"
+        f"{json_body}\n"
+        "}\n"
+        "MOYU:ASSETS -->\n"
+        "未涉及对应资产的种类填空数组，不要省略上述键。"
+    )

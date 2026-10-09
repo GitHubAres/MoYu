@@ -262,3 +262,64 @@ MOYU:ASSETS -->
     rejected = assets.get("_rejected", [])
     rejected_reasons = [r.get("reason") for r in rejected if r.get("kind") in ("chapter_synopsis", "chapter_synopses")]
     assert len(rejected_reasons) >= 3
+
+
+def test_l1a_build_contract_clause():
+    from app.services.output_normalizer import build_contract_clause
+
+    # 传入 ["outline_nodes", "chapter_synopses"] → 返回文本含契约块模板且只列这两个键
+    partial_clause = build_contract_clause(["outline_nodes", "chapter_synopses"])
+    assert "<!-- MOYU:ASSETS" in partial_clause
+    assert "MOYU:ASSETS -->" in partial_clause
+    assert '"outline_nodes": []' in partial_clause
+    assert '"chapter_synopses": []' in partial_clause
+    assert '"entities": []' not in partial_clause
+    assert '"foreshadows": []' not in partial_clause
+
+    # 传入全量 7 键 → 模板含全部键
+    all_7 = ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes", "chapter_synopses"]
+    full_clause = build_contract_clause(all_7)
+    assert "<!-- MOYU:ASSETS" in full_clause
+    assert "MOYU:ASSETS -->" in full_clause
+    for k in all_7:
+        assert f'"{k}": []' in full_clause
+
+
+def test_l1_contract_keyword_mapping():
+    """L-1: 关键词映射扩展测试"""
+    def resolve_keys(target_check: str) -> list[str]:
+        ledger_kws = ["实体", "人物", "角色", "设定", "世界观", "时间线", "伏笔", "暗线", "关系", "立项", "势力", "道具", "场景"]
+        outline_kws = ["大纲", "细纲", "分卷"]
+        synopsis_kws = ["梗概"]
+
+        required_keys: list[str] = []
+        if any(k in target_check for k in ledger_kws):
+            for k in ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes"]:
+                if k not in required_keys:
+                    required_keys.append(k)
+
+        if any(k in target_check for k in outline_kws):
+            if "outline_nodes" not in required_keys:
+                required_keys.append("outline_nodes")
+
+        if any(k in target_check for k in synopsis_kws):
+            if "chapter_synopses" not in required_keys:
+                required_keys.append("chapter_synopses")
+
+        return required_keys
+
+    # 1. 含"梗概" → chapter_synopses
+    keys1 = resolve_keys("请提取本章故事梗概并梳理")
+    assert "chapter_synopses" in keys1
+
+    # 2. 含"大纲/细纲/分卷" → outline_nodes
+    keys2 = resolve_keys("根据前文拟定第二卷细纲")
+    assert "outline_nodes" in keys2
+
+    # 3. 既有台账关键词 → 原 6 键
+    keys3 = resolve_keys("梳理出场人物与门派势力")
+    assert set(["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes"]).issubset(set(keys3))
+
+    # 4. 无命中不注入
+    keys4 = resolve_keys("通读全文，检查标点符号与错别字")
+    assert keys4 == []
