@@ -1111,7 +1111,12 @@ async function renderRun(view, runId) {
               class: "px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90",
               onclick: async () => {
                 try {
-                  await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, { action: "edit", content: ta.value });
+                  let submitContent = ta.value;
+                  const origBlockMatch = String(s.output || "").match(/<!--\s*MOYU:ASSETS[\s\S]*?-->/i);
+                  if (origBlockMatch && !/MOYU:ASSETS/i.test(submitContent)) {
+                    submitContent = submitContent.trimEnd() + "\n\n" + origBlockMatch[0].trim();
+                  }
+                  await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, { action: "edit", content: submitContent });
                   editingSeq = null; tick();
                 } catch (e) { ui.toast(e.message, "err"); }
               },
