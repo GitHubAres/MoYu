@@ -718,6 +718,8 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         "timeline_events_added": 0,
         "notes_added": 0,
         "chapter_synced": False,
+        "rejected_count": 0,
+        "rejected_items": [],
     }
 
     run_meta = db.execute("SELECT chapter_id, outline_node_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()
@@ -762,6 +764,12 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
 
     for ent in body.entities:
         name = ent.name.strip()
+        ok_ent, r_ent = sanitize_asset_item({"name": name, "category": ent.category, "content": ent.content}, "entity")
+        if not ok_ent:
+            summary["rejected_count"] += 1
+            if len(summary["rejected_items"]) < 20:
+                summary["rejected_items"].append({"kind": "entity", "title": name, "reason": r_ent})
+            continue
         if not name:
             continue
         f_json = ent.fields_json
@@ -819,6 +827,12 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         from_name = rel.from_name.strip()
         to_name = rel.to_name.strip()
         label = rel.label.strip() or "关联"
+        ok_rel, r_rel = sanitize_asset_item({"from": from_name, "to": to_name, "label": label}, "relation")
+        if not ok_rel:
+            summary["rejected_count"] += 1
+            if len(summary["rejected_items"]) < 20:
+                summary["rejected_items"].append({"kind": "relation", "title": label, "reason": r_rel})
+            continue
         if not from_name or not to_name or from_name == to_name:
             continue
         from_id = name_to_id.get(from_name)
@@ -866,6 +880,10 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
     summary["outlines_added"] += triad_stats["outline_nodes_added"]
     summary["foreshadows_added"] += triad_stats["foreshadows_added"]
     summary["timeline_events_added"] += triad_stats["timeline_events_added"]
+    summary["rejected_count"] += triad_stats.get("rejected_count", 0)
+    for r_item in triad_stats.get("rejected_items", []):
+        if len(summary["rejected_items"]) < 20:
+            summary["rejected_items"].append(r_item)
 
 
     # 5. 文章正文与版本沉淀同步

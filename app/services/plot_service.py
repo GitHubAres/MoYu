@@ -54,12 +54,14 @@ def batch_sync_triad_assets(
     outline_nodes: list[dict],
     default_outline_node_id: Optional[int] = None,
     default_chapter_id: Optional[int] = None,
-) -> dict[str, int]:
+) -> dict[str, Any]:
     """批量原子化同步来自工作流推演或编辑的三位一体资产。"""
     stats = {
         "timeline_events_added": 0,
         "foreshadows_added": 0,
         "outline_nodes_added": 0,
+        "rejected_count": 0,
+        "rejected_items": [],
     }
 
     # 1. 大纲节点挂载
@@ -106,7 +108,15 @@ def batch_sync_triad_assets(
             chapter_id=chap_id,
             outline_node_id=node_id,
         )
-        if res.get("_is_new"):
+        if res.get("_rejected"):
+            stats["rejected_count"] += 1
+            if len(stats["rejected_items"]) < 20:
+                stats["rejected_items"].append({
+                    "kind": "timeline_event",
+                    "title": event_text,
+                    "reason": res.get("_reason", "校验未通过"),
+                })
+        elif res.get("_is_new"):
             stats["timeline_events_added"] += 1
 
     # 3. 伏笔记录入库（委托 asset_hub）
@@ -127,7 +137,15 @@ def batch_sync_triad_assets(
             chapter_id=chap_id,
             outline_node_id=node_id,
         )
-        if res.get("_is_new"):
+        if res.get("_rejected"):
+            stats["rejected_count"] += 1
+            if len(stats["rejected_items"]) < 20:
+                stats["rejected_items"].append({
+                    "kind": "foreshadow",
+                    "title": title,
+                    "reason": res.get("_reason", "校验未通过"),
+                })
+        elif res.get("_is_new"):
             stats["foreshadows_added"] += 1
 
     return stats

@@ -5,6 +5,7 @@
 全库关于 foreshadows 与 timeline_events 的写入口统一收口于此。
 """
 from typing import Any, Optional
+from app.services.output_normalizer import sanitize_asset_item
 
 
 def resolve_binding(
@@ -71,10 +72,26 @@ def upsert_foreshadow(
     幂等键：work_id + title + 绑定关系 (chapter_id / outline_node_id)。
     """
     title = (title or "").strip()
-    if not title:
-        raise ValueError("伏笔标题不能为空")
     content = (content or "").strip()
     status = (status or "planted").strip()
+
+    ok, reason = sanitize_asset_item({"title": title, "content": content, "status": status}, "foreshadow")
+    if not ok:
+        return {
+            "id": None,
+            "work_id": work_id,
+            "title": title,
+            "content": content,
+            "status": status,
+            "chapter_id": chapter_id,
+            "outline_node_id": outline_node_id,
+            "_rejected": True,
+            "_reason": reason,
+            "_is_new": False,
+        }
+
+    if not title:
+        raise ValueError("伏笔标题不能为空")
     chapter_id, outline_node_id = resolve_binding(db, work_id, chapter_id, outline_node_id)
 
     query = """
@@ -137,10 +154,27 @@ def upsert_timeline_event(
     幂等键：work_id + event + 绑定关系 (chapter_id / outline_node_id)。
     """
     event = (event or "").strip()
-    if not event:
-        raise ValueError("事件内容不能为空")
     time_label = (time_label or "").strip()
     characters = (characters or "").strip()
+
+    ok, reason = sanitize_asset_item({"event": event, "time_label": time_label, "characters": characters}, "timeline_event")
+    if not ok:
+        return {
+            "id": None,
+            "work_id": work_id,
+            "event": event,
+            "time_label": time_label,
+            "characters": characters,
+            "chapter_id": chapter_id,
+            "outline_node_id": outline_node_id,
+            "sort_order": sort_order,
+            "_rejected": True,
+            "_reason": reason,
+            "_is_new": False,
+        }
+
+    if not event:
+        raise ValueError("事件内容不能为空")
     chapter_id, outline_node_id = resolve_binding(db, work_id, chapter_id, outline_node_id)
 
     query = """
