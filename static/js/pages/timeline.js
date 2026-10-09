@@ -40,11 +40,28 @@ registerPage("timeline", async (view, { segs }) => {
     }, ui.icon("add", "text-[18px]"), ui.el("span", { class: "font-label-md text-label-md" }, "手动添加事件")),
   );
 
+  let onlyUnbound = false;
+  const selectedEventIds = new Set();
+
   const workSelect = ui.el("select", {
     class: "px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather focus:border-primary outline-none font-body-md text-body-md min-w-[200px]",
     onchange: () => { if (Number(workSelect.value) !== workId) location.hash = `#/timeline/${workSelect.value}`; },
   });
   for (const w of works) workSelect.append(ui.el("option", { value: w.id, selected: w.id === workId ? "" : null }, w.title));
+
+  const unboundFilter = ui.el("label", {
+    class: "flex items-center gap-1.5 font-label-sm text-label-sm text-on-surface-variant z-10 cursor-pointer select-none ml-2",
+  },
+    ui.el("input", {
+      type: "checkbox",
+      class: "rounded border-outline text-primary",
+      onchange: (e) => {
+        onlyUnbound = e.target.checked;
+        selectedEventIds.clear();
+        render();
+      },
+    }),
+    "仅看未归属");
 
   const timelineBox = ui.el("div", { class: "flex flex-col" });
 
@@ -61,7 +78,9 @@ registerPage("timeline", async (view, { segs }) => {
         ui.el("h1", { class: "font-headline-lg text-headline-lg text-primary tracking-tight z-10" }, "剧情时间线"),
         ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant z-10" },
           "按故事内时间排列关键剧情事件，可手动记录，也可让 AI 从章节正文中提取。"),
-        ui.el("label", { class: "flex items-center gap-2 font-label-sm text-label-sm text-on-surface-variant z-10 mt-1" }, "当前作品", workSelect)),
+        ui.el("div", { class: "flex items-center gap-4 flex-wrap z-10 mt-1" },
+          ui.el("label", { class: "flex items-center gap-2 font-label-sm text-label-sm text-on-surface-variant" }, "当前作品", workSelect),
+          unboundFilter)),
       timelineBox));
 
   if (window.store && window.store.events) {
@@ -80,13 +99,76 @@ registerPage("timeline", async (view, { segs }) => {
 
   function render() {
     timelineBox.innerHTML = "";
-    if (!events.length) {
+    const displayEvents = onlyUnbound
+      ? events.filter((e) => e.chapter_id == null && e.outline_node_id == null)
+      : events;
+
+    if (onlyUnbound) {
+      const rebindBar = ui.el("div", {
+        class: "mb-4 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60 flex items-center justify-between flex-wrap gap-2 shadow-xs",
+      });
+      const targetChapSelect = ui.el("select", {
+        class: "px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant font-label-sm text-label-sm text-on-surface outline-none",
+      }, ui.el("option", { value: "" }, "（选择目标章节）"));
+      for (const c of chapters) {
+        targetChapSelect.append(ui.el("option", { value: String(c.id) }, `${c.volume_title} · ${c.title}`));
+      }
+
+      const targetNodeSelect = ui.el("select", {
+        class: "px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant font-label-sm text-label-sm text-on-surface outline-none",
+      }, ui.el("option", { value: "" }, "（选择目标大纲节点）"));
+      for (const n of outlineNodes) {
+        targetNodeSelect.append(ui.el("option", { value: String(n.id) }, n.title));
+      }
+
+      const countBadge = ui.el("span", { class: "font-label-sm text-label-sm text-primary font-semibold" }, `已选 ${selectedEventIds.size} 项`);
+      const rebindBtn = ui.el("button", {
+        class: "px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-medium hover:opacity-90 flex items-center gap-1 transition-opacity",
+        onclick: async () => {
+          if (!selectedEventIds.size) {
+            ui.toast("请勾选需要重绑的时间线事件", "warn");
+            return;
+          }
+          const chVal = targetChapSelect.value ? Number(targetChapSelect.value) : null;
+          const nodeVal = targetNodeSelect.value ? Number(targetNodeSelect.value) : null;
+          if (!chVal && !nodeVal) {
+            ui.toast("请选择目标章节或大纲节点", "warn");
+            return;
+          }
+          try {
+            await api.post(`/works/${workId}/unbound-assets/rebind`, {
+              timeline_event_ids: Array.from(selectedEventIds),
+              chapter_id: chVal,
+              outline_node_id: nodeVal,
+            });
+            ui.toast("重绑成功", "ok");
+            selectedEventIds.clear();
+            await reload();
+          } catch (err) {
+            ui.toast(err.message, "err");
+          }
+        },
+      }, ui.icon("link", "text-[16px]"), "重绑到…");
+
+      rebindBar.append(
+        ui.el("div", { class: "flex items-center gap-2" },
+          ui.icon("filter_list", "text-[18px] text-secondary"),
+          ui.el("span", { class: "font-label-sm text-label-sm font-medium text-on-surface" }, `未归属事件 (${displayEvents.length})`),
+          countBadge),
+        ui.el("div", { class: "flex items-center gap-2 flex-wrap" },
+          targetChapSelect,
+          targetNodeSelect,
+          rebindBtn));
+      timelineBox.append(rebindBar);
+    }
+
+    if (!displayEvents.length) {
       timelineBox.append(ui.el("div", { class: "rounded-xl bg-surface-container-lowest shadow-[0_4px_20px_rgba(6,21,35,0.03)] p-space-xl flex flex-col items-center gap-space-md text-center" },
         ui.icon("timeline", "text-[48px] text-outline-variant"),
-        ui.el("p", { class: "font-headline-sm text-headline-sm text-primary" }, "还没有任何剧情事件"),
+        ui.el("p", { class: "font-headline-sm text-headline-sm text-primary" }, onlyUnbound ? "当前没有未归属事件" : "还没有任何剧情事件"),
         ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant" },
-          "手动记录故事里的关键节点，或让 AI 从已写章节中自动提取。"),
-        ui.el("div", { class: "flex items-center gap-space-sm" },
+          onlyUnbound ? "所有时间线事件均已绑定所属章节或大纲节点。" : "手动记录故事里的关键节点，或让 AI 从已写章节中自动提取。"),
+        !onlyUnbound ? ui.el("div", { class: "flex items-center gap-space-sm" },
           ui.el("button", {
             class: "flex items-center gap-1 px-space-md py-2 rounded-xl bg-primary text-on-primary font-label-md text-label-md",
             onclick: () => editEvent(null),
@@ -94,15 +176,28 @@ registerPage("timeline", async (view, { segs }) => {
           ui.el("button", {
             class: "flex items-center gap-1 px-space-md py-2 rounded-xl bg-surface-container hover:bg-surface-container-high font-label-md text-label-md",
             onclick: () => extractFlow(),
-          }, ui.icon("auto_awesome", "text-[18px]"), "AI 从章节提取"))));
+          }, ui.icon("auto_awesome", "text-[18px]"), "AI 从章节提取")) : null));
       return;
     }
-    events.forEach((ev, i) => timelineBox.append(timelineRow(ev, i === events.length - 1)));
+    displayEvents.forEach((ev, i) => timelineBox.append(timelineRow(ev, i === displayEvents.length - 1)));
   }
 
   function timelineRow(ev, isLast) {
     const chars = (ev.characters || "").split(/[、,，\s]+/).map((s) => s.trim()).filter(Boolean);
     const chTitle = ev.chapter_id ? (ev.chapter_title || chapterName(ev.chapter_id)) : null;
+    const isUnbound = !chTitle && ev.outline_node_id == null;
+
+    const rowCb = onlyUnbound ? ui.el("input", {
+      type: "checkbox",
+      checked: selectedEventIds.has(ev.id),
+      class: "rounded border-outline text-primary mr-2 cursor-pointer",
+      onchange: (e) => {
+        if (e.target.checked) selectedEventIds.add(ev.id);
+        else selectedEventIds.delete(ev.id);
+        render();
+      },
+    }) : null;
+
     return ui.el("div", { class: "flex gap-space-md items-stretch" },
       /* 左侧：节点 + 竖线 */
       ui.el("div", { class: "flex flex-col items-center w-6 shrink-0 pt-5" },
@@ -112,8 +207,12 @@ registerPage("timeline", async (view, { segs }) => {
       ui.el("div", { class: "flex-1 min-w-0 pb-space-md" },
         ui.el("div", { class: "rounded-xl bg-surface-container-lowest shadow-[0_4px_20px_rgba(6,21,35,0.03)] p-space-md flex flex-col gap-space-xs hover:shadow-[0_8px_28px_rgba(6,21,35,0.08)] transition-shadow" },
           ui.el("div", { class: "flex items-center gap-2 flex-wrap" },
+            rowCb,
             ui.el("span", { class: "px-2 py-0.5 rounded-full bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm font-semibold" },
               ev.time_label || "时间未定"),
+            isUnbound ? ui.el("span", {
+              class: "inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm",
+            }, ui.icon("link_off", "text-[12px]"), "未归属") : null,
             ev.created_at && ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" },
               "记录于 " + String(ev.created_at).slice(0, 16)),
             ui.el("span", { class: "ml-auto flex items-center gap-1" },

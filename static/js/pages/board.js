@@ -84,7 +84,20 @@ registerPage("board", async (view, { segs }) => {
           ui.el("div", { class: "w-40 h-2 rounded-full bg-surface-container overflow-hidden" },
             ui.el("div", { class: "h-full bg-secondary rounded-full transition-all", style: `width:${rate}%` })),
           ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-bold" }, `${rate}%`),
-          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `（已回收 ${resolved} / 共 ${total} 条）`))));
+          ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `（已回收 ${resolved} / 共 ${total} 条）`),
+        ui.el("div", { class: "h-8 w-[1px] bg-surface-container-highest hidden sm:block" }),
+        ui.el("label", { class: "flex items-center gap-1.5 font-label-sm text-label-sm text-on-surface-variant cursor-pointer select-none ml-auto" },
+          ui.el("input", {
+            type: "checkbox",
+            class: "rounded border-outline text-primary",
+            onchange: (e) => {
+              onlyUnbound = e.target.checked;
+              renderLanes();
+            },
+          }),
+          "仅看未归属"))));
+
+    let onlyUnbound = false;
 
     if (!total) {
       view.append(ui.el("div", { class: "flex flex-col items-center gap-space-md py-space-xl text-center" },
@@ -100,8 +113,14 @@ registerPage("board", async (view, { segs }) => {
     const lanes = ui.el("div", { class: "grid grid-cols-1 lg:grid-cols-3 gap-space-lg items-start" });
     let dragCard = null;   // 拖拽中的伏笔卡片数据
     const LANE_HL = ["ring-2", "ring-secondary", "bg-secondary-fixed/50"];
-    for (const lane of LANES) {
-      const list = items.filter((f) => f.status === lane.key);
+
+    function renderLanes() {
+      lanes.innerHTML = "";
+      const displayItems = onlyUnbound
+        ? items.filter((f) => f.chapter_id == null && f.outline_node_id == null)
+        : items;
+      for (const lane of LANES) {
+        const list = displayItems.filter((f) => f.status === lane.key);
       const sec = ui.el("section", { class: "flex flex-col gap-space-md rounded-2xl bg-surface-container-low/60 p-space-md transition-shadow" },
         ui.el("div", { class: "flex items-center justify-between px-space-xs" },
           ui.el("div", { class: "flex items-center gap-space-xs" },
@@ -132,8 +151,10 @@ registerPage("board", async (view, { segs }) => {
           router.dispatch();
         } catch (err) { ui.toast("移动失败：" + err.message, "err"); }
       });
-      lanes.append(sec);
+        lanes.append(sec);
+      }
     }
+    renderLanes();
     view.append(lanes);
 
     function card(f, lane) {
@@ -151,7 +172,9 @@ registerPage("board", async (view, { segs }) => {
         ui.el("div", { class: "flex items-center gap-1.5 mb-space-xs flex-wrap" },
           f.chapter_title
             ? ui.el("span", { class: "px-2 py-0.5 rounded bg-surface-container font-label-sm text-label-sm text-on-surface-variant" }, `关联：${f.chapter_title}`)
-            : ui.el("span", { class: "font-label-sm text-label-sm text-outline" }, "未关联章节"),
+            : (f.outline_node_id == null
+                ? ui.el("span", { class: "inline-flex items-center gap-1 px-2 py-0.5 rounded bg-tertiary-fixed text-on-tertiary-fixed font-label-sm text-label-sm font-medium" }, ui.icon("link_off", "text-[12px]"), "未归属")
+                : ui.el("span", { class: "font-label-sm text-label-sm text-outline" }, "未关联章节")),
           f.outline_node_id
             ? ui.el("a", {
                 class: "inline-flex items-center gap-1 px-2 py-0.5 rounded bg-secondary-fixed text-on-secondary-fixed font-label-sm text-label-sm hover:bg-secondary hover:text-on-secondary transition-colors cursor-pointer",

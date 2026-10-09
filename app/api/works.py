@@ -324,3 +324,65 @@ def preview_chapter_context(chapter_id: int, body: ContextPreviewIn | None = Non
         "items_count": len(blocks),
         "blocks": blocks,
     }
+
+
+class RebindIn(BaseModel):
+    foreshadow_ids: list[int] = []
+    timeline_event_ids: list[int] = []
+    chapter_id: int | None = None
+    outline_node_id: int | None = None
+
+
+@router.get("/works/{work_id}/unbound-assets")
+def get_unbound_assets(work_id: int):
+    """获取指定作品下未归属任何章节且未归属任何节点的伏笔与时间线事件"""
+    _one("SELECT id FROM works WHERE id=?", (work_id,))
+    db = get_db()
+    from app.services.asset_hub import list_unbound_assets
+    return list_unbound_assets(db, work_id)
+
+
+@router.post("/works/{work_id}/unbound-assets/rebind")
+def rebind_unbound_assets(work_id: int, body: RebindIn):
+    """批量将未归属产物重绑至指定章节或大纲节点"""
+    _one("SELECT id FROM works WHERE id=?", (work_id,))
+    if body.chapter_id is None and body.outline_node_id is None:
+        raise HTTPException(400, "必须指定目标章节或大纲节点")
+
+    db = get_db()
+    from app.services.asset_hub import resolve_binding
+
+    try:
+        target_chap_id, target_node_id = resolve_binding(
+            db, work_id, body.chapter_id, body.outline_node_id
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    foreshadows_rebound = 0
+    for fid in body.foreshadow_ids:
+        cur = db.execute(
+            """UPDATE foreshadows
+               SET chapter_id = ?, outline_node_id = ?
+               WHERE id = ? AND work_id = ?""",
+            (target_chap_id, target_node_id, fid, work_id),
+        )
+        if cur.rowcount > 0:
+            foreshadows_rebound += 1
+
+    timeline_events_rebound = 0
+    for tid in body.timeline_event_ids:
+        cur = db.execute(
+            """UPDATE timeline_events
+               SET chapter_id = ?, outline_node_id = ?
+               WHERE id = ? AND work_id = ?""",
+            (target_chap_id, target_node_id, tid, work_id),
+        )
+        if cur.rowcount > 0:
+            timeline_events_rebound += 1
+
+    db.commit()
+    return {
+        "foreshadows_rebound": foreshadows_rebound,
+        "timeline_events_rebound": timeline_events_rebound,
+    }

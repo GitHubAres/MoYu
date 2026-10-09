@@ -365,3 +365,17 @@ def detach_chapter(db, chapter_id: int) -> dict[str, Any]:
         "outline_nodes": outline_nodes_count,
         "total": total,
     }
+
+
+def list_unbound_assets(db, work_id: int) -> dict:
+    """两键皆空的产物：可看见、可归位。"""
+    foreshadows = db.execute(
+        "SELECT id, title, content, status, chapter_id, outline_node_id FROM foreshadows "
+        "WHERE work_id=? AND chapter_id IS NULL AND outline_node_id IS NULL ORDER BY id DESC",
+        (work_id,)).fetchall()
+    timeline_events = db.execute(
+        "SELECT id, time_label, event, characters, chapter_id, outline_node_id FROM timeline_events "
+        "WHERE work_id=? AND chapter_id IS NULL AND outline_node_id IS NULL ORDER BY id DESC",
+        (work_id,)).fetchall()
+    return {"foreshadows": [dict(r) for r in foreshadows],
+            "timeline_events": [dict(r) for r in timeline_events]}
