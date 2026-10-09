@@ -711,6 +711,18 @@ async function renderRun(view, runId) {
 
     const body = ui.el("div", { class: "p-4 overflow-y-auto flex flex-col gap-4 font-body-sm text-body-sm" });
 
+    if (assets.source === "heuristic") {
+      body.append(ui.el("div", {
+        class: "p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 font-label-sm text-label-sm flex items-center gap-2",
+      }, ui.icon("info", "text-[18px] shrink-0"), "以下条目由启发式识别得出（未检测到标准资产契约块），请人工核对后再同步。"));
+    }
+
+    if (Array.isArray(assets._rejected) && assets._rejected.length > 0) {
+      body.append(ui.el("div", {
+        class: "p-3 rounded-xl bg-surface-container-high border border-outline-variant text-on-surface-variant font-label-sm text-label-sm flex items-center gap-2",
+      }, ui.icon("filter_list", "text-[18px] shrink-0"), `已自动过滤 ${assets._rejected.length} 条疑似无效条目`));
+    }
+
     if (totalCount === 0) {
       body.append(ui.el("div", { class: "text-center py-8 text-on-surface-variant font-label-md" }, "当前文本中未识别到明确的结构化资产（立项/人物/道具/地点/关系/大纲/伏笔/世界观）"));
     }
@@ -980,12 +992,14 @@ async function renderRun(view, runId) {
               if (sm.timeline_events_added) tips.push(`时间线+${sm.timeline_events_added}`);
               if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
               if (sm.notes_added) tips.push(`设定+${sm.notes_added}`);
+              if (sm.rejected_count) tips.push(`已过滤 ${sm.rejected_count} 条无效条目`);
               const targetWorkId = res.work_id || (assets && assets.run_meta && assets.run_meta.work_id);
               if (window.store && targetWorkId) {
                 if (window.store.plot) window.store.plot.notifyChanged(targetWorkId);
                 if (window.store.events) window.store.events.emit("entity:changed", { workId: targetWorkId });
               }
-              ui.toast("规范同步成功！" + (tips.join("，") || "已同步"), "ok");
+              const toastStyle = (sm.rejected_count && sm.rejected_count > 0) ? "warn" : "ok";
+              ui.toast("规范同步成功！" + (tips.join("，") || "已同步"), toastStyle);
               overlay.remove();
               if (onDone) await onDone();
             } catch (e) {
