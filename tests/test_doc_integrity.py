@@ -15,9 +15,6 @@ def test_no_control_characters_in_markdown():
     for p in docs_dir.rglob("*.md"):
         if "screenshots" in p.parts:
             continue
-        # 排除历史归档版本开发说明
-        if re.match(r"^v1..*-development-notes.md$", p.name):
-            continue
         md_files.append(p)
 
     ctrl_char_pattern = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
