@@ -819,7 +819,7 @@ def test_sync_workflow_assets(client):
     assert summary["relations_added"] >= 1
     assert summary["outlines_added"] >= 2
     assert summary["foreshadows_added"] >= 1
-    assert summary["notes_added"] == 0
+    assert summary["notes_added"] >= 1
 
     # 5. 校验数据库各表是否真正写入！
     ents = db.execute("SELECT name, category FROM entities WHERE work_id=?", (work_id,)).fetchall()

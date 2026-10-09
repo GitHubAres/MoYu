@@ -946,7 +946,29 @@ async function renderRun(view, runId) {
       body.append(fsGroup);
     }
 
+    // 5. 世界观设定
     const noteChecks = [];
+    if ((assets.notes || []).length > 0) {
+      const noteGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+          ui.icon("menu_book", "text-[16px]"), `世界观设定 (${assets.notes.length}条) · 将归入万象谱「术语」`));
+      const list = ui.el("div", { class: "flex flex-col gap-1.5" });
+      assets.notes.forEach((nt) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
+        noteChecks.push({ cb, data: nt });
+        const item = ui.el("label", { class: "flex items-start gap-2 p-2 rounded-lg bg-surface border border-outline-variant/40 hover:border-primary/50 cursor-pointer" },
+          cb,
+          ui.el("div", { class: "flex flex-col min-w-0" },
+            ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-medium" },
+              ui.icon("menu_book", "text-[13px] text-primary"),
+              ui.el("span", { class: "text-primary font-semibold" }, nt.title),
+              nt.tags ? ui.el("span", { class: "px-1.5 py-0.2 rounded text-[10px] shrink-0 bg-surface-container text-on-surface-variant" }, nt.tags) : null),
+            nt.content ? ui.el("span", { class: "text-on-surface-variant text-[12px] line-clamp-2 mt-0.5" }, nt.content) : null));
+        list.append(item);
+      });
+      noteGroup.append(list);
+      body.append(noteGroup);
+    }
 
     const allCheckboxes = [...entChecks, ...relChecks, ...outlineChecks, ...foreshadowChecks, ...noteChecks];
 
@@ -1002,7 +1024,7 @@ async function renderRun(view, runId) {
               if (sm.outlines_added) tips.push(`大纲+${sm.outlines_added}`);
               if (sm.timeline_events_added) tips.push(`时间线+${sm.timeline_events_added}`);
               if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
-              if (sm.notes_added) tips.push(`设定+${sm.notes_added}`);
+              if (sm.notes_added) tips.push(`术语+${sm.notes_added}`);
               if (sm.rejected_count) tips.push(`已过滤 ${sm.rejected_count} 条无效条目`);
               const targetWorkId = res.work_id || (assets && assets.run_meta && assets.run_meta.work_id);
               if (window.store && targetWorkId) {

@@ -697,6 +697,7 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
             ("timeline_event", "timeline_events"),
             ("foreshadow", "foreshadows"),
             ("outline_node", "outline_nodes"),
+            ("note", "notes"),
         ]:
             for item in block.get(field, []):
                 ok, reason = sanitize_asset_item(item, kind)
@@ -976,6 +977,37 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         if len(summary["rejected_items"]) < 20:
             summary["rejected_items"].append(r_item)
 
+
+    # 4.5 世界观设定同步（归入万象谱术语）
+    for note in body.notes:
+        ok_note, r_note = sanitize_asset_item(
+            {"name": note.title, "title": note.title, "content": note.content, "tags": note.tags}, "note")
+        if not ok_note:
+            summary["rejected_count"] += 1
+            if len(summary["rejected_items"]) < 20:
+                summary["rejected_items"].append({"kind": "note", "title": note.title, "reason": r_note})
+            continue
+        n_title = (note.title or "").strip()
+        if not n_title:
+            continue
+        exist_note = db.execute(
+            "SELECT id, content FROM entities WHERE work_id=? AND name=?", (work_id, n_title)
+        ).fetchone()
+        if exist_note:
+            if note.content:
+                db.execute(
+                    """UPDATE entities
+                       SET content = CASE WHEN content != '' THEN content || '\n' || ? ELSE ? END,
+                           updated_at = datetime('now','localtime')
+                       WHERE id = ?""",
+                    (note.content, note.content, exist_note["id"]),
+                )
+        else:
+            db.execute(
+                "INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?, 'term', ?, ?, '{}', ?)",
+                (work_id, n_title, note.content or "", (note.tags or "").strip() or "世界观"),
+            )
+            summary["notes_added"] += 1
 
     # 5. 文章正文与版本沉淀同步
     run = db.execute("SELECT chapter_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()

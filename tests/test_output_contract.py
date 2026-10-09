@@ -182,3 +182,56 @@ def test_upsert_foreshadow_rejects_chatter_title(client):
     # 验证数据库中未写入
     row = db.execute("SELECT id FROM foreshadows WHERE work_id = ? AND title LIKE '%好的%'", (work_id,)).fetchone()
     assert row is None
+
+
+def test_r1_notes_intake_to_entities(client):
+    """R1-4 断言：notes 资产同步至 entities 表 (category='term')，支持幂等与套话拦截"""
+    from conftest import make_wvc
+    import app.db as db_module
+    from app.workflow_assets import SyncAssetsIn, AssetNoteIn, sync_assets_to_database
+
+    w, v, c = make_wvc(client, "测试世界观设定入库")
+    work_id = w["id"]
+    db = db_module.get_db()
+
+    # 1. 正常 note 同步
+    body1 = SyncAssetsIn(
+        notes=[
+            AssetNoteIn(title="灵脉代价", content="施法消耗记忆", tags="世界观"),
+        ]
+    )
+    res1 = sync_assets_to_database(db, work_id, body1)
+    assert res1.get("notes_added") == 1
+
+    row = db.execute(
+        "SELECT name, category, content, tags FROM entities WHERE work_id=? AND name=?",
+        (work_id, "灵脉代价"),
+    ).fetchone()
+    assert row is not None
+    assert row["name"] == "灵脉代价"
+    assert row["category"] == "term"
+    assert "施法消耗记忆" in row["content"]
+    assert "世界观" in row["tags"]
+
+    # 2. 幂等：连续同步两次
+    res2 = sync_assets_to_database(db, work_id, body1)
+    assert res2.get("notes_added") == 0
+    all_rows = db.execute(
+        "SELECT id FROM entities WHERE work_id=? AND name=?",
+        (work_id, "灵脉代价"),
+    ).fetchall()
+    assert len(all_rows) == 1
+
+    # 3. 脏 note 拦截
+    body_dirty = SyncAssetsIn(
+        notes=[
+            AssetNoteIn(title="以下是修改后的内容", content="正文内容", tags="世界观"),
+        ]
+    )
+    res_dirty = sync_assets_to_database(db, work_id, body_dirty)
+    assert res_dirty.get("rejected_count", 0) >= 1
+    dirty_row = db.execute(
+        "SELECT id FROM entities WHERE work_id=? AND name LIKE '%修改后的内容%'",
+        (work_id,),
+    ).fetchone()
+    assert dirty_row is None

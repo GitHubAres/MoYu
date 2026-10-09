@@ -159,7 +159,7 @@ def extract_assets_block(text: str) -> dict | None:
         data = json.loads(raw_json)
         if not isinstance(data, dict):
             return None
-        valid_keys = ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes"]
+        valid_keys = ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes"]
         res: dict[str, list] = {}
         for k in valid_keys:
             val = data.get(k)
