@@ -11,6 +11,7 @@ from app import workflow_engine
 from app.workflow_assets import (
     SyncAssetsIn,
     extract_structured_assets_from_text,
+    merge_assets,
     sync_assets_to_database,
 )
 from app.ai_client import get_ai_config
@@ -361,9 +362,11 @@ def get_summary_assets(run_id: int):
         "SELECT step_seq, output FROM workflow_run_steps WHERE run_id = ? ORDER BY step_seq ASC",
         (run_id,),
     ).fetchall()
-    combined_texts = [r["output"] for r in steps if r["output"]]
-    full_text = chr(10).join(combined_texts)
-    raw_assets = extract_structured_assets_from_text(full_text)
+    per_step_assets = [
+        extract_structured_assets_from_text(r["output"])
+        for r in steps if r["output"] and r["output"].strip()
+    ]
+    raw_assets = merge_assets(per_step_assets) if per_step_assets else extract_structured_assets_from_text("")
 
     # 查重比对与元数据增强
     existing_entities = {

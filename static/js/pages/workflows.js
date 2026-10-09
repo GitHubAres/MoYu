@@ -711,10 +711,13 @@ async function renderRun(view, runId) {
 
     const body = ui.el("div", { class: "p-4 overflow-y-auto flex flex-col gap-4 font-body-sm text-body-sm" });
 
-    if (assets.source === "heuristic") {
+    if (assets.source === "heuristic" || assets.source === "mixed") {
+      const tipText = assets.source === "mixed"
+        ? "部分步骤未输出标准资产契约块，已合并启发式结果，请人工核对后再同步。"
+        : "以下条目由启发式识别得出（未检测到标准资产契约块），请人工核对后再同步。";
       body.append(ui.el("div", {
         class: "p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 font-label-sm text-label-sm flex items-center gap-2",
-      }, ui.icon("info", "text-[18px] shrink-0"), "以下条目由启发式识别得出（未检测到标准资产契约块），请人工核对后再同步。"));
+      }, ui.icon("info", "text-[18px] shrink-0"), tipText));
     }
 
     if (Array.isArray(assets._rejected) && assets._rejected.length > 0) {

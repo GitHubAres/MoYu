@@ -597,6 +597,71 @@ def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
     return assets, rejected
 
 
+_CONTRACT_TITLE_KEYS = [
+    ("entities", "name"),
+    ("relations", "label"),
+    ("outline_nodes", "title"),
+    ("foreshadows", "title"),
+    ("timeline_events", "event"),
+    ("notes", "title"),
+]
+
+
+def merge_assets(assets_list: list[dict]) -> dict:
+    """合并多次抽取结果：按「种类 + 标题」去重（先出现者优先），合并 _rejected 与 source。"""
+    merged = {
+        "work_info": {"title": "", "genre": "", "intro": ""},
+        "entities": [],
+        "relations": [],
+        "outline_nodes": [],
+        "foreshadows": [],
+        "timeline_events": [],
+        "notes": [],
+        "_rejected": [],
+        "source": "contract",
+    }
+    sources = []
+    for a in assets_list or []:
+        if not isinstance(a, dict):
+            continue
+        sources.append(a.get("source") or "heuristic")
+        # work_info：先非空者胜
+        for k in ("title", "genre", "intro"):
+            if not merged["work_info"][k]:
+                merged["work_info"][k] = ((a.get("work_info") or {}).get(k) or "")
+        # 资产：按 种类+标题 去重
+        for field, tkey in _CONTRACT_TITLE_KEYS:
+            seen = {str(i.get(tkey, "")).strip() for i in merged[field]}
+            for item in a.get(field) or []:
+                if not isinstance(item, dict):
+                    continue
+                tv = str(item.get(tkey, "")).strip()
+                if tv and tv in seen:
+                    continue
+                if tv:
+                    seen.add(tv)
+                merged[field].append(item)
+        # rejected：按 (kind, title, reason) 去重
+        seen_r = {(r.get("kind"), r.get("title"), r.get("reason")) for r in merged["_rejected"]}
+        for r in a.get("_rejected") or []:
+            if not isinstance(r, dict):
+                continue
+            key = (r.get("kind"), r.get("title"), r.get("reason"))
+            if key in seen_r:
+                continue
+            seen_r.add(key)
+            merged["_rejected"].append(r)
+    if not sources:
+        merged["source"] = "heuristic"
+    elif all(s == "contract" for s in sources):
+        merged["source"] = "contract"
+    elif all(s == "heuristic" for s in sources):
+        merged["source"] = "heuristic"
+    else:
+        merged["source"] = "mixed"
+    return merged
+
+
 def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> dict:
     assets = {
         "work_info": {
