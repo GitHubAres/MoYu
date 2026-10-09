@@ -7,7 +7,7 @@
 **一支笔、一炉丹、一盏灯——部署在本地或私有 VPS、数据不出机的一站式 AI 长篇创作工作台。**
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-v2.1.0-D9483B)](https://github.com/GitHubAres/MoYu/releases)
+[![Version](https://img.shields.io/badge/version-v2.1.1-D9483B)](https://github.com/GitHubAres/MoYu/releases)
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-green)](https://www.python.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)]()
 [![Data](https://img.shields.io/badge/data-100%25%20本地私有-orange)]()
@@ -89,11 +89,11 @@
 
 ### 方式 A：Windows 原生单文件桌面端（无需环境）
 
-1. 从 [Releases](../../releases) 下载 `墨语MoYu-v2.1.0-win64.exe`
+1. 从 [Releases](../../releases) 下载 `墨语MoYu-v2.1.1-win64.exe`
 2. **双击运行**：直接打开沉浸式轻量原生窗口（依托系统内置 WebView2 运行，无黑框命令行，双击秒开）
 3. **关闭退出**：点击窗口右上角"关闭"按钮（×），程序自动优雅停止后台服务并退出，绝不留存后台僵尸进程
 4. **单实例保护**：重复双击 exe 不会发生端口争用冲突，会自动唤起激活已有运行中的墨语
-5. **浏览器回退模式**：命令行运行 `墨语MoYu-v2.1.0-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
+5. **浏览器回退模式**：命令行运行 `墨语MoYu-v2.1.1-win64.exe --browser` 或设置环境变量 `MOYU_WEBVIEW=0`，即可自动回退至外部浏览器访问模式
 
 ### 方式 B：Linux VPS / 私有服务器 Docker 部署（一键上线）
 
@@ -125,7 +125,7 @@ python run.py                    # 启动本地开发服务：http://127.0.0.1:8
 ```bash
 python -m pytest -q          # 204 项 API、响应式、编码守护与部署健康检查回归测试全绿
 
-python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v2.1.0-win64.exe
+python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v2.1.1-win64.exe
 python build_exe.py --onedir # 文件夹形态（便于调试与启动优化）
 ```
 
