@@ -56,6 +56,11 @@ class AssetOutlineIn(BaseModel):
     parent_id: Optional[int] = None
 
 
+class AssetChapterSynopsisIn(BaseModel):
+    node_title: str
+    synopsis: str
+
+
 class AssetNoteIn(BaseModel):
     title: str = "世界观设定"
     content: str = ""
@@ -67,6 +72,7 @@ class SyncAssetsIn(BaseModel):
     entities: list[AssetEntityIn] = []
     relations: list[AssetRelationIn] = []
     outline_nodes: list[AssetOutlineIn] = []
+    chapter_synopses: list[AssetChapterSynopsisIn] = []
     foreshadows: list[AssetForeshadowIn] = []
     timeline_events: list[AssetTimelineEventIn] = []
     notes: list[AssetNoteIn] = []
@@ -602,6 +608,7 @@ _CONTRACT_TITLE_KEYS = [
     ("entities", "name"),
     ("relations", "label"),
     ("outline_nodes", "title"),
+    ("chapter_synopses", "node_title"),
     ("foreshadows", "title"),
     ("timeline_events", "event"),
     ("notes", "title"),
@@ -615,6 +622,7 @@ def merge_assets(assets_list: list[dict]) -> dict:
         "entities": [],
         "relations": [],
         "outline_nodes": [],
+        "chapter_synopses": [],
         "foreshadows": [],
         "timeline_events": [],
         "notes": [],
@@ -673,6 +681,7 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
         "entities": [],
         "relations": [],
         "outline_nodes": [],
+        "chapter_synopses": [],
         "foreshadows": [],
         "timeline_events": [],
         "notes": [],
@@ -697,6 +706,7 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
             ("timeline_event", "timeline_events"),
             ("foreshadow", "foreshadows"),
             ("outline_node", "outline_nodes"),
+            ("chapter_synopsis", "chapter_synopses"),
             ("note", "notes"),
         ]:
             for item in block.get(field, []):
@@ -807,6 +817,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         "relations_added": 0,
         "outlines_added": 0,
         "outline_synopsis_updated": 0,
+        "chapter_synopses_updated": 0,
         "foreshadows_added": 0,
         "timeline_events_added": 0,
         "notes_added": 0,
@@ -979,6 +990,30 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         if len(summary["rejected_items"]) < 20:
             summary["rejected_items"].append(r_item)
 
+
+    # 4.4 章节梗概同步 (chapter_synopses)
+    for cs in body.chapter_synopses:
+        nt = (cs.node_title or "").strip()
+        syn = (cs.synopsis or "").strip()
+        if not nt:
+            continue
+        row = db.execute(
+            "SELECT id, synopsis FROM outline_nodes WHERE work_id = ? AND title = ?",
+            (work_id, nt),
+        ).fetchone()
+        if not row:
+            summary["rejected_count"] += 1
+            if len(summary["rejected_items"]) < 20:
+                summary["rejected_items"].append({
+                    "kind": "chapter_synopsis",
+                    "title": nt,
+                    "reason": f"未找到同名大纲节点：{nt}",
+                })
+        else:
+            old_syn = (row["synopsis"] or "").strip()
+            if syn and syn != old_syn:
+                db.execute("UPDATE outline_nodes SET synopsis = ? WHERE id = ?", (syn, row["id"]))
+                summary["chapter_synopses_updated"] += 1
 
     # 4.5 世界观设定同步（归入万象谱术语）
     for note in body.notes:

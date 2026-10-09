@@ -885,3 +885,47 @@ def test_sync_workflow_assets_apply_to_chapter(client):
     assert ver is not None
     assert ver["source"] == "workflow"
     assert ver["content"] == "新章节正文内容：剑光划破长夜。"
+
+
+def test_sync_workflow_assets_chapter_synopses(client):
+    from app.db import get_db
+    from app.workflow_assets import sync_assets_to_database, SyncAssetsIn, AssetChapterSynopsisIn
+
+    work, volume, chapter = make_wvc(client, "章节梗概契约同步作品")
+    work_id = work["id"]
+    db = get_db()
+
+    # 预先创建大纲节点
+    cur = db.execute(
+        "INSERT INTO outline_nodes (work_id, parent_id, title, synopsis, status, sort_order) VALUES (?, NULL, ?, ?, 'pending', 1)",
+        (work_id, "第一章 剑斩云霄", "旧梗概"),
+    )
+    node_id = cur.lastrowid
+    db.commit()
+
+    # 创建 run
+    cur_run = db.execute(
+        "INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step) VALUES (1, ?, ?, 'running', 0)",
+        (work_id, chapter["id"]),
+    )
+    run_id = cur_run.lastrowid
+    db.commit()
+
+    body = SyncAssetsIn(
+        chapter_synopses=[
+            AssetChapterSynopsisIn(node_title="第一章 剑斩云霄", synopsis="契约更新后的新梗概"),
+            AssetChapterSynopsisIn(node_title="不存在的第九十九章", synopsis="幽冥绝地"),
+        ]
+    )
+    summary = sync_assets_to_database(db=db, work_id=work_id, body=body, run_id=run_id, seq=0)
+    db.commit()
+
+    # chapter_synopses 匹配到同名节点 → synopsis 更新、summary["chapter_synopses_updated"] == 1
+    assert summary.get("chapter_synopses_updated") == 1
+    row = db.execute("SELECT synopsis FROM outline_nodes WHERE id = ?", (node_id,)).fetchone()
+    assert row["synopsis"] == "契约更新后的新梗概"
+
+    # 匹配不到 → rejected_count +1、原因含"未找到同名大纲节点"
+    assert summary.get("rejected_count", 0) >= 1
+    rejected_reasons = [r.get("reason", "") for r in summary.get("rejected_items", [])]
+    assert any("未找到同名大纲节点" in r for r in rejected_reasons)

@@ -235,3 +235,30 @@ def test_r1_notes_intake_to_entities(client):
         (work_id,),
     ).fetchone()
     assert dirty_row is None
+
+
+def test_k1a_chapter_synopses_extraction_and_sanitization():
+    """K-1a: chapter_synopses 契约抽取与校验"""
+    text = """
+<!-- MOYU:ASSETS
+{
+  "chapter_synopses": [
+    {"node_title": "第一章 剑斩云霄", "synopsis": "少年一剑破苍穹"},
+    {"node_title": "", "synopsis": "空标题节点"},
+    {"node_title": "第二章", "synopsis": ""},
+    {"node_title": "这个标题超过了三十个字符这是非常长的无效大纲节点标题长度超标啦", "synopsis": "超长标题梗概"}
+  ]
+}
+MOYU:ASSETS -->
+"""
+    assets = extract_structured_assets_from_text(text)
+    assert "chapter_synopses" in assets
+    synopses = assets["chapter_synopses"]
+    assert len(synopses) == 1
+    assert synopses[0]["node_title"] == "第一章 剑斩云霄"
+    assert synopses[0]["synopsis"] == "少年一剑破苍穹"
+
+    # 空 node_title / 空 synopsis / 超长 进 _rejected
+    rejected = assets.get("_rejected", [])
+    rejected_reasons = [r.get("reason") for r in rejected if r.get("kind") in ("chapter_synopsis", "chapter_synopses")]
+    assert len(rejected_reasons) >= 3

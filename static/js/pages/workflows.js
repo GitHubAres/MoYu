@@ -696,6 +696,8 @@ async function renderRun(view, runId) {
                        (assets.entities || []).length +
                        (assets.relations || []).length +
                        (assets.outline_nodes || []).length +
+                       (assets.chapter_synopses || []).length +
+                       (assets.timeline_events || []).length +
                        (assets.foreshadows || []).length;
 
     const overlay = ui.el("div", {
@@ -922,6 +924,32 @@ async function renderRun(view, runId) {
       body.append(teGroup);
     }
 
+    // 3.8 章节梗概
+    const chapterSynopsisChecks = [];
+    if ((assets.chapter_synopses || []).length > 0) {
+      const csGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+            ui.icon("description", "text-[16px]"), `章节梗概 (${assets.chapter_synopses.length}条)`),
+          ui.el("span", { class: "text-[11px] text-on-surface-variant" }, "将更新同名大纲节点梗概（空梗概不覆盖）")));
+      const list = ui.el("div", { class: "flex flex-col gap-2" });
+      assets.chapter_synopses.forEach((cs) => {
+        const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-1" });
+        const synInput = ui.el("textarea", {
+          class: "w-full min-h-[50px] p-2 rounded-lg bg-surface border border-outline-variant/60 font-body-sm text-body-sm text-on-surface resize-y outline-none focus:border-primary",
+        }, cs.synopsis || "");
+        chapterSynopsisChecks.push({ cb, data: cs, synInput });
+        const item = ui.el("div", { class: "flex items-start gap-2 p-2.5 rounded-lg bg-surface border border-outline-variant/40" },
+          cb,
+          ui.el("div", { class: "flex flex-col gap-1.5 flex-1 min-w-0" },
+            ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary truncate" }, cs.node_title),
+            synInput));
+        list.append(item);
+      });
+      csGroup.append(list);
+      body.append(csGroup);
+    }
+
     // 4. 伏笔计划表
     const foreshadowChecks = [];
     if ((assets.foreshadows || []).length > 0) {
@@ -1002,6 +1030,10 @@ async function renderRun(view, runId) {
               entities: entChecks.filter(c => c.cb.checked).map(c => c.data),
               relations: relChecks.filter(c => c.cb.checked).map(c => c.data),
               outline_nodes: outlineChecks.filter(c => c.cb.checked).map(c => c.data),
+              chapter_synopses: chapterSynopsisChecks.filter(c => c.cb.checked).map(c => ({
+                node_title: c.data.node_title,
+                synopsis: c.synInput ? c.synInput.value.trim() : (c.data.synopsis || ""),
+              })),
               timeline_events: timelineChecks.filter(c => c.cb.checked).map(c => c.data),
               foreshadows: foreshadowChecks.filter(c => c.cb.checked).map(c => c.data),
               notes: noteChecks.filter(c => c.cb.checked).map(c => c.data),
@@ -1024,7 +1056,8 @@ async function renderRun(view, runId) {
               if (sm.entities_added) tips.push(`万相谱实体+${sm.entities_added}`);
               if (sm.relations_added) tips.push(`关系+${sm.relations_added}`);
               if (sm.outlines_added) tips.push(`大纲+${sm.outlines_added}`);
-              if (sm.outline_synopsis_updated) tips.push(`梗概更新+${sm.outline_synopsis_updated}`);
+              const totalSynUpdated = (sm.outline_synopsis_updated || 0) + (sm.chapter_synopses_updated || 0);
+              if (totalSynUpdated) tips.push(`梗概更新+${totalSynUpdated}`);
               if (sm.timeline_events_added) tips.push(`时间线+${sm.timeline_events_added}`);
               if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
               if (sm.notes_added) tips.push(`术语+${sm.notes_added}`);

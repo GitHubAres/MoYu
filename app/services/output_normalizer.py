@@ -159,7 +159,7 @@ def extract_assets_block(text: str) -> dict | None:
         data = json.loads(raw_json)
         if not isinstance(data, dict):
             return None
-        valid_keys = ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes"]
+        valid_keys = ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes", "chapter_synopses"]
         res: dict[str, list] = {}
         for k in valid_keys:
             val = data.get(k)
@@ -187,6 +187,8 @@ def sanitize_asset_item(item: dict, kind: str) -> tuple[bool, str]:
         title = item.get("label", "")
     elif kind == "note":
         title = item.get("title", "")
+    elif kind in ("chapter_synopsis", "chapter_synopses"):
+        title = item.get("node_title", "")
     else:
         title = item.get("title") or item.get("name") or item.get("event") or item.get("label") or ""
 
@@ -198,6 +200,13 @@ def sanitize_asset_item(item: dict, kind: str) -> tuple[bool, str]:
     # 2. 标题为空
     if not title_strip:
         return False, "标题为空"
+
+    if kind in ("chapter_synopsis", "chapter_synopses"):
+        syn = item.get("synopsis", "")
+        if not isinstance(syn, str):
+            syn = str(syn) if syn is not None else ""
+        if not syn.strip():
+            return False, "梗概为空"
 
     # 3. 标题长度 > 30
     if len(title_strip) > 30:
