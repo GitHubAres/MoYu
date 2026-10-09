@@ -370,3 +370,36 @@ def test_analysis_rubric_fully_inlined(client):
     assert "references/analysis-rubric.md" in prompt_text
     assert "用户要的是判断，不是过程" in prompt_text
     assert "[内容过长已截断]" not in prompt_text
+
+
+def test_deai_skill_v2_sepia_port(client):
+    """S-1a: sepia 去AI方法论移植断言先行（5组断言）"""
+    # 1. 技能正文升级：从 /api/skills 取 de-ai-tone 的 body_md，断言同时包含：校准三原则、操作模式、74/18/8
+    res = client.get("/api/skills")
+    assert res.status_code == 200
+    skills = {s["name"]: s for s in res.json()}
+    assert "de-ai-tone" in skills
+    body_md = skills["de-ai-tone"]["body_md"]
+    assert "校准三原则" in body_md
+    assert "操作模式" in body_md
+    assert "74/18/8" in body_md
+
+    # 2. AI_TONE_CATALOG 升级：断言同时包含：三关、校准三原则、删改自验
+    from app.builtin_skill_data import AI_TONE_CATALOG, PROSE_CRAFT
+    assert "三关" in AI_TONE_CATALOG
+    assert "校准三原则" in AI_TONE_CATALOG
+    assert "删改自验" in AI_TONE_CATALOG
+
+    # 3. PROSE_CRAFT 升级：断言同时包含：叙事架构、QUD
+    assert "叙事架构" in PROSE_CRAFT
+    assert "QUD" in PROSE_CRAFT
+
+    # 4. 规模闸（防爆 prompt）：2026-10-10 实测 L1=3517, L2=1605
+    L1 = 3517  # 实测 AI_TONE_CATALOG 初始长度 (2026-10-10)
+    L2 = 1605  # 实测 PROSE_CRAFT 初始长度 (2026-10-10)
+    assert len(AI_TONE_CATALOG) <= L1 + 7000, f"AI_TONE_CATALOG 超过增量上限: {len(AI_TONE_CATALOG)} > {L1 + 7000}"
+    assert len(PROSE_CRAFT) <= L2 + 3000, f"PROSE_CRAFT 超过增量上限: {len(PROSE_CRAFT)} > {L2 + 3000}"
+
+    # 5. 契约尾注未动：两个常量均仍以 相关键：notes 收尾（rstrip() 后 endswith 判断）
+    assert AI_TONE_CATALOG.rstrip().endswith("相关键：notes），正文自由书写，未涉及产物键留空数组。")
+    assert PROSE_CRAFT.rstrip().endswith("相关键：notes），正文自由书写，未涉及产物键留空数组。")
