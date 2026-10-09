@@ -597,7 +597,7 @@ def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
     return assets, rejected
 
 
-def extract_structured_assets_from_text(text: str) -> dict:
+def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> dict:
     assets = {
         "work_info": {
             "title": "",
@@ -616,8 +616,9 @@ def extract_structured_assets_from_text(text: str) -> dict:
     if not text or not text.strip():
         return assets
 
-    # step1: 清洗套话
-    text = strip_ai_chatter(text)
+    # step1: 清洗套话 (AI产出 strict=True，章节正文 strict=False)
+    strict_flag = (source_kind == "ai")
+    text = strip_ai_chatter(text, strict=strict_flag)
 
     # step2: 优先解析契约块
     block = extract_assets_block(text)

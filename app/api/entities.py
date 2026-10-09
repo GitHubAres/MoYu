@@ -355,7 +355,7 @@ def detect_unregistered_entities(work_id: int, body: DetectUnregisteredIn):
     raw_candidates = []
 
     # 1. workflow_assets 提取
-    structured = extract_structured_assets_from_text(content)
+    structured = extract_structured_assets_from_text(content, source_kind="chapter")
     for ent in structured.get('entities', []):
         raw_candidates.append({
             'name': (ent.get('name') or '').strip(),

@@ -3,11 +3,17 @@ import json
 import re
 from typing import Any
 
-CHATTER_PREFIXES = [
-    "好的", "好的，", "以下是", "以下为", "如上所述", "综上所述", "这是为您", "这是给你",
-    "希望以上", "希望这", "希望能", "如需", "如果需要", "如有需要", "请注意", "注意：",
-    "供你参考", "供您参考", "祝你", "祝创作", "感谢", "期待", "如果有任何",
+CHATTER_PREFIXES_STRONG = [
+    "好的", "好的，", "如上所述", "综上所述", "这是为您", "这是给你",
+    "供你参考", "供您参考", "如果有任何", "祝创作顺利",
 ]
+
+CHATTER_PREFIXES_AMBIGUOUS = [
+    "感谢", "期待", "祝你", "祝你创作", "希望以上", "希望这", "希望能",
+    "如需", "如果需要", "如有需要", "请注意", "注意：", "以下是", "以下为",
+]
+
+CHATTER_PREFIXES = CHATTER_PREFIXES_STRONG + CHATTER_PREFIXES_AMBIGUOUS
 
 CHATTER_CONTAINS = [
     "修改后的内容", "修改后的正文", "修改后的版本", "改写后的内容", "优化后的内容",
@@ -33,13 +39,24 @@ CHARACTER_FIELD_KEYWORDS = [
 ]
 
 
-def strip_ai_chatter(text: str) -> str:
-    """删除 AI 套话行与分隔线行，保留正常句子与原有换行结构。"""
+def strip_ai_chatter(text: str, strict: bool = True) -> str:
+    """删除 AI 套话行与分隔线行，保留正常句子与原有换行结构。
+    strict=True (用于 AI 产出): 强词表无条件删 + 弱词表在满足边界条件时删
+    strict=False (用于用户正文): 仅用强词表，弱词表完全不启用
+    """
     if not text:
         return ""
     lines = text.splitlines()
+
+    # 计算全文首尾各 3 个非空行的索引
+    non_empty_indices = [idx for idx, line in enumerate(lines) if line.strip()]
+    if len(non_empty_indices) <= 6:
+        boundary_indices = set(non_empty_indices)
+    else:
+        boundary_indices = set(non_empty_indices[:3] + non_empty_indices[-3:])
+
     cleaned_lines = []
-    for line in lines:
+    for idx, line in enumerate(lines):
         stripped = line.strip()
         if not stripped:
             cleaned_lines.append(line)
@@ -49,14 +66,22 @@ def strip_ai_chatter(text: str) -> str:
         if len(stripped) >= 3 and set(stripped) <= {'-', '=', '*', '_'}:
             continue
 
-        # 检查前缀词表 (大小写不敏感)
         stripped_lower = stripped.lower()
-        if any(stripped_lower.startswith(prefix.lower()) for prefix in CHATTER_PREFIXES):
-            continue
 
         # 检查包含词
         if any(contain.lower() in stripped_lower for contain in CHATTER_CONTAINS):
             continue
+
+        # 检查强套话词表（无条件整行删除）
+        if any(stripped_lower.startswith(p.lower()) for p in CHATTER_PREFIXES_STRONG):
+            continue
+
+        # 检查弱套话词表（仅在 strict=True 且满足条件时删除）
+        if strict and any(stripped_lower.startswith(p.lower()) for p in CHATTER_PREFIXES_AMBIGUOUS):
+            # 弱词表命中条件：长度 <= 25 且 位于首尾各3行非空行内 且 不含标点冒号逗号
+            has_punct = any(ch in stripped for ch in [':', '：', ',', '，'])
+            if len(stripped) <= 25 and (idx in boundary_indices) and not has_punct:
+                continue
 
         cleaned_lines.append(line)
 
