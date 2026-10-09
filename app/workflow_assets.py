@@ -6,6 +6,12 @@ import json
 import re
 from typing import Optional
 from pydantic import BaseModel
+from app.services.output_normalizer import (
+    extract_assets_block,
+    sanitize_asset_item,
+    strip_ai_chatter,
+    strip_heading_only_lines,
+)
 
 
 class AssetWorkInfoIn(BaseModel):
@@ -72,7 +78,7 @@ def clean_str(s: str) -> str:
     return re.sub(r'[*#_`]', '', s).strip()
 
 
-def extract_structured_assets_from_text(text: str) -> dict:
+def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
     assets = {
         "work_info": {
             "title": "",
@@ -86,8 +92,9 @@ def extract_structured_assets_from_text(text: str) -> dict:
         "timeline_events": [],
         "notes": [],
     }
+    rejected = []
     if not text or not text.strip():
-        return assets
+        return assets, rejected
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
     category_map = {
@@ -325,7 +332,36 @@ def extract_structured_assets_from_text(text: str) -> dict:
                         'event': event,
                         'characters': characters,
                     })
+            else:
+                for nxt in lines[i+1:min(len(lines), i+15)]:
+                    if nxt.startswith(('#', '---')):
+                        break
+                    nxt_s = nxt.strip()
+                    m_ev = re.match(r'^[-*>\s\u20220-9.、]*([^\n·:：]+?)[·:：\s]+([^\n]+)$', nxt_s)
+                    if m_ev:
+                        t_lbl = clean_str(m_ev.group(1))
+                        ev_txt = clean_str(m_ev.group(2))
+                        if ev_txt and t_lbl:
+                            assets['timeline_events'].append({
+                                'time_label': t_lbl,
+                                'event': ev_txt,
+                                'characters': '',
+                            })
             continue
+
+        # 单独的清单式时间线项识别 (- 开元三年 · 顾风下山，途经剑阁)
+        m_tline = re.match(r'^[-*>\s\u2022]*([^·:：\n]{2,15})[·:：]\s*([^·:：\n].+)$', line)
+        if m_tline:
+            c_time = clean_str(m_tline.group(1))
+            c_event = clean_str(m_tline.group(2))
+            if any(k in c_time for k in ['年', '月', '日', '春', '夏', '秋', '冬', '初', '末', '前', '后', '世', '代', '纪', '元', '时', '刻', '夜', '第']):
+                if c_event and len(c_event) >= 2 and not any(bad in c_event for bad in ['---', '===']):
+                    assets['timeline_events'].append({
+                        'time_label': c_time,
+                        'event': c_event,
+                        'characters': '',
+                    })
+                    continue
 
         # foreshadow item
         fs_m = (
@@ -365,6 +401,10 @@ def extract_structured_assets_from_text(text: str) -> dict:
         if mc:
             raw_cname = mc.group(1).strip()
             alias = mc.group(2) or ""
+            ok, reason = sanitize_asset_item({"name": raw_cname}, "entity")
+            if not ok:
+                rejected.append({"kind": "entity", "title": raw_cname, "reason": reason})
+                continue
             if not any(k in raw_cname for k in ["规则", "设定", "卷", "章", "场景", "关系", "核心", "一、", "二、", "三、", "四、", "五、", "方向", "方案", "简介", "计划", "分区", "接口"]):
                 cname = clean_str(raw_cname)
                 if len(cname) >= 2 and len(cname) <= 20 and cname not in seen_entities and not re.match(r'^[0-9一二三四五六七八九十]+[、.\s]*$', cname):
@@ -492,6 +532,10 @@ def extract_structured_assets_from_text(text: str) -> dict:
         if mr:
             tag, r_title, en_name = mr.groups()
             full_title = f"{tag} · {r_title.strip()}"
+            ok, reason = sanitize_asset_item({"title": full_title}, "note")
+            if not ok:
+                rejected.append({"kind": "note", "title": full_title, "reason": reason})
+                continue
             content_lines = []
             for nxt in lines[i+1:i+16]:
                 if nxt.startswith(('###', '##', '#', '---')):
@@ -509,6 +553,10 @@ def extract_structured_assets_from_text(text: str) -> dict:
             tag = (mn.group(1) or mn.group(2) or "设定").strip()
             sub = (mn.group(3) or "").strip()
             title = f"{tag}{(' · ' + sub) if sub else ''}"
+            ok, reason = sanitize_asset_item({"title": title}, "note")
+            if not ok:
+                rejected.append({"kind": "note", "title": title, "reason": reason})
+                continue
             content_lines = []
             for nxt in lines[i+1:i+12]:
                 if nxt.startswith(('#', '【', '---')):
@@ -520,7 +568,142 @@ def extract_structured_assets_from_text(text: str) -> dict:
                 "tags": f"世界观,{tag}",
             })
 
-    return assets
+    for k, kind_name in [
+        ("entities", "entity"),
+        ("relations", "relation"),
+        ("outline_nodes", "outline_node"),
+        ("foreshadows", "foreshadow"),
+        ("timeline_events", "timeline_event"),
+        ("notes", "note"),
+    ]:
+        valid_items = []
+        for item in assets[k]:
+            ok, reason = sanitize_asset_item(item, kind_name)
+            if ok:
+                valid_items.append(item)
+            else:
+                t_val = (
+                    item.get("name")
+                    if kind_name == "entity"
+                    else item.get("label")
+                    if kind_name == "relation"
+                    else item.get("event")
+                    if kind_name == "timeline_event"
+                    else item.get("title") or ""
+                )
+                rejected.append({"kind": kind_name, "title": t_val, "reason": reason})
+        assets[k] = valid_items
+
+    return assets, rejected
+
+
+def extract_structured_assets_from_text(text: str) -> dict:
+    assets = {
+        "work_info": {
+            "title": "",
+            "genre": "",
+            "intro": "",
+        },
+        "entities": [],
+        "relations": [],
+        "outline_nodes": [],
+        "foreshadows": [],
+        "timeline_events": [],
+        "notes": [],
+        "_rejected": [],
+        "source": "heuristic",
+    }
+    if not text or not text.strip():
+        return assets
+
+    # step1: 清洗套话
+    text = strip_ai_chatter(text)
+
+    # step2: 优先解析契约块
+    block = extract_assets_block(text)
+    if block is not None:
+        source = "contract"
+        rejected = []
+        for kind, field in [
+            ("entity", "entities"),
+            ("relation", "relations"),
+            ("timeline_event", "timeline_events"),
+            ("foreshadow", "foreshadows"),
+            ("outline_node", "outline_nodes"),
+        ]:
+            for item in block.get(field, []):
+                ok, reason = sanitize_asset_item(item, kind)
+                if ok:
+                    assets[field].append(item)
+                else:
+                    t_val = (
+                        item.get("name")
+                        if kind == "entity"
+                        else item.get("label")
+                        if kind == "relation"
+                        else item.get("event")
+                        if kind == "timeline_event"
+                        else item.get("title") or ""
+                    )
+                    rejected.append({"kind": kind, "title": t_val, "reason": reason})
+
+        # 正文部分仍走原有启发式抽取兜底补充
+        text_remain = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?MOYU:ASSETS\s*-->', '', text, flags=re.IGNORECASE)
+        heur_assets, heur_rejected = _heuristic_extract_assets(text_remain)
+        rejected.extend(heur_rejected)
+
+        # 故事立项补充
+        if not assets["work_info"]["title"]:
+            assets["work_info"]["title"] = heur_assets["work_info"]["title"]
+        if not assets["work_info"]["genre"]:
+            assets["work_info"]["genre"] = heur_assets["work_info"]["genre"]
+        if not assets["work_info"]["intro"]:
+            assets["work_info"]["intro"] = heur_assets["work_info"]["intro"]
+
+        # 同一条资产不得重复进入结果（按「种类 + 标题」去重，契约块优先）
+        for field, title_key in [
+            ("entities", "name"),
+            ("relations", "label"),
+            ("timeline_events", "event"),
+            ("foreshadows", "title"),
+            ("outline_nodes", "title"),
+            ("notes", "title"),
+        ]:
+            seen_titles = {item.get(title_key, "") for item in assets[field]}
+            for h_item in heur_assets.get(field, []):
+                h_title = h_item.get(title_key, "")
+                if h_title and h_title not in seen_titles:
+                    assets[field].append(h_item)
+                    seen_titles.add(h_title)
+
+        assets["_rejected"] = rejected
+        assets["source"] = source
+        return assets
+    else:
+        source = "heuristic"
+        # 记录被 strip_heading_only_lines 过滤掉的标题行以供 _rejected 跟踪
+        stripped_headings = []
+        for line in text.splitlines():
+            m = re.match(r'^\s{0,3}#{1,6}\s*(.+)$', line)
+            if m:
+                h_raw = m.group(1).strip()
+                h_clean = re.sub(r'^[#\s]+|[#\s]+$', '', h_raw).strip()
+                if len(h_clean) <= 20 and ':' not in h_clean and '：' not in h_clean:
+                    if h_clean in ["伏笔暗线", "世界观设定", "时间线", "分卷大纲", "角色关系网"]:
+                        stripped_headings.append(h_clean)
+
+        cleaned_text = strip_heading_only_lines(text)
+        heur_assets, rejected = _heuristic_extract_assets(cleaned_text)
+        assets.update(heur_assets)
+
+        for sh in stripped_headings:
+            if not any(r["title"] == sh for r in rejected):
+                k_hint = "foreshadow" if "伏笔" in sh else "timeline_event" if "时间" in sh else "entity"
+                rejected.append({"kind": k_hint, "title": sh, "reason": "疑似纯标题"})
+
+        assets["_rejected"] = rejected
+        assets["source"] = source
+        return assets
 
 
 def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 0, seq: int = 0) -> dict:
