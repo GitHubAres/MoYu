@@ -650,8 +650,13 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
 
         # 正文部分仍走原有启发式抽取兜底补充
         text_remain = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?MOYU:ASSETS\s*-->', '', text, flags=re.IGNORECASE)
-        text_remain = strip_heading_only_lines(text_remain)
+        text_remain, text_remain_deleted = strip_heading_only_lines(text_remain)
         heur_assets, heur_rejected = _heuristic_extract_assets(text_remain)
+        for dh in text_remain_deleted:
+            t = dh["title"]
+            if not any(r["title"] == t for r in rejected):
+                k_hint = "foreshadow" if "伏笔" in t else "timeline_event" if "时间" in t else "note" if any(x in t for x in ["世界观", "设定", "法则", "体系"]) else "entity"
+                rejected.append({"kind": k_hint, "title": t, "reason": "疑似纯标题"})
         rejected.extend(heur_rejected)
 
         # 故事立项补充
@@ -683,24 +688,19 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
         return assets
     else:
         source = "heuristic"
-        # 记录被 strip_heading_only_lines 过滤掉的标题行以供 _rejected 跟踪
-        stripped_headings = []
-        for line in text.splitlines():
-            m = re.match(r'^\s{0,3}#{1,6}\s*(.+)$', line)
-            if m:
-                h_raw = m.group(1).strip()
-                h_clean = re.sub(r'^[#\s]+|[#\s]+$', '', h_raw).strip()
-                if len(h_clean) <= 20 and ':' not in h_clean and '：' not in h_clean:
-                    if h_clean in ["伏笔暗线", "世界观设定", "时间线", "分卷大纲", "角色关系网"]:
-                        stripped_headings.append(h_clean)
-
-        cleaned_text = strip_heading_only_lines(text)
+        cleaned_text, deleted_headings = strip_heading_only_lines(text)
         heur_assets, rejected = _heuristic_extract_assets(cleaned_text)
         assets.update(heur_assets)
 
-        for sh in stripped_headings:
+        for dh in deleted_headings:
+            sh = dh["title"]
             if not any(r["title"] == sh for r in rejected):
-                k_hint = "foreshadow" if "伏笔" in sh else "timeline_event" if "时间" in sh else "entity"
+                k_hint = (
+                    "foreshadow" if "伏笔" in sh
+                    else "timeline_event" if "时间" in sh
+                    else "note" if any(x in sh for x in ["世界观", "设定", "法则", "体系"])
+                    else "entity"
+                )
                 rejected.append({"kind": k_hint, "title": sh, "reason": "疑似纯标题"})
 
         assets["_rejected"] = rejected

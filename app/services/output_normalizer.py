@@ -88,12 +88,15 @@ def strip_ai_chatter(text: str, strict: bool = True) -> str:
     return "\n".join(cleaned_lines)
 
 
-def strip_heading_only_lines(text: str) -> str:
-    """删除纯标题行（如 ### 世界观设定、### 伏笔暗线、### 时间线），保留角色卡等数据卡。"""
+def strip_heading_only_lines(text: str) -> tuple[str, list[dict]]:
+    """删除纯标题行（如 ### 世界观设定、### 伏笔暗线、### 时间线），保留角色卡等数据卡。
+    返回: (清洗后文本, 被删行列表)，元素形如 {"title": "<标题文本>", "line_no": <行号>}
+    """
     if not text:
-        return ""
+        return "", []
     lines = text.splitlines()
     cleaned_lines = []
+    deleted_headings = []
     for i, line in enumerate(lines):
         m = re.match(r'^\s{0,3}#{1,6}\s*(.+)$', line)
         if m:
@@ -119,12 +122,13 @@ def strip_heading_only_lines(text: str) -> str:
                             break
 
                 if not is_character_card:
-                    # 属于纯标题行，删除
+                    # 属于纯标题行，删除并记录
+                    deleted_headings.append({"title": heading_clean, "line_no": i + 1})
                     continue
 
         cleaned_lines.append(line)
 
-    return "\n".join(cleaned_lines)
+    return "\n".join(cleaned_lines), deleted_headings
 
 
 def extract_assets_block(text: str) -> dict | None:
