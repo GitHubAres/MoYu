@@ -289,7 +289,7 @@ async def _execute(run_id: int):
                 target_check = (instruction or "") + " " + (sys_prompt or "")
                 if any(k in target_check for k in asset_kws):
                     contract_clause = (
-                        "【输出契约】若本步骤产出可入库资产（实体/关系/时间线事件/伏笔/大纲节点），"
+                        "【输出契约】若本步骤产出可入库资产（实体/关系/时间线事件/伏笔/大纲节点/章节梗概），"
                         "必须在回答末尾追加如下契约块，正文里写什么都可以，但契约块必须存在且为合法 JSON：\n"
                         "<!-- MOYU:ASSETS\n"
                         "{\n"
@@ -297,10 +297,11 @@ async def _execute(run_id: int):
                         '  "relations": [],\n'
                         '  "timeline_events": [],\n'
                         '  "foreshadows": [],\n'
-                        '  "outline_nodes": []\n'
+                        '  "outline_nodes": [],\n'
+                        '  "chapter_synopses": []\n'
                         "}\n"
                         "MOYU:ASSETS -->\n"
-                        "没有对应资产的种类填空数组，不要省略键。"
+                        "没有对应资产的种类填空数组，不要省略键；chapter_synopses 用于更新同名大纲节点的剧情梗概。"
                     )
                     parts.append(contract_clause)
                 # 写作工作流多为长篇小说草稿生成、长章精修或世界观设定等任务，
