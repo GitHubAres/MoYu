@@ -10,6 +10,7 @@ from app.services.output_normalizer import (
     extract_assets_block,
     sanitize_asset_item,
     strip_ai_chatter,
+    strip_assets_blocks,
     strip_heading_only_lines,
 )
 
@@ -714,7 +715,7 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
                     rejected.append({"kind": kind, "title": t_val, "reason": reason})
 
         # 正文部分仍走原有启发式抽取兜底补充
-        text_remain = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?MOYU:ASSETS\s*-->', '', text, flags=re.IGNORECASE)
+        text_remain = strip_assets_blocks(text)
         text_remain, text_remain_deleted = strip_heading_only_lines(text_remain)
         heur_assets, heur_rejected = _heuristic_extract_assets(text_remain)
         for dh in text_remain_deleted:

@@ -97,3 +97,38 @@ def test_h1_rejected_merge():
     assert len(rejected) == 2
     keys = [(r.get("kind"), r.get("title"), r.get("reason")) for r in rejected]
     assert len(keys) == len(set(keys))
+
+
+from app.services.output_normalizer import extract_assets_block
+
+
+def test_h2a_single_marker_block():
+    text = """前言
+<!-- MOYU:ASSETS
+{
+  "entities": [{"name": "宁恪", "category": "character", "content": "主角"}]
+}
+-->
+后记"""
+    block = extract_assets_block(text)
+    assert block is not None
+    assert block.get("entities")[0]["name"] == "宁恪"
+
+    assets = extract_structured_assets_from_text(text)
+    assert assets.get("source") == "contract"
+    assert any(e["name"] == "宁恪" for e in assets.get("entities", []))
+
+
+def test_h2a_double_marker_preserved():
+    text = """<!-- MOYU:ASSETS
+{"entities": [{"name": "宁恪", "category": "character", "content": "主角"}]}
+MOYU:ASSETS -->"""
+    block = extract_assets_block(text)
+    assert block is not None
+    assets = extract_structured_assets_from_text(text)
+    assert assets.get("source") == "contract"
+
+
+def test_h2a_no_contract_block():
+    text = "普通文本 <!-- 普通注释 --> 没有任何契约块"
+    assert extract_assets_block(text) is None

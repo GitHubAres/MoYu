@@ -135,11 +135,18 @@ def extract_assets_block(text: str) -> dict | None:
     """解析 <!-- MOYU:ASSETS ... MOYU:ASSETS --> 资产契约块，严格容错解析。"""
     if not text:
         return None
-    match = re.search(r'<!--\s*MOYU:ASSETS\s*([\s\S]*?)\s*MOYU:ASSETS\s*-->', text, re.IGNORECASE)
-    if not match:
+    patterns = [
+        r'<!--\s*MOYU:ASSETS\s*([\s\S]*?)\s*MOYU:ASSETS\s*-->',   # 双标记
+        r'<!--\s*MOYU:ASSETS\s*([\s\S]*?)\s*-->',                  # 单标记收尾
+    ]
+    raw_json = None
+    for pat in patterns:
+        match = re.search(pat, text, re.IGNORECASE)
+        if match:
+            raw_json = match.group(1).strip()
+            break
+    if raw_json is None:
         return None
-
-    raw_json = match.group(1).strip()
     # 剥离 markdown 代码围栏
     raw_json = re.sub(r'^```(?:json)?\s*', '', raw_json, flags=re.IGNORECASE)
     raw_json = re.sub(r'\s*```$', '', raw_json)
@@ -222,3 +229,12 @@ def sanitize_asset_item(item: dict, kind: str) -> tuple[bool, str]:
         return False, "疑似纯标题"
 
     return True, ""
+
+
+def strip_assets_blocks(text: str) -> str:
+    """删除文本中全部 MOYU:ASSETS 契约块（兼容双标记与单标记收尾）。"""
+    if not text:
+        return ""
+    text = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?MOYU:ASSETS\s*-->', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?-->', '', text, flags=re.IGNORECASE)
+    return text
