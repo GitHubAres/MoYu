@@ -649,6 +649,7 @@ def extract_structured_assets_from_text(text: str) -> dict:
 
         # 正文部分仍走原有启发式抽取兜底补充
         text_remain = re.sub(r'<!--\s*MOYU:ASSETS[\s\S]*?MOYU:ASSETS\s*-->', '', text, flags=re.IGNORECASE)
+        text_remain = strip_heading_only_lines(text_remain)
         heur_assets, heur_rejected = _heuristic_extract_assets(text_remain)
         rejected.extend(heur_rejected)
 
