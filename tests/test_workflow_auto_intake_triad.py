@@ -194,3 +194,62 @@ def test_workflow_summary_assets_and_auto_intake_flow(client):
     assert "林渊" in ch_ent_names
     assert "太虚残剑" in ch_ent_names
     assert "太玄门" in ch_ent_names
+
+
+def test_batch_sync_outline_synopsis_update_and_stats(client):
+    from app.services.plot_service import batch_sync_triad_assets
+    w, v, c = make_wvc(client, "大纲梗概同步测试")
+    work_id = w["id"]
+    db = get_db()
+
+    # 用例 1：作品中已存在大纲节点（title="第一章 剑斩云霄"，synopsis="旧梗概"）
+    # 调 batch_sync_triad_assets 传入同名节点 + 新 synopsis="新梗概"
+    # 期望：节点 synopsis 变为"新梗概"，返回 stats 含 outline_synopsis_updated == 1
+    cur = db.execute(
+        "INSERT INTO outline_nodes (work_id, parent_id, title, synopsis, status, sort_order) VALUES (?, NULL, ?, ?, 'pending', 1)",
+        (work_id, "第一章 剑斩云霄", "旧梗概"),
+    )
+    node1_id = cur.lastrowid
+    db.commit()
+
+    stats1 = batch_sync_triad_assets(
+        db=db,
+        work_id=work_id,
+        timeline_events=[],
+        foreshadows=[],
+        outline_nodes=[{"title": "第一章 剑斩云霄", "synopsis": "新梗概"}],
+    )
+    db.commit()
+    assert stats1.get("outline_synopsis_updated") == 1
+    row1 = db.execute("SELECT synopsis FROM outline_nodes WHERE id = ?", (node1_id,)).fetchone()
+    assert row1["synopsis"] == "新梗概"
+
+    # 用例 2：同上但传入 synopsis=""
+    # 期望：旧梗概原样保留（不被清空），outline_synopsis_updated == 0
+    stats2 = batch_sync_triad_assets(
+        db=db,
+        work_id=work_id,
+        timeline_events=[],
+        foreshadows=[],
+        outline_nodes=[{"title": "第一章 剑斩云霄", "synopsis": ""}],
+    )
+    db.commit()
+    assert stats2.get("outline_synopsis_updated") == 0
+    row2 = db.execute("SELECT synopsis FROM outline_nodes WHERE id = ?", (node1_id,)).fetchone()
+    assert row2["synopsis"] == "新梗概"
+
+    # 用例 3：节点不存在
+    # 维持 INSERT 原行为，outline_nodes_added == 1 且 outline_synopsis_updated == 0
+    stats3 = batch_sync_triad_assets(
+        db=db,
+        work_id=work_id,
+        timeline_events=[],
+        foreshadows=[],
+        outline_nodes=[{"title": "第二章 踏雪无痕", "synopsis": "新章节梗概"}],
+    )
+    db.commit()
+    assert stats3.get("outline_nodes_added") == 1
+    assert stats3.get("outline_synopsis_updated") == 0
+    row3 = db.execute("SELECT synopsis FROM outline_nodes WHERE work_id = ? AND title = ?", (work_id, "第二章 踏雪无痕")).fetchone()
+    assert row3 is not None
+    assert row3["synopsis"] == "新章节梗概"

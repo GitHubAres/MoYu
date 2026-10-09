@@ -60,6 +60,7 @@ def batch_sync_triad_assets(
         "timeline_events_added": 0,
         "foreshadows_added": 0,
         "outline_nodes_added": 0,
+        "outline_synopsis_updated": 0,
         "rejected_count": 0,
         "rejected_items": [],
     }
@@ -73,7 +74,7 @@ def batch_sync_triad_assets(
         if not title:
             continue
         dup = db.execute(
-            "SELECT id FROM outline_nodes WHERE work_id = ? AND title = ? AND (parent_id IS ? OR parent_id = ?)",
+            "SELECT id, synopsis FROM outline_nodes WHERE work_id = ? AND title = ? AND (parent_id IS ? OR parent_id = ?)",
             (work_id, title, parent_id, parent_id),
         ).fetchone()
         if not dup:
@@ -89,6 +90,15 @@ def batch_sync_triad_assets(
             stats["outline_nodes_added"] += 1
             if n.get("is_volume"):
                 current_parent_id = cur.lastrowid
+        else:
+            dup_id, dup_synopsis = dup[0], dup[1]
+            old_synopsis = (dup_synopsis or "").strip()
+            if synopsis and synopsis != old_synopsis:
+                db.execute(
+                    "UPDATE outline_nodes SET synopsis = ? WHERE id = ?",
+                    (synopsis, dup_id),
+                )
+                stats["outline_synopsis_updated"] += 1
 
     # 2. 时间线事件入库（委托 asset_hub）
     for ev in timeline_events:

@@ -806,6 +806,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         "entities_added": 0,
         "relations_added": 0,
         "outlines_added": 0,
+        "outline_synopsis_updated": 0,
         "foreshadows_added": 0,
         "timeline_events_added": 0,
         "notes_added": 0,
@@ -970,6 +971,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         default_chapter_id=target_chap_id,
     )
     summary["outlines_added"] += triad_stats["outline_nodes_added"]
+    summary["outline_synopsis_updated"] += triad_stats.get("outline_synopsis_updated", 0)
     summary["foreshadows_added"] += triad_stats["foreshadows_added"]
     summary["timeline_events_added"] += triad_stats["timeline_events_added"]
     summary["rejected_count"] += triad_stats.get("rejected_count", 0)

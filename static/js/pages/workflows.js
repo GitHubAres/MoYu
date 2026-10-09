@@ -874,8 +874,10 @@ async function renderRun(view, runId) {
     const outlineChecks = [];
     if ((assets.outline_nodes || []).length > 0) {
       const outGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
-        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
-          ui.icon("format_list_bulleted", "text-[16px]"), `故事大纲 (${assets.outline_nodes.length}个节点)`));
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+            ui.icon("format_list_bulleted", "text-[16px]"), `故事大纲 (${assets.outline_nodes.length}个节点)`),
+          ui.el("span", { class: "text-[11px] text-on-surface-variant" }, "同名节点将更新其梗概（空梗概不覆盖）")));
       const list = ui.el("div", { class: "flex flex-col gap-1.5" });
       assets.outline_nodes.forEach((node) => {
         const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
@@ -1022,6 +1024,7 @@ async function renderRun(view, runId) {
               if (sm.entities_added) tips.push(`万相谱实体+${sm.entities_added}`);
               if (sm.relations_added) tips.push(`关系+${sm.relations_added}`);
               if (sm.outlines_added) tips.push(`大纲+${sm.outlines_added}`);
+              if (sm.outline_synopsis_updated) tips.push(`梗概更新+${sm.outline_synopsis_updated}`);
               if (sm.timeline_events_added) tips.push(`时间线+${sm.timeline_events_added}`);
               if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
               if (sm.notes_added) tips.push(`术语+${sm.notes_added}`);
