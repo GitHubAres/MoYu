@@ -8,6 +8,14 @@ registerPage("workflows", async (view, { segs }) => {
 
 /* ---------------- 共用 ---------------- */
 
+function stripMoyuAssetsBlock(t) {
+  if (!t) return "";
+  return String(t)
+    .replace(/<!--\s*MOYU:ASSETS[\s\S]*?MOYU:ASSETS\s*-->/gi, "")
+    .replace(/<!--\s*MOYU:ASSETS[\s\S]*?-->/gi, "");
+}
+
+
 const WF_LENGTH_OPTIONS = [
   ["short", "简（100~200字）"],
   ["medium", "中（300~500字）"],
@@ -1074,7 +1082,7 @@ async function renderRun(view, runId) {
 
     if (s.output) {
       if (waiting && editingSeq === s.step_seq) {
-        const ta = ui.el("textarea", { class: "w-full min-h-[200px] px-3 py-2 rounded-lg bg-surface-container-low border border-primary outline-none font-body-sm text-body-sm resize-y" }, s.output);
+        const ta = ui.el("textarea", { class: "w-full min-h-[200px] px-3 py-2 rounded-lg bg-surface-container-low border border-primary outline-none font-body-sm text-body-sm resize-y" }, stripMoyuAssetsBlock(s.output));
         card.append(ta,
           ui.el("div", { class: "flex gap-2" },
             ui.el("button", {
@@ -1093,7 +1101,7 @@ async function renderRun(view, runId) {
       } else {
         const pre = ui.el("pre", {
           class: `whitespace-pre-wrap font-body-sm text-body-sm text-on-surface bg-surface-container-low rounded-xl p-3 overflow-x-auto ${waiting ? "" : "max-h-64 overflow-y-auto"}`,
-        }, s.output);
+        }, stripMoyuAssetsBlock(s.output));
         card.append(pre);
       }
     }
