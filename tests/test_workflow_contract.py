@@ -132,3 +132,58 @@ MOYU:ASSETS -->"""
 def test_h2a_no_contract_block():
     text = "普通文本 <!-- 普通注释 --> 没有任何契约块"
     assert extract_assets_block(text) is None
+
+
+from app.workflow_assets import SyncAssetsIn, AssetEntityIn, sync_assets_to_database, normalize_category
+
+
+def test_h3a_category_normalization_in_db(client):
+    from conftest import make_wvc
+    import app.db as db_module
+
+    w, v, c = make_wvc(client, "测试分类归一作品")
+    work_id = w["id"]
+    db = db_module.get_db()
+
+    body = SyncAssetsIn(
+        entities=[
+            AssetEntityIn(name="宁恪", category="人物", content="主角"),
+            AssetEntityIn(name="青云宗", category="门派", content="宗门"),
+            AssetEntityIn(name="太玄峰", category="地点", content="山峰"),
+            AssetEntityIn(name="斩雪剑", category="神兵", content="佩剑"),
+            AssetEntityIn(name="灵气潮汐", category="世界观", content="法则"),
+            AssetEntityIn(name="未知事物", category="乱写的分类", content="杂项"),
+            AssetEntityIn(name="无分类人", content="普通人"),
+            AssetEntityIn(name="空串分类人", category="", content="普通人"),
+            AssetEntityIn(name="标准角色", category="character", content="合法角色"),
+        ]
+    )
+    sync_assets_to_database(db, work_id, body)
+
+    rows = {
+        r["name"]: r["category"]
+        for r in db.execute("SELECT name, category FROM entities WHERE work_id=?", (work_id,)).fetchall()
+    }
+    assert rows["宁恪"] == "character"
+    assert rows["青云宗"] == "faction"
+    assert rows["太玄峰"] == "place"
+    assert rows["斩雪剑"] == "item"
+    assert rows["灵气潮汐"] == "term"
+    assert rows["未知事物"] == "term"
+    assert rows["无分类人"] == "character"
+    assert rows["空串分类人"] == "character"
+    assert rows["标准角色"] == "character"
+
+
+def test_h3a_normalize_category_unit():
+    assert normalize_category("人物") == "character"
+    assert normalize_category("主角") == "character"
+    assert normalize_category("地点") == "place"
+    assert normalize_category("门派") == "faction"
+    assert normalize_category("神兵") == "item"
+    assert normalize_category("世界观") == "term"
+    assert normalize_category("乱写的分类") == "term"
+    assert normalize_category(None) == "character"
+    assert normalize_category("") == "character"
+    assert normalize_category("character") == "character"
+    assert normalize_category("place") == "place"

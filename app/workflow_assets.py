@@ -774,6 +774,31 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
         return assets
 
 
+CATEGORY_ALIASES = {
+    "人物": "character", "角色": "character", "主角": "character", "配角": "character",
+    "人物角色": "character", "主要角色": "character",
+    "地点": "place", "场景": "place", "地理": "place", "位置": "place",
+    "势力": "faction", "组织": "faction", "门派": "faction", "阵营": "faction",
+    "道具": "item", "物品": "item", "神兵": "item", "兵器": "item", "物件": "item",
+    "术语": "term", "设定": "term", "概念": "term", "世界观": "term", "规则": "term",
+}
+VALID_CATEGORIES = ("character", "place", "faction", "item", "term", "custom")
+
+
+def normalize_category(cat: str | None) -> str:
+    """把模型自由输出的分类值归一到 CATEGORIES 枚举；无法识别时回落 'term'。"""
+    if not cat:
+        return "character"
+    c = str(cat).strip()
+    if not c:
+        return "character"
+    if c in VALID_CATEGORIES:
+        return c
+    if c in CATEGORY_ALIASES:
+        return CATEGORY_ALIASES[c]
+    return "term"
+
+
 def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 0, seq: int = 0) -> dict:
     summary = {
         "work_info_updated": False,
@@ -876,7 +901,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         else:
             cur = db.execute(
                 "INSERT INTO entities (work_id, category, name, content, fields_json, tags) VALUES (?, ?, ?, ?, ?, ?)",
-                (work_id, ent.category or "character", name, ent.content, fields_str, ent.tags),
+                (work_id, normalize_category(ent.category), name, ent.content, fields_str, ent.tags),
             )
             eid = cur.lastrowid
             name_to_id[name] = eid
