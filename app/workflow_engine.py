@@ -16,6 +16,12 @@ from app.ai_client import chat, get_ai_config, get_ai_timeout
 from app.ai_tasks import create_task, fail_task, finish_task, start_task
 from app.db import get_db
 from app.features import build_skill_system_prompt
+from app.services.output_normalizer import (
+    extract_assets_block,
+    sanitize_asset_item,
+    strip_ai_chatter,
+)
+from app.workflow_assets import extract_structured_assets_from_text
 
 MAX_OUTPUT_CHARS = 32000      # 单步输出入库上限
 PREV_HEAD_CHARS = 2000        # 前序输出引用：保留头部
@@ -23,7 +29,74 @@ PREV_TAIL_CHARS = 2000        # 前序输出引用：保留尾部
 
 _running_tasks: dict[int, asyncio.Task] = {}
 
-_STEP_REF_RE = re.compile(r"\{\{steps\.(\d+)\.output\}\}")
+_STEP_REF_RE = re.compile(r"\{\{steps\.(\d+)\.(output|assets|summary)\}\}")
+
+
+def _format_compact_assets(raw_output: str) -> str:
+    """将步骤输出中的结构化资产渲染为紧凑清单，全量不截断。"""
+    if not raw_output or not raw_output.strip():
+        return "(无结构化资产)"
+
+    block = extract_assets_block(raw_output)
+    if block is None:
+        data = extract_structured_assets_from_text(raw_output)
+    else:
+        data = block
+
+    lines = []
+    # 实体
+    for ent in data.get("entities", []):
+        ok, _ = sanitize_asset_item(ent, "entity")
+        if not ok:
+            continue
+        name = ent.get("name", "")
+        cat = ent.get("category", "")
+        raw_cnt = ent.get("content") or ""
+        desc = raw_cnt.strip().split("\n")[0][:40] if raw_cnt else ""
+        lines.append(f"· 【实体·{cat}】{name}" + (f"：{desc}" if desc else ""))
+
+    # 关系
+    for rel in data.get("relations", []):
+        ok, _ = sanitize_asset_item(rel, "relation")
+        if not ok:
+            continue
+        fn = rel.get("from_name", "")
+        tn = rel.get("to_name", "")
+        lbl = rel.get("label", "关联")
+        lines.append(f"· 【关系】{fn} -> {tn}（{lbl}）")
+
+    # 时间线
+    for tl in data.get("timeline_events", []):
+        ok, _ = sanitize_asset_item(tl, "timeline_event")
+        if not ok:
+            continue
+        lbl = tl.get("time_label", "")
+        ev = tl.get("event", "")
+        lines.append(f"· 【时间线】{lbl} · {ev}")
+
+    # 伏笔
+    for fs in data.get("foreshadows", []):
+        ok, _ = sanitize_asset_item(fs, "foreshadow")
+        if not ok:
+            continue
+        title = fs.get("title", "")
+        raw_cnt = fs.get("content") or ""
+        cnt = raw_cnt.strip().split("\n")[0][:40] if raw_cnt else ""
+        lines.append(f"· 【伏笔】{title}" + (f"：{cnt}" if cnt else ""))
+
+    # 大纲
+    for out in data.get("outline_nodes", []):
+        ok, _ = sanitize_asset_item(out, "outline_node")
+        if not ok:
+            continue
+        title = out.get("title", "")
+        raw_syn = out.get("synopsis") or ""
+        syn = raw_syn.strip().split("\n")[0][:40] if raw_syn else ""
+        lines.append(f"· 【大纲】{title}" + (f"：{syn}" if syn else ""))
+
+    if not lines:
+        return "(无结构化资产)"
+    return "\n".join(lines)
 
 
 def _truncate_prev(text: str) -> str:
@@ -50,7 +123,17 @@ def _chapter_content(db, chapter_id: int | None) -> str:
 
 def _render_instruction(template: str, outputs: dict[int, str]) -> str:
     def _sub(m):
-        return _truncate_prev(outputs.get(int(m.group(1)), ""))
+        seq = int(m.group(1))
+        kind = m.group(2)
+        raw = outputs.get(seq, "")
+        if kind == "output":
+            return _truncate_prev(raw)
+        elif kind == "assets":
+            return _format_compact_assets(raw)
+        elif kind == "summary":
+            cleaned = strip_ai_chatter(raw).strip()
+            return cleaned[:300]
+        return _truncate_prev(raw)
 
     return _STEP_REF_RE.sub(_sub, template or "")
 
@@ -103,6 +186,13 @@ def _build_step_context(
             t_label = f" ({step_titles[s_seq]})" if step_titles and s_seq in step_titles and step_titles[s_seq] else ""
             header = f"【前序参考：步骤 {s_seq + 1}{t_label}】" + chr(10)
             prev_blocks.append(header + _truncate_prev(raw))
+
+            # 追加前序结构化资产（可信，全量不截断）
+            compact_assets = _format_compact_assets(raw)
+            if compact_assets and compact_assets != "(无结构化资产)":
+                asset_header = f"【前序结构化资产（可信，全量）：步骤 {s_seq + 1}{t_label}】" + chr(10)
+                asset_note = "以下是结构化产出（可信，可直接引用）；原始正文片段可能包含套话与标题，仅供文风参考。" + chr(10)
+                prev_blocks.append(asset_header + asset_note + compact_assets)
 
     prev_step_text = (chr(10) + chr(10)).join(prev_blocks)
 
@@ -193,6 +283,26 @@ async def _execute(run_id: int):
                     parts.append("【上下文】\n" + context)
                 if instruction and not consumed.get("instruction"):
                     parts.append("【写作要求】\n" + instruction)
+
+                # B-3: 仅当该步骤 instruction 或技能手册涉及产出资产时追加输出契约要求
+                asset_kws = ["实体", "人物", "角色", "设定", "世界观", "时间线", "伏笔", "暗线", "大纲", "关系", "分卷", "细纲", "立项", "势力", "道具", "场景"]
+                target_check = (instruction or "") + " " + (sys_prompt or "")
+                if any(k in target_check for k in asset_kws):
+                    contract_clause = (
+                        "【输出契约】若本步骤产出可入库资产（实体/关系/时间线事件/伏笔/大纲节点），"
+                        "必须在回答末尾追加如下契约块，正文里写什么都可以，但契约块必须存在且为合法 JSON：\n"
+                        "<!-- MOYU:ASSETS\n"
+                        "{\n"
+                        '  "entities": [],\n'
+                        '  "relations": [],\n'
+                        '  "timeline_events": [],\n'
+                        '  "foreshadows": [],\n'
+                        '  "outline_nodes": []\n'
+                        "}\n"
+                        "MOYU:ASSETS -->\n"
+                        "没有对应资产的种类填空数组，不要省略键。"
+                    )
+                    parts.append(contract_clause)
                 # 写作工作流多为长篇小说草稿生成、长章精修或世界观设定等任务，
                 # 需充分的等待窗口，默认放宽至 600 秒（10分钟），或取用户设置中更大的配置
                 wf_timeout = max(get_ai_timeout(cfg, fallback=600.0), 300.0)
