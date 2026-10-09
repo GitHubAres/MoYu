@@ -1134,6 +1134,34 @@ async function renderRun(view, runId) {
         }, stripMoyuAssetsBlock(s.output));
         card.append(pre);
       }
+
+      const cleanOutput = stripMoyuAssetsBlock(s.output).trim();
+      const narrativeActions = [];
+      if (run.outline_node_id) {
+        const nodeTitle = run.outline_node_title || "目标节点";
+        narrativeActions.push(ui.el("button", {
+          class: `flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface border border-outline-variant/80 text-on-surface font-label-sm text-label-sm hover:border-primary hover:text-primary transition-all ${!cleanOutput ? "opacity-50 cursor-not-allowed" : ""}`,
+          disabled: !cleanOutput,
+          onclick: async () => {
+            if (!cleanOutput) return;
+            const ok = await ui.confirm("写入节点梗概", `将把本步骤输出写入节点「${nodeTitle}」的核心剧情梗概，覆盖现有梗概`);
+            if (!ok) return;
+            try {
+              await api.patch("/outline/" + run.outline_node_id, { synopsis: cleanOutput });
+              if (window.store && window.store.plot && run.work_id) {
+                window.store.plot.notifyChanged(run.work_id);
+              }
+              ui.toast("已写入大纲节点梗概", "ok");
+            } catch (e) {
+              ui.toast("写入梗概失败：" + e.message, "err");
+            }
+          },
+        }, ui.icon("edit_note", "text-[16px]"), "写入目标节点梗概"));
+      }
+
+      if (narrativeActions.length > 0) {
+        card.append(ui.el("div", { class: "flex flex-wrap items-center gap-2 pt-1" }, ...narrativeActions));
+      }
     }
 
     const detectedOptions = waiting ? parseWorkflowOptions(s.output) : [];

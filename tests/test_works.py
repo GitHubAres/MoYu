@@ -98,3 +98,23 @@ def test_settings_defaults_and_patch(client):
     assert r.status_code == 200
     assert r.json()["theme"] == "dark"
     assert client.get("/api/settings").json()["daily_word_goal"] == "8000"
+
+
+def test_patch_outline_synopsis_readback(client):
+    w = make_work(client, "大纲梗概PATCH测试")
+    work_id = w["id"]
+    r_create = client.post(f"/api/works/{work_id}/outline", json={"title": "第一章", "synopsis": "初始梗概"})
+    assert r_create.status_code == 201
+    node = r_create.json()
+    assert node["synopsis"] == "初始梗概"
+
+    r_patch = client.patch(f"/api/outline/{node['id']}", json={"synopsis": "更新后的剧情梗概"})
+    assert r_patch.status_code == 200
+    patched_node = r_patch.json()
+    assert patched_node["synopsis"] == "更新后的剧情梗概"
+
+    # GET 读回一致
+    tree = client.get(f"/api/works/{work_id}/outline").json()
+    matched = next((n for n in tree if n["id"] == node["id"]), None)
+    assert matched is not None
+    assert matched["synopsis"] == "更新后的剧情梗概"
