@@ -851,3 +851,37 @@ def test_sync_workflow_assets(client):
     assert any("青铜残片" in r["title"] for r in fs)
 
     print("ALL 7 ASSET SYNC INVARIANTS VERIFIED!")
+
+def test_sync_workflow_assets_apply_to_chapter(client):
+    from app.db import get_db
+    from app.workflow_assets import sync_assets_to_database, SyncAssetsIn
+
+    work, volume, chapter = make_wvc(client, "正文同步写入测试作品")
+    work_id = work["id"]
+    chapter_id = chapter["id"]
+    db = get_db()
+
+    # 创建一个绑定 chapter_id 的 workflow_run
+    cur = db.execute(
+        "INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step) VALUES (1, ?, ?, 'running', 0)",
+        (work_id, chapter_id),
+    )
+    run_id = cur.lastrowid
+    db.commit()
+
+    body = SyncAssetsIn(
+        apply_to_chapter=True,
+        chapter_content="新章节正文内容：剑光划破长夜。",
+    )
+    summary = sync_assets_to_database(db=db, work_id=work_id, body=body, run_id=run_id, seq=0)
+    db.commit()
+
+    assert summary.get("chapter_synced") is True
+
+    chap = db.execute("SELECT content FROM chapters WHERE id=?", (chapter_id,)).fetchone()
+    assert chap["content"] == "新章节正文内容：剑光划破长夜。"
+
+    ver = db.execute("SELECT * FROM chapter_versions WHERE chapter_id=? ORDER BY id DESC LIMIT 1", (chapter_id,)).fetchone()
+    assert ver is not None
+    assert ver["source"] == "workflow"
+    assert ver["content"] == "新章节正文内容：剑光划破长夜。"

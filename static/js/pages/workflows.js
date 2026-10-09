@@ -1159,6 +1159,27 @@ async function renderRun(view, runId) {
         }, ui.icon("edit_note", "text-[16px]"), "写入目标节点梗概"));
       }
 
+      if (run.chapter_id) {
+        narrativeActions.push(ui.el("button", {
+          class: `flex items-center gap-1 px-3 py-1.5 rounded-lg bg-surface border border-outline-variant/80 text-on-surface font-label-sm text-label-sm hover:border-primary hover:text-primary transition-all ${!cleanOutput ? "opacity-50 cursor-not-allowed" : ""}`,
+          disabled: !cleanOutput,
+          onclick: async () => {
+            if (!cleanOutput) return;
+            const ok = await ui.confirm("写入目标章节正文", "将覆盖章节当前正文，旧稿自动存为版本（可在版本快照中恢复）");
+            if (!ok) return;
+            try {
+              await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/sync-assets`, {
+                apply_to_chapter: true,
+                chapter_content: cleanOutput,
+              });
+              ui.toast("已写入章节并沉淀版本", "ok");
+            } catch (e) {
+              ui.toast("写入章节失败：" + e.message, "err");
+            }
+          },
+        }, ui.icon("article", "text-[16px]"), "写入目标章节正文"));
+      }
+
       if (narrativeActions.length > 0) {
         card.append(ui.el("div", { class: "flex flex-wrap items-center gap-2 pt-1" }, ...narrativeActions));
       }

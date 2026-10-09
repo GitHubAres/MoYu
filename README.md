@@ -11,7 +11,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-green)](https://www.python.org)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20Docker-lightgrey)]()
 [![Data](https://img.shields.io/badge/data-100%25%20本地私有-orange)]()
-[![Tests](https://img.shields.io/badge/tests-198%20%E9%A1%B9%20100%25%20%E9%80%9A%E8%BF%87-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-199%20%E9%A1%B9%20100%25%20%E9%80%9A%E8%BF%87-brightgreen)]()
 
 [下载安装](#-安装与运行) · [功能一览](#-功能一览) · [更新日志](#-更新日志) · [部署文档](docs/deployment.md)
 
@@ -123,7 +123,7 @@ python run.py                    # 启动本地开发服务：http://127.0.0.1:8
 测试与打包构建：
 
 ```bash
-python -m pytest -q          # 198 项 API、响应式、编码守护与部署健康检查回归测试全绿
+python -m pytest -q          # 199 项 API、响应式、编码守护与部署健康检查回归测试全绿
 
 python build_exe.py          # 构建单文件 exe：dist/墨语MoYu-v2.0.1-win64.exe
 python build_exe.py --onedir # 文件夹形态（便于调试与启动优化）
