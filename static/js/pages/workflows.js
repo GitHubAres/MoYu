@@ -1129,10 +1129,29 @@ async function renderRun(view, runId) {
               onclick: () => { editingSeq = null; tick(); },
             }, "取消编辑")));
       } else {
+        const copyBtn = ui.el("button", {
+          class: "flex items-center gap-1 px-2.5 py-1 rounded-md bg-surface-container border border-outline-variant/60 text-on-surface-variant font-label-sm text-label-xs hover:text-primary hover:border-primary/50 transition-colors shrink-0",
+          title: "复制步骤输出",
+          onclick: async () => {
+            try {
+              await navigator.clipboard.writeText(stripMoyuAssetsBlock(s.output));
+              ui.toast("已复制", "ok");
+            } catch (e) {
+              ui.toast("复制失败：" + e.message, "err");
+            }
+          },
+        }, ui.icon("content_copy", "text-[14px]"), "复制");
+
         const pre = ui.el("pre", {
           class: `whitespace-pre-wrap font-body-sm text-body-sm text-on-surface bg-surface-container-low rounded-xl p-3 overflow-x-auto ${waiting ? "" : "max-h-64 overflow-y-auto"}`,
         }, stripMoyuAssetsBlock(s.output));
-        card.append(pre);
+
+        const preContainer = ui.el("div", { class: "flex flex-col gap-1.5" },
+          ui.el("div", { class: "flex items-center justify-between" },
+            ui.el("span", { class: "font-label-sm text-label-xs text-on-surface-variant font-medium" }, "步骤产出："),
+            copyBtn),
+          pre);
+        card.append(preContainer);
       }
 
       const cleanOutput = stripMoyuAssetsBlock(s.output).trim();
