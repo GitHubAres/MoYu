@@ -29,6 +29,7 @@ const ui = {
       info: "bg-primary-container text-on-primary",
       ok: "bg-secondary-container text-on-secondary-container",
       err: "bg-error text-on-error",
+      warn: "bg-tertiary-container text-on-tertiary-container",
     };
     const t = ui.el("div", {
       class: `toast-item px-4 py-2.5 rounded-xl shadow-lg font-body-sm text-body-sm ${colors[type] || colors.info}`,
