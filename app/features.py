@@ -114,7 +114,7 @@ def resolve_skill(skill_id: int | None, task: str):
     else:
         # 兜底：根据 task 匹配默认 builtin Skill
         # 前端任务名与技能 applies_to 命名存在历史差异，统一映射
-        TASK_SKILL_MAP = {"condense": "shorten", "polish": "rewrite", "analyze": "analysis"}
+        TASK_SKILL_MAP = {"condense": "shorten", "polish": "rewrite", "analyze": "analysis", "check": "audit"}
         skill_task = TASK_SKILL_MAP.get(task, task)
         cand_names = [f"default-{skill_task}", "default-continue"]
         for cn in cand_names:
