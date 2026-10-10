@@ -403,3 +403,32 @@ def test_deai_skill_v2_sepia_port(client):
     # 5. 契约尾注未动：两个常量均仍以 相关键：notes 收尾（rstrip() 后 endswith 判断）
     assert AI_TONE_CATALOG.rstrip().endswith("相关键：notes），正文自由书写，未涉及产物键留空数组。")
     assert PROSE_CRAFT.rstrip().endswith("相关键：notes），正文自由书写，未涉及产物键留空数组。")
+
+
+def test_resolve_skill_polish_uses_default_rewrite(client):
+    """T-1a (1): resolve_skill(None, 'polish') 命中 default-rewrite 且 body_md 含校准三原则"""
+    from app.features import resolve_skill
+    skill = resolve_skill(None, "polish")
+    assert skill is not None
+    assert skill["name"] == "default-rewrite"
+    assert "校准三原则" in skill["body_md"]
+
+
+def test_resolve_skill_check_uses_default_audit(client):
+    """T-1a (2): resolve_skill(None, 'check') 命中 default-audit"""
+    from app.features import resolve_skill
+    skill = resolve_skill(None, "check")
+    assert skill is not None
+    assert skill["name"] == "default-audit"
+
+
+def test_default_rewrite_files_contain_ai_tone_catalog(client):
+    """T-1a (3): default-rewrite 在 skill_files 中包含 references/ai-tone-catalog.md"""
+    from app.db import get_db
+    db = get_db()
+    row = db.execute("SELECT id FROM skills WHERE name = 'default-rewrite'").fetchone()
+    assert row is not None
+    skill_id = row[0]
+    files = db.execute("SELECT path FROM skill_files WHERE skill_id = ?", (skill_id,)).fetchall()
+    paths = [r[0] for r in files]
+    assert "references/ai-tone-catalog.md" in paths
