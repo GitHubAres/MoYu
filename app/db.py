@@ -1,3 +1,5 @@
+import warnings
+import re
 import json
 # 墨语 MoYu - Copyright (c) 2026 墨语（MoYu）贡献者
 
@@ -2495,6 +2497,17 @@ def migrate_and_seed_skills(conn: sqlite3.Connection | None = None):
     # 2. 插入或确保内置 Skill 种子就绪（含参考资源文件）
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for s in BUILTIN_SKILLS:
+        # 守卫：固化占位符契约为 {context, selection, instruction}
+        # 扫描每个技能 body_md，发现非标准 {{...}} 即告警
+        placeholders = set(re.findall(r"\{\{([^\{\}\s]+)\}\}", s.get("body_md", "")))
+        invalid_placeholders = placeholders - {"context", "selection", "instruction"}
+        if invalid_placeholders:
+            warnings.warn(
+                f"[Skill Contract Guard] Skill '{s.get('name')}' contains non-standard placeholders: {invalid_placeholders}. "
+                f"Standard contract only supports {{context}}, {{selection}}, {{instruction}}.",
+                UserWarning,
+                stacklevel=2,
+            )
         conn.execute("""
             INSERT INTO skills(name, title, description, body_md, version, enabled, applies_to, source, icon)
             VALUES (?, ?, ?, ?, '1.0.0', 1, ?, 'builtin', ?)
