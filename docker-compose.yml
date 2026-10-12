@@ -3,7 +3,7 @@
     build:
       context: .
       dockerfile: Dockerfile
-    image: moyu:1.2.3
+    image: moyu:2.1.2
     container_name: moyu-app
     restart: unless-stopped
     ports:
