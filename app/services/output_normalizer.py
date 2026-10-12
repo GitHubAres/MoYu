@@ -253,7 +253,12 @@ def build_contract_clause(required_keys: list[str]) -> str:
     """构建按任务声明产物键的 MOYU:ASSETS 契约提示词模板。"""
     if not required_keys:
         return ""
-    lines = [f'  "{k}": []' for k in required_keys]
+    lines = []
+    for k in required_keys:
+        if k == "work_info":
+            lines.append('  "work_info": {"title": "", "genre": "", "intro": ""}')
+        else:
+            lines.append(f'  "{k}": []')
     json_body = ",\n".join(lines)
     return (
         "【输出契约】若本步骤产出可入库资产，"

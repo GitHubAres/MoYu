@@ -171,10 +171,60 @@ async function renderList(view) {
   async function openRunDialog(wf) {
     let works = [];
     try { works = await api.get("/works"); } catch (e) { ui.toast(e.message, "err"); return; }
-    if (!works.length) { ui.toast("请先在书架创建作品", "err"); return; }
 
-    const workSel = ui.el("select", { class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm" });
-    works.forEach((w) => workSel.append(ui.el("option", { value: w.id }, w.title)));
+    const isPremiseWf = (wf.name || "").includes("新书") || (wf.name || "").includes("开坑") || (wf.name || "").includes("立项");
+
+    // 快速开坑建书辅助函数
+    async function quickCreateDraftWork() {
+      const nowStr = new Date().toISOString().slice(2, 10).replace(/-/g, "");
+      const defaultName = `新书开坑草稿_${nowStr}`;
+      const name = prompt("请输入新书开坑临时书名（步骤 1 选定立项后可自动更新）：", defaultName);
+      if (!name || !name.trim()) return null;
+      try {
+        const created = await api.post("/works", { title: name.trim(), intro: "写作工作流新书开坑构思中..." });
+        ui.toast(`已建立开坑作品《${created.title}》`, "ok");
+        return created;
+      } catch (err) {
+        ui.toast("创建草稿失败：" + err.message, "err");
+        return null;
+      }
+    }
+
+    if (!works.length) {
+      const confirmCreate = confirm("检测到当前尚未创建任何作品。\n是否立即创建一本【新书开坑草稿】直接开始？");
+      if (confirmCreate) {
+        const created = await quickCreateDraftWork();
+        if (created) {
+          works = [created];
+        } else {
+          return;
+        }
+      } else {
+        ui.toast("请先在书架创建作品，或直接新建开坑草稿", "info");
+        return;
+      }
+    }
+
+    const workSel = ui.el("select", { class: "flex-1 px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm" });
+    function refreshWorkOptions(selectedId) {
+      workSel.innerHTML = "";
+      works.forEach((w) => workSel.append(ui.el("option", { value: w.id, selected: w.id === selectedId }, w.title)));
+    }
+    refreshWorkOptions(works[0]?.id);
+
+    const quickNewBtn = ui.el("button", {
+      type: "button",
+      class: "px-2.5 py-1.5 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 font-label-sm text-label-sm flex items-center gap-1 shrink-0 transition-colors",
+      title: "零门槛快速创建一本开坑空白作品",
+      onclick: async () => {
+        const created = await quickCreateDraftWork();
+        if (created) {
+          works.unshift(created);
+          refreshWorkOptions(created.id);
+          await fillContextTargets();
+        }
+      },
+    }, ui.icon("add", "text-[16px]"), "新建开坑草稿");
     const chSel = ui.el("select", { class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm" });
 
     const outlineSel = ui.el("select", { class: "w-full px-3 py-2 rounded-lg bg-surface-container-low border border-border-feather outline-none font-body-sm text-body-sm" });
@@ -203,8 +253,22 @@ async function renderList(view) {
     workSel.addEventListener("change", fillContextTargets);
     await fillContextTargets();
 
+    const guideBanner = isPremiseWf ? ui.el("div", {
+      class: "p-3 rounded-xl bg-primary/10 border border-primary/25 text-primary font-body-sm text-body-sm flex items-start gap-2 leading-relaxed mb-1",
+    },
+      ui.icon("lightbulb", "text-[20px] shrink-0 mt-0.5"),
+      ui.el("div", {},
+        ui.el("strong", { class: "font-semibold block" }, "💡 新书开坑极简指引"),
+        ui.el("span", { class: "text-[12px] opacity-90" }, "从 0 到 1 构思无需已有大纲或章节。只需选定或新建一个草稿本，启动后在步骤 1（故事立项）输入您的灵感或核心脑洞即可！选定方案后书名会自动更新。"))) : null;
+
+    const workRow = ui.el("div", { class: "flex items-center gap-2" }, workSel, quickNewBtn);
+
     const content = ui.el("div", { class: "flex flex-col gap-3" },
-      ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "选择作品"), workSel,
+      guideBanner,
+      ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant flex items-center justify-between" },
+        ui.el("span", {}, "选择作品"),
+        ui.el("span", { class: "text-[11px] text-on-surface-variant/70" }, "可随选已有或一键新建")),
+      workRow,
       ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "选择目标大纲节点（自动装载细纲与伏笔脉络）"), outlineSel,
       ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "选择章节正文（可选前情上下文）"), chSel);
 
@@ -381,7 +445,7 @@ async function renderEditor(view, idOrNew) {
         ui.icon("tune", "text-[16px] text-primary"),
         "步骤上下文输入（动态装配）"
       ),
-      ui.el("span", { class: "font-label-sm text-label-xs text-on-surface-variant" }, "自由组合注入给本步骤 AI 的信息")
+      ui.el("span", { class: "font-label-sm text-label-xs text-on-surface-variant", title: "选择要注入到本步骤提示词中的前情依据。包含章节正文、大纲卡片以及前序步骤的AI生成成果。" }, "ℹ️ 自由组合注入给本步骤 AI 的信息")
     ));
 
     // 1. 基础源（章节正文、大纲三位一体）
@@ -514,7 +578,7 @@ async function renderEditor(view, idOrNew) {
         titleIn, enabledToggle, delBtn),
       ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-3" },
         ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "绑定 Skill"), skillSel),
-        ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "长度档位"), lenSel)),
+        ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant flex items-center gap-1", title: "期望AI单步输出的字数规模：short约200-400字，medium约400-800字，long在800字以上。" }, "长度档位", ui.icon("help", "text-[14px] text-on-surface-variant/70 cursor-help")), lenSel)),
       ctxBox,
       ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "固定指令"), instIn),
       ui.el("div", { class: "flex items-center gap-2" }, reviewToggle,
@@ -1237,57 +1301,123 @@ async function renderRun(view, runId) {
       }
     }
 
+    // 方案 1-A 智能退避与抽卡对比模式
     const detectedOptions = waiting ? parseWorkflowOptions(s.output) : [];
-    if (waiting && editingSeq !== s.step_seq && detectedOptions.length >= 2) {
-      const optContainer = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20" },
-        ui.el("div", { class: "flex items-center gap-1.5 font-label-md text-label-md text-primary font-semibold" },
-          ui.icon("alt_route", "text-[18px]"), `检测到 AI 提供了 ${detectedOptions.length} 个备选方案，可一键采纳对应方案进入下一步：`));
+    
+    // 方案立项即时生效辅助函数 (方案 2-A)
+    async function tryAutoUpdateWorkTitle(chosenContent) {
+      if (!run.work_id) return;
+      try {
+        const res = await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/extracted-assets`, { content: chosenContent });
+        const wi = res.assets?.work_info || {};
+        if (wi.title && wi.title.trim()) {
+          const newTitle = wi.title.trim();
+          const curWork = await api.get(`/works/${run.work_id}`);
+          if (curWork && curWork.title !== newTitle) {
+            await api.put(`/works/${run.work_id}`, {
+              title: newTitle,
+              intro: wi.intro || curWork.intro || "",
+            });
+            ui.toast(`🎉 书名已定稿为《${newTitle}》，书架已同步更新！`, "ok");
+            if (window.store && window.store.works) window.store.works.notifyChanged();
+          }
+        }
+      } catch (err) {
+        console.warn("自动更新书名跳过:", err);
+      }
+    }
 
-      const optGrid = ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 gap-2" });
-      detectedOptions.forEach((opt, oIdx) => {
-        const optCard = ui.el("div", { class: "flex flex-col justify-between p-2.5 rounded-lg bg-surface border border-outline-variant/60 shadow-xs hover:border-primary transition-all" },
-          ui.el("div", { class: "flex flex-col gap-1 mb-2" },
-            ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, opt.title),
-            ui.el("div", { class: "font-body-sm text-body-sm text-on-surface-variant line-clamp-3 whitespace-pre-wrap" }, opt.content)),
-          ui.el("div", { class: "flex items-center gap-1.5 self-end" },
-            ui.el("button", {
-              class: "flex items-center gap-1 px-2.5 py-1 rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm hover:opacity-90 transition-opacity",
-              onclick: async () => {
-                try {
-                  const res = await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/extracted-assets`, { content: opt.content });
-                  showAssetSyncModal(runId, s.step_seq, res.assets, async () => {
-                    await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
-                      action: "edit",
-                      content: opt.content,
-                      note: `选用「${opt.title}」并同步资产`,
-                    });
-                    tick();
-                  }, `选用「${opt.title}」· 前置配置导入`);
-                } catch (e) {
-                  ui.toast("提取方案资产失败：" + e.message, "err");
-                }
+    if (waiting && editingSeq !== s.step_seq) {
+      if (detectedOptions.length >= 2) {
+        // >= 2 方案：弹出横向对比抽卡组件
+        const optContainer = ui.el("div", { class: "flex flex-col gap-3 p-3.5 rounded-xl bg-primary/5 border border-primary/25 shadow-xs" },
+          ui.el("div", { class: "flex items-center justify-between flex-wrap gap-2" },
+            ui.el("div", { class: "flex items-center gap-1.5 font-label-md text-label-md text-primary font-bold" },
+              ui.icon("style", "text-[20px]"), `AI 构思抽卡：检测到 ${detectedOptions.length} 套独立方案，点击可横向对比或一键选定：`),
+            ui.el("span", { class: "text-label-xs text-on-surface-variant bg-surface px-2 py-0.5 rounded border border-outline-variant" }, "支持一键采纳并定稿书名")),
+          
+          ui.el("div", { class: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3" },
+            ...detectedOptions.map((opt, oIdx) => {
+              const optCard = ui.el("div", {
+                class: "flex flex-col justify-between p-3 rounded-xl bg-surface border border-outline-variant/70 shadow-xs hover:border-primary hover:shadow-md transition-all group relative",
               },
-            }, ui.icon("inventory_2", "text-[14px]"), "选用并配置导入"),
-            ui.el("button", {
-              class: "flex items-center gap-1 px-2.5 py-1 rounded bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 transition-opacity",
-              onclick: async () => {
-                try {
-                  await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
-                    action: "edit",
-                    content: opt.content,
-                    note: `选用「${opt.title}」`,
-                  });
-                  ui.toast(`已选用「${opt.title}」继续工作流`, "ok");
-                  tick();
-                } catch (e) {
-                  ui.toast(e.message, "err");
-                }
-              },
-            }, ui.icon("check", "text-[14px]"), "选用此方案继续")));
-        optGrid.append(optCard);
-      });
-      optContainer.append(optGrid);
-      card.append(optContainer);
+                ui.el("div", { class: "flex flex-col gap-1.5 mb-3" },
+                  ui.el("div", { class: "flex items-center justify-between" },
+                    ui.el("span", { class: "font-label-md text-label-md font-bold text-primary group-hover:text-primary-hover flex items-center gap-1" },
+                      ui.icon("auto_awesome", "text-[16px]"),
+                      opt.title
+                    ),
+                    ui.el("span", { class: "text-[11px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium" }, `方案 #${oIdx + 1}`)),
+                  ui.el("div", { class: "font-body-sm text-body-sm text-on-surface-variant line-clamp-4 whitespace-pre-wrap leading-relaxed" }, opt.content)),
+                
+                ui.el("div", { class: "flex flex-wrap items-center gap-1.5 pt-2 border-t border-outline-variant/40" },
+                  ui.el("button", {
+                    class: "flex-1 flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-medium hover:opacity-90 transition-opacity shadow-xs",
+                    title: "采纳此方案并进入下一步",
+                    onclick: async () => {
+                      try {
+                        await tryAutoUpdateWorkTitle(opt.content);
+                        await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
+                          action: "edit",
+                          content: opt.content,
+                          note: `选用「${opt.title}」`,
+                        });
+                        ui.toast(`已选用「${opt.title}」继续工作流`, "ok");
+                        tick();
+                      } catch (e) {
+                        ui.toast(e.message, "err");
+                      }
+                    },
+                  }, ui.icon("check", "text-[15px]"), "采纳此方案"),
+                  ui.el("button", {
+                    class: "flex items-center gap-1 px-2 py-1.5 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-xs hover:bg-surface-container-high transition-colors",
+                    title: "提取此方案中的实体与设定导入作品库",
+                    onclick: async () => {
+                      try {
+                        const res = await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/extracted-assets`, { content: opt.content });
+                        showAssetSyncModal(runId, s.step_seq, res.assets, async () => {
+                          await tryAutoUpdateWorkTitle(opt.content);
+                          await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, {
+                            action: "edit",
+                            content: opt.content,
+                            note: `选用「${opt.title}」并同步资产`,
+                          });
+                          tick();
+                        }, `选用「${opt.title}」· 配置导入`);
+                      } catch (e) {
+                        ui.toast("提取方案资产失败：" + e.message, "err");
+                      }
+                    },
+                  }, ui.icon("inventory_2", "text-[14px]"), "配置导入")
+                ));
+              return optCard;
+            }))
+        );
+        card.append(optContainer);
+      } else {
+        // < 2 方案智能退避模式：显示单方案精修卡，支持一键采纳、就地编辑与换一批重抽
+        const singleContainer = ui.el("div", { class: "flex items-center justify-between p-3 rounded-xl bg-surface-container-low border border-border-feather text-on-surface-variant font-label-sm text-label-sm" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.icon("tips_and_updates", "text-primary text-[18px]"),
+            ui.el("span", { class: "text-on-surface font-medium" }, "当前为单一方案模式。"),
+            ui.el("span", {}, "您可直接采纳、微调后继续，或重新抽卡生成多套对比方案：")),
+          ui.el("button", {
+            class: "flex items-center gap-1 px-2.5 py-1 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 transition-colors font-label-sm text-label-xs",
+            title: "重新运行该步骤，生成 3 套不同创意的对比方案",
+            onclick: async () => {
+              const ok = await ui.confirm("重新抽卡", "将请求 AI 重新构思并输出 3 套差异化的对比方案供您挑选。确定继续？", "换一批抽卡");
+              if (!ok) return;
+              try {
+                await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/retry`);
+                ui.toast("已触发重新抽卡，正在构思多套方案...", "ok");
+                tick();
+              } catch (e) {
+                ui.toast("重试失败：" + e.message, "err");
+              }
+            },
+          }, ui.icon("refresh", "text-[14px]"), "换一批（生成3套方案对比）"));
+        card.append(singleContainer);
+      }
     }
 
     if (waiting && editingSeq !== s.step_seq) {

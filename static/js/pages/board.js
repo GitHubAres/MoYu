@@ -86,7 +86,25 @@ registerPage("board", async (view, { segs }) => {
           ui.el("span", { class: "font-headline-sm text-headline-sm text-primary font-bold" }, `${rate}%`),
           ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `（已回收 ${resolved} / 共 ${total} 条）`),
         ui.el("div", { class: "h-8 w-[1px] bg-surface-container-highest hidden sm:block" }),
-        ui.el("label", { class: "flex items-center gap-1.5 font-label-sm text-label-sm text-on-surface-variant cursor-pointer select-none ml-auto" },
+        ui.el("div", { class: "flex items-center gap-1 bg-surface-container p-0.5 rounded-lg ml-auto" },
+          ui.el("button", {
+            id: "btn-filter-all",
+            class: "px-2.5 py-1 rounded-md font-label-sm text-label-sm transition-all bg-surface text-primary shadow-xs font-semibold",
+            onclick: () => setFilterType("all")
+          }, "全部"),
+          ui.el("button", {
+            id: "btn-filter-hook",
+            class: "px-2.5 py-1 rounded-md font-label-sm text-label-sm transition-all flex items-center gap-1 text-on-surface-variant hover:text-on-surface",
+            onclick: () => setFilterType("hook")
+          }, ui.el("span", {}, "🪝"), "剧情钩子"),
+          ui.el("button", {
+            id: "btn-filter-foreshadow",
+            class: "px-2.5 py-1 rounded-md font-label-sm text-label-sm transition-all text-on-surface-variant hover:text-on-surface",
+            onclick: () => setFilterType("foreshadow")
+          }, "常规伏笔")
+        ),
+        ui.el("div", { class: "h-8 w-[1px] bg-surface-container-highest hidden sm:block" }),
+        ui.el("label", { class: "flex items-center gap-1.5 font-label-sm text-label-sm text-on-surface-variant cursor-pointer select-none" },
           ui.el("input", {
             type: "checkbox",
             class: "rounded border-outline text-primary",
@@ -98,6 +116,20 @@ registerPage("board", async (view, { segs }) => {
           "仅看未归属"))));
 
     let onlyUnbound = false;
+    let filterType = "all";
+
+    function setFilterType(type) {
+      filterType = type;
+      const bAll = document.getElementById("btn-filter-all");
+      const bHook = document.getElementById("btn-filter-hook");
+      const bFore = document.getElementById("btn-filter-foreshadow");
+      const activeCls = "bg-surface text-primary shadow-xs font-semibold";
+      const inactiveCls = "text-on-surface-variant hover:text-on-surface";
+      if (bAll) bAll.className = "px-2.5 py-1 rounded-md font-label-sm text-label-sm transition-all " + (type === "all" ? activeCls : inactiveCls);
+      if (bHook) bHook.className = "px-2.5 py-1 rounded-md font-label-sm text-label-sm transition-all flex items-center gap-1 " + (type === "hook" ? activeCls : inactiveCls);
+      if (bFore) bFore.className = "px-2.5 py-1 rounded-md font-label-sm text-label-sm transition-all " + (type === "foreshadow" ? activeCls : inactiveCls);
+      renderLanes();
+    }
 
     if (!total) {
       view.append(ui.el("div", { class: "flex flex-col items-center gap-space-md py-space-xl text-center" },
@@ -116,9 +148,14 @@ registerPage("board", async (view, { segs }) => {
 
     function renderLanes() {
       lanes.innerHTML = "";
-      const displayItems = onlyUnbound
+      let displayItems = onlyUnbound
         ? items.filter((f) => f.chapter_id == null && f.outline_node_id == null)
         : items;
+      if (filterType === "hook") {
+        displayItems = displayItems.filter((f) => (f.tags && f.tags.includes("hook")) || (f.title && (f.title.includes("钩子") || f.title.includes("【剧情钩子】"))));
+      } else if (filterType === "foreshadow") {
+        displayItems = displayItems.filter((f) => !(f.tags && f.tags.includes("hook")) && !(f.title && (f.title.includes("钩子") || f.title.includes("【剧情钩子】"))));
+      }
       for (const lane of LANES) {
         const list = displayItems.filter((f) => f.status === lane.key);
       const sec = ui.el("section", { class: "flex flex-col gap-space-md rounded-2xl bg-surface-container-low/60 p-space-md transition-shadow" },
@@ -165,7 +202,10 @@ registerPage("board", async (view, { segs }) => {
         draggable: "true",
       },
         ui.el("div", { class: "flex items-center justify-between mb-space-xs gap-2" },
-          ui.el("span", { class: `px-2 py-0.5 rounded-full font-label-sm text-label-sm ${lane.tagCls}` }, lane.title.split(" ")[0]),
+          ui.el("div", { class: "flex items-center gap-1.5" },
+            ui.el("span", { class: `px-2 py-0.5 rounded-full font-label-sm text-label-sm ${lane.tagCls}` }, lane.title.split(" ")[0]),
+            ((f.tags && f.tags.includes("hook")) || (f.title && f.title.includes("钩子"))) ? ui.el("span", { class: "px-2 py-0.5 rounded-full font-label-sm text-label-sm bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold flex items-center gap-0.5 border border-amber-500/20" }, "🪝 剧情钩子") : null
+          ),
           ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, (f.created_at || "").slice(0, 10))),
         ui.el("h3", { class: "font-headline-sm text-headline-sm text-on-surface font-semibold tracking-tight mb-1" }, f.title),
         f.content && ui.el("p", { class: "font-body-sm text-body-sm text-on-surface-variant line-clamp-2 mb-space-sm" }, f.content),

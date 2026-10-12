@@ -122,31 +122,44 @@ def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
     # 0. 故事立项识别 (书名 / 题材 / 简介 / 核心看点)
     for line in lines:
         if not assets["work_info"]["title"]:
+            # 模式 A: 《书名》紧随或包含书名关键词
             m_book = re.search(r'《([^》]{2,30})》', line)
-            if m_book and any(k in line for k in ["书名", "作品", "标题", "方向", "方案", "选项", "小说", "项目", "命名"]):
+            if m_book and any(k in line for k in ["书名", "作品", "标题", "方向", "方案", "选项", "小说", "项目", "命名", "暂定"]):
                 assets["work_info"]["title"] = clean_str(m_book.group(1))
             else:
-                m_t = re.search(r'(?:书\s*名|作品名|小说名|项目名)\s*[:：]\s*(?:《)?([^》\n\r]+)(?:》)?', line)
+                # 模式 B: 键值对或 Markdown 标题/加粗格式 (如 **书名**：逆命天尊、## 1. 故事书名：逆命天尊)
+                m_t = re.search(r'(?:[#*\-\s]*)(?:(?:[【\[]?(?:书\s*名|作品名|小说名|项目名|故事名称|暂定书名)[】\]]?)|(?:\*\*(?:书\s*名|作品名|小说名|项目名|故事名称|暂定书名)\*\*))\s*[:：]\s*(?:《)?([^》\n\r]+)(?:》)?', line)
                 if m_t:
-                    assets["work_info"]["title"] = clean_str(m_t.group(1))
+                    t_val = clean_str(m_t.group(1).strip().strip("*").strip("#").strip())
+                    if len(t_val) >= 2 and len(t_val) <= 40:
+                        assets["work_info"]["title"] = t_val
+                elif not assets["work_info"]["title"] and m_book and len(line) <= 40:
+                    # 单行独立出现的《书名》
+                    assets["work_info"]["title"] = clean_str(m_book.group(1))
 
         if not assets["work_info"]["genre"]:
-            m_g = re.search(r'(?:题材|类型|分类|核心题材|题材标签|定位)\s*[:：]\s*([^\n\r]+)', line)
+            # 模式 A: 键值对或加粗 (如 **题材定位**：古典仙侠)
+            m_g = re.search(r'(?:[#*\-\s]*)(?:(?:[【\[]?(?:题材|类型|分类|核心题材|题材标签|题材定位|定位)[】\]]?)|(?:\*\*(?:题材|类型|分类|核心题材|题材标签|题材定位|定位)\*\*))\s*[:：]\s*([^\n\r]+)', line)
             if m_g:
-                assets["work_info"]["genre"] = clean_str(m_g.group(1))
+                g_val = clean_str(m_g.group(1).strip().strip("*").strip())
+                if len(g_val) >= 2 and len(g_val) <= 40:
+                    assets["work_info"]["genre"] = g_val
             else:
-                m_g2 = re.search(r'【(?:题材|类型|分类|标签)】\s*([^\n\r]+)', line)
+                m_g2 = re.search(r'【(?:题材|类型|分类|标签|题材定位)】\s*([^\n\r]+)', line)
                 if m_g2:
-                    assets["work_info"]["genre"] = clean_str(m_g2.group(1))
+                    assets["work_info"]["genre"] = clean_str(m_g2.group(1).strip())
                 elif any(k in line for k in ["方向", "方案", "选项"]):
                     m_g3 = re.search(r'[【\[]([^】\]]{2,15})[】\]]', line)
                     if m_g3 and not any(bad in m_g3.group(1) for bad in ["方案", "方向", "选项", "路线", "Option"]):
                         assets["work_info"]["genre"] = clean_str(m_g3.group(1))
 
         if not assets["work_info"]["intro"]:
-            m_i = re.search(r'(?:一句话简介|核心看点|核心创意|故事梗概|作品简介|核心脑洞|故事简介|简介|梗概)\s*[:：]\s*([^\n\r]+)', line)
+            # 模式 A: 键值对或加粗 (如 **核心看点**：...、一句话简介：...)
+            m_i = re.search(r'(?:[#*\-\s]*)(?:(?:[【\[]?(?:一句话简介|核心看点|核心创意|故事梗概|作品简介|核心脑洞|故事简介|简介|梗概|主线看点)[】\]]?)|(?:\*\*(?:一句话简介|核心看点|核心创意|故事梗概|作品简介|核心脑洞|故事简介|简介|梗概|主线看点)\*\*))\s*[:：]\s*([^\n\r]+)', line)
             if m_i:
-                assets["work_info"]["intro"] = clean_str(m_i.group(1))
+                i_val = clean_str(m_i.group(1).strip().strip("*").strip())
+                if len(i_val) >= 4:
+                    assets["work_info"]["intro"] = i_val
 
     # 1. 结构化 Markdown 表格提取 (核心人物欲望矩阵表、关系网拓扑表、伏笔表等)
     table_headers = None
@@ -381,10 +394,12 @@ def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
             parts = re.split(r'[:\uff1a—–\-]+', fs_text, maxsplit=1)
             f_title = parts[0].strip()[:30]
             f_content = parts[1].strip() if len(parts) > 1 else fs_text
+            is_hook = any(hk in line for hk in ["钩子", "悬念"])
             assets['foreshadows'].append({
-                'title': f_title,
+                'title': ("【剧情钩子】" if is_hook and not f_title.startswith("【") else "") + f_title,
                 'content': f_content,
                 'status': 'planted',
+                'tags': 'hook' if is_hook else '',
             })
             continue
 
@@ -638,17 +653,24 @@ def merge_assets(assets_list: list[dict]) -> dict:
         for k in ("title", "genre", "intro"):
             if not merged["work_info"][k]:
                 merged["work_info"][k] = ((a.get("work_info") or {}).get(k) or "")
-        # 资产：按 种类+标题 去重
+        # 资产：按 种类+标题 去重并智能合并详情
         for field, tkey in _CONTRACT_TITLE_KEYS:
-            seen = {str(i.get(tkey, "")).strip() for i in merged[field]}
+            seen_map = {str(i.get(tkey, "")).strip(): i for i in merged[field]}
             for item in a.get(field) or []:
                 if not isinstance(item, dict):
                     continue
                 tv = str(item.get(tkey, "")).strip()
-                if tv and tv in seen:
+                if tv and tv in seen_map:
+                    # 针对大纲节点：如果后出现的同名节点携带更丰富的分场细纲/梗概，进行融合补充
+                    if field == "outline_nodes":
+                        existing = seen_map[tv]
+                        new_syn = (item.get("synopsis") or "").strip()
+                        old_syn = (existing.get("synopsis") or "").strip()
+                        if new_syn and new_syn not in old_syn:
+                            existing["synopsis"] = (old_syn + "\n" + new_syn).strip() if old_syn else new_syn
                     continue
                 if tv:
-                    seen.add(tv)
+                    seen_map[tv] = item
                 merged[field].append(item)
         # rejected：按 (kind, title, reason) 去重
         seen_r = {(r.get("kind"), r.get("title"), r.get("reason")) for r in merged["_rejected"]}

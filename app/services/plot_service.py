@@ -73,10 +73,16 @@ def batch_sync_triad_assets(
         parent_id = n.get("parent_id") or current_parent_id
         if not title:
             continue
+        # 优先按精确 (work_id, title, parent_id) 查重；若未查到但该作品下已存在同名节点，亦视为重复进行更新，杜绝重复创建同名节点
         dup = db.execute(
             "SELECT id, synopsis FROM outline_nodes WHERE work_id = ? AND title = ? AND (parent_id IS ? OR parent_id = ?)",
             (work_id, title, parent_id, parent_id),
         ).fetchone()
+        if not dup:
+            dup = db.execute(
+                "SELECT id, synopsis FROM outline_nodes WHERE work_id = ? AND title = ?",
+                (work_id, title),
+            ).fetchone()
         if not dup:
             sort_order = db.execute(
                 "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM outline_nodes WHERE work_id = ? AND parent_id IS ?",

@@ -287,12 +287,16 @@ async def _execute(run_id: int):
 
                 # B-3: 仅当该步骤 instruction 或技能手册涉及产出资产时追加输出契约要求
                 target_check = (instruction or "") + " " + (sys_prompt or "")
-                ledger_kws = ["实体", "人物", "角色", "设定", "世界观", "时间线", "伏笔", "暗线", "关系", "立项", "势力", "道具", "场景"]
+                ledger_kws = ["实体", "人物", "角色", "设定", "世界观", "时间线", "伏笔", "暗线", "关系", "立项", "势力", "道具", "场景", "开坑", "书名", "题材", "简介"]
                 outline_kws = ["大纲", "细纲", "分卷"]
                 synopsis_kws = ["梗概"]
 
                 required_keys: list[str] = []
                 if any(k in target_check for k in ledger_kws):
+                    # 立项/开坑类任务追加 work_info 顶层契约键
+                    if any(k in target_check for k in ["立项", "开坑", "书名", "题材", "定位", "premise"]):
+                        if "work_info" not in required_keys:
+                            required_keys.append("work_info")
                     for k in ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes"]:
                         if k not in required_keys:
                             required_keys.append(k)

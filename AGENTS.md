@@ -45,7 +45,7 @@ python build_exe.py --onedir     # 文件夹形态
 
 - 数据层使用裸 sqlite3，新增字段必须通过 MIGRATIONS 增量迁移。
 - **资产中枢契约**：全库关于伏笔 (foreshadows) 与时间线事件 (timeline_events) 的写入与绑定契约严格以 app/services/asset_hub.py 为准，禁止裸 INSERT。
-- **内部实验接口规范**：/api/ai/brew/complete 标注为内部实验 API，非通用长篇写作上下文装配链路。
+- **内部实验接口规范**：炼丹炉推演接口 `/api/alchemy/brew` 与 `/api/alchemy/complete` 为内部实验 API（挂载于 `/alchemy` 路由组，非 `/api/ai`），非通用长篇写作上下文装配链路，调用方不得据此臆造 `/api/ai/brew/complete` 路径。
 - word_count() 按去空白后的字符数计数，含标点和中英文。
 - AI 工作流遵循“生成 → 预览/差异对比 → 用户采纳 → 写入版本记录 → 可撤销”。
 - AI 客户端使用 httpx 异步请求；不要传 	emperature，部分模型只接受固定值。
@@ -101,7 +101,7 @@ elease/ 中的产物。
 
 当 AI 或协作者进入本仓库执行任务时，必须严格按以下顺序读档建立上下文：
 1. **AGENTS.md**（入口与全局规范，了解全局约定、设计语言与版本迭代规约）
-2. **最新版本开发说明与进度产物**（首要确认：当前版本号、已完成功能与待办事项，见 docs/v2.1.2-development-notes.md 与 docs/development-plan.md）
+2. **最新版本开发说明与进度产物**（首要确认：当前版本号、已完成功能与待办事项；该产物随版本滚动，当前见 docs/v2.1.2-development-notes.md，新版本以 docs/vX.Y.Z-development-notes.md 为准，**严禁引用已停维护的总计划文档**，避免读入过期上下文）
 3. **README.md**（产品定位与开发操作指南）
 4. **docs/PRD-本地版.md**（真实业务功能基准，以代码实际功能为准）
 5. **docs/KimiCode防抄袭改造移交报告.md**（仅历史考古时查阅）

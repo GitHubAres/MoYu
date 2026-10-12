@@ -217,6 +217,15 @@ def build_skill_system_prompt(
     len_hint = AIOrchestrator.length_hint(length)
     sections.append(f"【输出长度要求】\n{len_hint}")
 
+    # 结构化产物交付契约（MOYU:ASSETS）——对齐《墨语产物交付规范》，闭合"生产端提示词"缺口
+    sections.append(
+        "【结构化产物交付契约 MOYU:ASSETS】\n"
+        "若任务涉及可沉淀入库的创作资产（人物/世界观/势力/物品/关系/时间线事件/伏笔/大纲节点/术语笔记），"
+        "请在回答末尾追加合法的 `MOYU:ASSETS` 契约块（HTML 注释包裹的 JSON，键含 work_info / entities / relations / "
+        "timeline_events / foreshadows / outline_nodes / chapter_synopses / notes）；正文自由书写，未涉及的键留空数组 []，"
+        "严禁将大段章节正文塞入契约块。完整键清单与边界红线以《墨语产物交付规范》为准。"
+    )
+
     final_sys_prompt = "\n\n".join(sections)
     return final_sys_prompt, consumed
 
