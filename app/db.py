@@ -845,8 +845,6 @@ description: 从零构思或零散想法出发，分层产出可落笔的故事�
 
 **中文**：故事大纲、大纲、写个大纲、分章大纲、章节大纲、细纲、卷纲、剧情框架、故事框架、整体结构、三幕结构、起承转合、英雄之旅、帮我构思一个故事、帮我编个故事、给我个故事点子、这个题材怎么写、我有个想法想写成小说、人物小传、世界观设定、故事线、主线支线、结局怎么设计。
 
-**英文**：outline my novel, story outline, plot structure, chapter breakdown, three-act structure, brainstorm a story idea, help me plot this.
-
 **间接信号**：用户只给了"题材 + 一句话"，问"接下来怎么写"；用户说"想写一个关于……的故事"；用户列了三五个人物或场景但要求"帮我串起来"。
 
 **易混淆需转出的**：
@@ -1040,8 +1038,6 @@ description: 建立设定台账并交叉比对全书正文，输出带原文引�
 
 **中文**：设定检查、查设定、设定核对、检查设定、有没有矛盾、有没有冲突、找出矛盾、有没有 bug、找 bug、找漏洞、逻辑漏洞、前后不一致、前后对不上、时间线、时间线检查、人物崩了、人设崩了、人物漂移、是不是吃书了、吃书检查、伏笔检查、伏笔有没有回收、遗漏了什么、审稿、帮我审一下、自查、连续性检查、世界观自洽吗、战力体系崩了吗。
 
-**英文**：consistency check, find plot holes, continuity errors, does this contradict itself, timeline check, check for inconsistencies, beta read for logic.
-
 **间接信号**：用户贴出多章内容并问"这样写行不行""有没有问题"；用户说"写到第 20 章感觉和前面冲突了"。
 
 ## 执行流程
@@ -1221,8 +1217,6 @@ AI 做这件事的默认病灶是**评分通胀**：什么稿子都是 7–8 分
 ## 触发词
 
 **中文**：分析、分析一下、帮我分析、故事分析、分析这个故事、评价、评价一下、帮我评一下、评一评、点评、打分、评分、打个分、给个分、评个分、能打几分、这个故事怎么样、写得怎么样、这小说好不好、好在哪、差在哪、优点缺点、有什么问题、哪里不足、值得写下去吗、值不值得继续、有没有前景、拆解一下、故事诊断、写个书评、全方位分析、深度分析、帮我看看这篇写得如何。
-
-**英文**：analyze my story, critique this, rate this story, give feedback, story assessment, what works and what doesn't, review my novel, how good is this。
 
 **间接信号**：用户贴出正文并问"你觉得呢""这样能发吗""我该往哪个方向改"；用户贴出正文后沉默地问"？"。
 
@@ -1412,8 +1406,6 @@ description: 诊断并移除六类 AI 痕迹，以提升信息密度与打散对
 ## 触发词
 
 **中文**：去AI味、去AI腔、去AI感、去 AI 味、去 ai 味、去掉 AI 味、去掉AI腔、AI 腔太重、AI 味道太重、AI 痕迹、一眼 AI、一看就是 AI、AI 生成的感觉、机器味、机器翻译腔、模板味、套路味、降 AI 率、降AI感、降低 AI 感、更像人写的、加点人味、有人味一点、自然一点、口语一点、别那么工整、别那么书面、太模板化了、空话太多、套话太多、车轱辘话、别那么像范文、帮我改得像自己写的。
-
-**英文**：remove AI tone, de-AI, humanize this, make it sound human, less robotic, less like ChatGPT wrote it, remove AI clichés, make it sound natural.
 
 **间接信号**：用户贴出一段文字并说"这是我用 AI 写的，帮我改改"；用户说"读起来很流畅但就是假"；用户抱怨"每段都差不多长"。
 
@@ -1650,8 +1642,6 @@ description: 把模糊想法变成可执行的项目定义：5–8 个可选方�
 
 **中文**：立项、帮我立项、这个题材能写吗、这个题材写什么好、这个点子怎么样、这个想法行不行、帮我定个方向、帮我选一个、帮我想几个选题、想几个方向、目标读者、写给谁看、受众是谁、写多长合适、该写短篇还是长篇、篇幅怎么定、帮我评估一下创意、可行性、这故事有没有市场、一句话故事、一句话卖点、核心卖点、作品简介怎么写（创作阶段用）、写书前要准备什么。
 
-**英文**：help me pick a premise, is this idea worth writing, target audience, how long should this book be, logline, market check, story concept。
-
 **间接信号**：用户说"我想写本书但不知道写什么"；用户一次给出多个点子并暗示"你帮我看着挑"；用户描述了题材但没有故事。
 
 **明确排除**：用户已经说清了"一个什么人为了什么去做什么"，那就不是立项问题 → 直接进 default-outline。
@@ -1822,8 +1812,6 @@ description: 产出带代价与限制的硬规则、地理势力与历史年表�
 ## 触发词
 
 **中文**：世界观、世界观设定、世界设定、设定集、搭建世界观、规则体系、设定体系、力量体系、能力体系、修炼体系、魔法系统、体系怎么设、地理设定、地图设定、势力设定、势力分布、历史年表、年表、世界历史、架空世界、虚构世界、这个世界怎么运转、种族设定、社会制度设定、文化设定、帮我建个设定集。
-
-**英文**：worldbuilding, magic system, world bible, setting design, lore design, power system, timeline of the world。
 
 **间接信号**：用户贴出一段设定描述并问"这样够吗""有什么漏洞"；用户说"我的设定越写越多，不知道哪些有用"。
 
@@ -2006,8 +1994,6 @@ description: 产出可检索的人物档案（欲望、创伤、能力限制、�
 
 **中文**：人物设定、人物设计、人物小传、角色档案、角色设定、角色卡、人物卡、帮我设计主角、设计一个角色、配角怎么设计、反派怎么立住、人物关系、关系网、关系表、人物弧光、角色弧光、成长线、人物变化、角色动机、主角想要什么、这个角色不够立体、人物太扁平、建个角色表、人物群像。
 
-**英文**：character design, character sheet, character profile, character arc, cast design, relationship map, make this character deeper。
-
 **间接信号**：用户贴出一段人物描述并问"这样够不够"；用户说"我有个主角但感觉没意思"。
 
 ## 执行流程
@@ -2178,8 +2164,6 @@ description: 把章纲拆成 2–4 场可落笔的场景：目标、冲突、转
 ## 触发词
 
 **中文**：分场、场景细纲、场景设计、分场细纲、把这一章拆成场景、这一章分几场、这一章怎么演、这一章怎么落地、节拍表、beat 表、节拍设计、写节拍、场景目标、场景冲突、场景转折、出入点、情绪曲线、这一章太长了怎么分、这一章太散了、从大纲到正文、写正文前的准备、细纲到正文、这场戏怎么设计。
-
-**英文**：scene breakdown, beat sheet, scene outline, break this chapter into scenes, scene design, how to write this chapter。
 
 **间接信号**：用户贴出章纲并问"接下来怎么写"；用户说"大纲有了但动手写不出"。
 
@@ -2366,8 +2350,6 @@ description: 端到端编排整本书创作：立项、设定、结构、细纲�
 ## 触发词
 
 **中文**：完整创作、完整创作一部小说、小说完整创作、写一部小说、写一部长篇、从零到成稿、从头写一本书、带我写完这本书、帮我把这本书写完、全流程、写书的流程、小说创作流程、创作流程、我想写本书、我想写小说该怎么开始、帮我规划这本书、全书规划、整体规划、项目管理、写作进度、进度到哪了、卡住了怎么写下去、写不下去了、下一步该做什么、这套流程怎么走。
-
-**英文**：write a novel from scratch, end-to-end novel, full novel workflow, guide me through writing a book, novel project plan, help me finish my novel。
 
 **间接信号**：用户同时提出多个阶段的需求（"帮我定题材、设计人物、再搭大纲"）；用户给了一个梗概并说"想把它写成小说"；用户提到"写到一半不知道接下来干什么"。
 
