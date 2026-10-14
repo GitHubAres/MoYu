@@ -277,6 +277,171 @@ def list_versions(chapter_id: int):
            FROM chapter_versions WHERE chapter_id=? ORDER BY id DESC""", (chapter_id,))
 
 
+# ---------- 章节智能收录（识别新写内容 → 万象谱/关系图谱/伏笔看板/时间线/大纲） ----------
+
+class ChapterSmartIntakeIn(BaseModel):
+    content: str = ""          # 留空则取该章节当前正文
+    auto_commit: bool = False  # true 时经统一管线直接落库；false 仅返回候选预览
+
+
+def _empty_intake():
+    return {
+        "entities": [], "relations": [], "foreshadows": [],
+        "timeline_events": [], "outline_nodes": [], "notes": [],
+        "chapter_synopses": [],
+    }
+
+
+@router.post("/chapters/{chapter_id}/smart-intake")
+def chapter_smart_intake(chapter_id: int, body: ChapterSmartIntakeIn):
+    """识别章节正文中的全部创作资产（人物/地点/关系/道具/伏笔/时间线/大纲/笔记）。
+
+    - auto_commit=false：返回分模块候选并标注 is_new（是否已存在于作品库），供前端预览勾选。
+    - auto_commit=true：复用 workflow_assets 的统一管线 sync_assets_to_database 落库，
+      与万相谱/关系图谱/伏笔看板/时间线/大纲口径一致，并自动关联本章。
+    """
+    ch = _one(
+        """SELECT c.id, v.work_id FROM chapters c
+           JOIN volumes v ON v.id = c.volume_id WHERE c.id=?""",
+        (chapter_id,),
+    )
+    work_id = ch["work_id"]
+    db = get_db()
+
+    content = (body.content or "").strip()
+    if not content:
+        crow = db.execute("SELECT content FROM chapters WHERE id=?", (chapter_id,)).fetchone()
+        content = (crow["content"] or "") if crow else ""
+    if not content:
+        return {"committed": False, "assets": _empty_intake(), "message": "正文为空"}
+
+    # 复用统一解析 + 归一管线
+    from ..workflow_assets import extract_structured_assets_from_text
+    from ..services.output_normalizer import canonicalize_assets
+    raw = extract_structured_assets_from_text(content, source_kind="chapter")
+    canon = canonicalize_assets(raw)
+
+    # 现有库快照，用于 is_new 判定
+    def _names(sql):
+        return {r[0].strip().lower() for r in db.execute(sql, (work_id,)).fetchall() if r[0]}
+    existing_entities = _names("SELECT name FROM entities WHERE work_id=?")
+    existing_outlines = _names("SELECT title FROM outline_nodes WHERE work_id=?")
+    existing_fs = _names("SELECT title FROM foreshadows WHERE work_id=?")
+    existing_tl = _names("SELECT event FROM timeline_events WHERE work_id=?")
+    rel_rows = db.execute(
+        """SELECT e1.name AS from_name, e2.name AS to_name, r.label
+           FROM entity_relations r
+           JOIN entities e1 ON e1.id=r.from_id
+           JOIN entities e2 ON e2.id=r.to_id
+           WHERE r.work_id=?""", (work_id,)).fetchall()
+    existing_rel = {(r["from_name"].strip().lower(), r["to_name"].strip().lower(), (r["label"] or "").strip().lower())
+                    for r in rel_rows}
+
+    def mark(items, key, exist_set):
+        out = []
+        for it in items:
+            t = (it.get(key) or "").strip()
+            if not t:
+                continue
+            d = dict(it)
+            d["is_new"] = t.lower() not in exist_set
+            out.append(d)
+        return out
+
+    assets = _empty_intake()
+    assets["entities"] = mark(canon.get("entities", []), "name", existing_entities)
+    assets["foreshadows"] = mark(canon.get("foreshadows", []), "title", existing_fs)
+    assets["timeline_events"] = mark(canon.get("timeline_events", []), "event", existing_tl)
+    assets["outline_nodes"] = mark(canon.get("outline_nodes", []), "title", existing_outlines)
+    existing_notes = _names("SELECT name FROM entities WHERE work_id=? AND category='term'")
+    assets["notes"] = mark(canon.get("notes", []), "title", existing_notes)
+
+    rel_out = []
+    for r in canon.get("relations", []):
+        fn = (r.get("from_name") or "").strip()
+        tn = (r.get("to_name") or "").strip()
+        if not fn or not tn:
+            continue
+        d = dict(r)
+        d["is_new"] = (fn.lower(), tn.lower(), (r.get("label") or "").strip().lower()) not in existing_rel
+        rel_out.append(d)
+    assets["relations"] = rel_out
+    assets["chapter_synopses"] = [dict(c) for c in canon.get("chapter_synopses", []) if (c.get("node_title") or "").strip()]
+
+    if not body.auto_commit:
+        return {"committed": False, "assets": assets}
+
+    # 经统一管线落库
+    from ..workflow_assets import (
+        sync_assets_to_database, SyncAssetsIn,
+        AssetEntityIn, AssetRelationIn, AssetForeshadowIn,
+        AssetTimelineEventIn, AssetOutlineIn, AssetNoteIn,
+    )
+
+    def s(x):
+        return (x or "").strip()
+
+    def ent_model(e):
+        try:
+            return AssetEntityIn(name=s(e.get("name")), category=s(e.get("category")) or "character",
+                                 content=s(e.get("content")), tags=s(e.get("tags")),
+                                 fields_json=e.get("fields_json") or {})
+        except Exception:
+            return None
+
+    def rel_model(r):
+        try:
+            return AssetRelationIn(from_name=s(r.get("from_name")), to_name=s(r.get("to_name")),
+                                  label=s(r.get("label")) or "关联")
+        except Exception:
+            return None
+
+    def fs_model(f):
+        try:
+            return AssetForeshadowIn(title=s(f.get("title")), content=s(f.get("content")),
+                                    status=s(f.get("status")) or "planted")
+        except Exception:
+            return None
+
+    def tl_model(t):
+        try:
+            return AssetTimelineEventIn(time_label=s(t.get("time_label")), event=s(t.get("event")),
+                                        characters=s(t.get("characters")))
+        except Exception:
+            return None
+
+    def ol_model(o):
+        try:
+            return AssetOutlineIn(title=s(o.get("title")), synopsis=s(o.get("synopsis")),
+                                  is_volume=bool(o.get("is_volume", False)),
+                                  parent_title=s(o.get("parent_title")))
+        except Exception:
+            return None
+
+    def nt_model(n):
+        try:
+            return AssetNoteIn(title=s(n.get("title")) or "世界观设定", content=s(n.get("content")),
+                              tags=s(n.get("tags")) or "世界观")
+        except Exception:
+            return None
+
+    sync_body = SyncAssetsIn(
+        entities=[m for m in (ent_model(e) for e in canon.get("entities", [])) if m],
+        relations=[m for m in (rel_model(r) for r in canon.get("relations", [])) if m],
+        foreshadows=[m for m in (fs_model(f) for f in canon.get("foreshadows", [])) if m],
+        timeline_events=[m for m in (tl_model(t) for t in canon.get("timeline_events", [])) if m],
+        outline_nodes=[m for m in (ol_model(o) for o in canon.get("outline_nodes", [])) if m],
+        notes=[m for m in (nt_model(n) for n in canon.get("notes", [])) if m],
+        chapter_id=chapter_id,
+    )
+    summary = sync_assets_to_database(db, work_id, sync_body)
+    # 落库后刷新候选的 is_new 标记（全部已存在）
+    for k in assets:
+        for it in assets[k]:
+            it["is_new"] = False
+    return {"committed": True, "assets": assets, "summary": summary}
+
+
 # ---------- 仪表盘统计 ----------
 
 @router.get("/stats/dashboard")

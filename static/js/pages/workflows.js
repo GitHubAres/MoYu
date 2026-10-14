@@ -29,6 +29,7 @@ const WF_INPUT_MODES = [
   ["chapter", "本章正文"],
   ["prev_output", "前序步骤输出"],
   ["merge", "合并（正文+前序输出）"],
+  ["hotradar", "灵感采集（全网热点摘要）"],
   ["none", "无"],
 ];
 

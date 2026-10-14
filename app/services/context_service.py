@@ -1,3 +1,30 @@
+
+def assemble_hotradar_summary_block(db, limit: int = 10) -> str:
+    """提取并格式化当前全网热榜的灵感摘要（供工作流灵感采集节点消费）。"""
+    try:
+        rows = db.execute(
+            "SELECT platform, title, rank, genre_tags, heat, author FROM hot_topics ORDER BY platform ASC, rank ASC LIMIT 50"
+        ).fetchall()
+        if not rows:
+            return ""
+        import json
+        lines = ["【全网热点雷达 · 爆款灵感摘要】"]
+        current_platform = None
+        for r in rows:
+            p = r["platform"]
+            if p != current_platform:
+                current_platform = p
+                lines.append(f"\n--- {current_platform}热门榜单 ---")
+            try:
+                tags = json.loads(r["genre_tags"] or "[]")
+                tag_str = f" [{'/'.join(tags[:3])}]" if tags else ""
+            except Exception:
+                tag_str = ""
+            lines.append(f"· 第 {r['rank']} 名： 《{r['title']}》{tag_str} (热度: {r['heat']})")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
 # -*- coding: utf-8 -*-
 """统一上下文装配服务
 
@@ -189,6 +216,13 @@ def assemble_workflow_context(
         triad_block = assemble_plot_triad_block(db, work_id, outline_node_id)
         if triad_block:
             parts.append(triad_block)
+
+    # 灵感采集来源处理
+    include_hotradar = (context_sources and "hotradar" in context_sources) or input_mode == "hotradar"
+    if include_hotradar:
+        hotradar_block = assemble_hotradar_summary_block(db)
+        if hotradar_block:
+            parts.append(hotradar_block)
 
     if include_chapter and chapter_text:
         parts.append("【本章正文】\n" + chapter_text)

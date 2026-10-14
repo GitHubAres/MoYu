@@ -78,6 +78,18 @@ registerPage("skills", async (view) => {
     imported: { label: "外部导入", bg: "bg-secondary-container text-on-secondary-container" },
   };
 
+  // 资产键 → 核心模块标签（与后端 SKILL_ASSET_CONTRACTS 一一对应，数据来自技能列表的 asset_keys 字段）
+  const ASSET_KEY_META = {
+    work_info:        { label: "作品设定", color: "bg-indigo-50 text-indigo-700" },
+    entities:         { label: "设定库",   color: "bg-sky-50 text-sky-700" },
+    relations:        { label: "关系图谱", color: "bg-violet-50 text-violet-700" },
+    timeline_events:  { label: "时间线",   color: "bg-amber-50 text-amber-700" },
+    foreshadows:      { label: "伏笔看板", color: "bg-rose-50 text-rose-700" },
+    outline_nodes:    { label: "大纲",     color: "bg-emerald-50 text-emerald-700" },
+    chapter_synopses: { label: "梗概",     color: "bg-teal-50 text-teal-700" },
+    notes:            { label: "世界观/术语", color: "bg-slate-100 text-slate-600" },
+  };
+
   let skills = [];
   let activeTab = "all";
   let activeSource = "all";
@@ -192,6 +204,19 @@ registerPage("skills", async (view) => {
       );
 
       top.append(headerRow, subRow, desc, filesInfo);
+
+      // 反哺模块标签：展示本技能会沉淀到哪些墨语核心模块（来自后端 asset_keys）
+      const feedKeys = (skill.asset_keys && Array.isArray(skill.asset_keys) && skill.asset_keys.length) ? skill.asset_keys : [];
+      if (feedKeys.length) {
+        const feedsRow = ui.el("div", { class: "flex items-center gap-1.5 flex-wrap pt-1" },
+          ui.el("span", { class: "text-[10px] text-on-surface-variant" }, "反哺：")
+        );
+        feedKeys.forEach((k) => {
+          const meta = ASSET_KEY_META[k] || { label: k, color: "bg-slate-100 text-slate-600" };
+          feedsRow.append(ui.el("span", { class: `px-1.5 py-0.5 text-[10px] rounded ${meta.color}` }, meta.label));
+        });
+        top.append(feedsRow);
+      }
 
       // 底部操作区
       const bottom = ui.el("div", { class: "flex items-center justify-between pt-3 mt-3 border-t border-outline-variant/60 text-xs" });

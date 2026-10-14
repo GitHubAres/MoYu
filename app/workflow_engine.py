@@ -18,6 +18,7 @@ from app.db import get_db
 from app.features import build_skill_system_prompt
 from app.services.output_normalizer import (
     build_contract_clause,
+    SKILL_ASSET_CONTRACTS,
     extract_assets_block,
     sanitize_asset_item,
     strip_ai_chatter,
@@ -168,11 +169,13 @@ def _build_step_context(
         if ref_seq is not None:
             ref_seqs = [ref_seq]
 
-    # 2. 解析上下文来源标记 (chapter, triad)
+    # 2. 解析上下文来源标记 (chapter, triad, hotradar)
     context_sources = _parse_json_list(step_dict.get("context_sources"))
     if not context_sources:
         if mode in ("chapter", "merge"):
             context_sources = ["chapter", "triad"]
+        elif mode == "hotradar":
+            context_sources = ["hotradar"]
         elif mode == "prev_output":
             context_sources = []
         elif mode == "none":
@@ -292,6 +295,14 @@ async def _execute(run_id: int):
                 synopsis_kws = ["梗概"]
 
                 required_keys: list[str] = []
+                # 优先采用技能声明的资产键（契约适配式重构：与直接调用路径统一口径）
+                # step 为 sqlite3.Row，使用下标访问而非 .get()
+                if step["skill_id"]:
+                    _sn = db.execute("SELECT name FROM skills WHERE id=?", (step["skill_id"],)).fetchone()
+                    if _sn:
+                        for k in SKILL_ASSET_CONTRACTS.get(_sn["name"], []):
+                            if k not in required_keys:
+                                required_keys.append(k)
                 if any(k in target_check for k in ledger_kws):
                     # 立项/开坑类任务追加 work_info 顶层契约键
                     if any(k in target_check for k in ["立项", "开坑", "书名", "题材", "定位", "premise"]):

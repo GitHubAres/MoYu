@@ -67,10 +67,25 @@ def batch_sync_triad_assets(
 
     # 1. 大纲节点挂载
     current_parent_id = default_outline_node_id
+    parent_map: dict[str, int] = {}
     for n in outline_nodes:
         title = (n.get("title") or "").strip()
         synopsis = (n.get("synopsis") or "").strip()
-        parent_id = n.get("parent_id") or current_parent_id
+        parent_title = (n.get("parent_title") or "").strip()
+        parent_id = n.get("parent_id")
+        if parent_id is None and parent_title:
+            if parent_title in parent_map:
+                parent_id = parent_map[parent_title]
+            else:
+                p_row = db.execute(
+                    "SELECT id FROM outline_nodes WHERE work_id = ? AND title = ?",
+                    (work_id, parent_title),
+                ).fetchone()
+                if p_row:
+                    parent_id = p_row["id"]
+                    parent_map[parent_title] = parent_id
+        if parent_id is None:
+            parent_id = current_parent_id
         if not title:
             continue
         # 优先按精确 (work_id, title, parent_id) 查重；若未查到但该作品下已存在同名节点，亦视为重复进行更新，杜绝重复创建同名节点
@@ -96,6 +111,8 @@ def batch_sync_triad_assets(
             stats["outline_nodes_added"] += 1
             if n.get("is_volume"):
                 current_parent_id = cur.lastrowid
+                if title:
+                    parent_map[title] = cur.lastrowid
         else:
             dup_id, dup_synopsis = dup[0], dup[1]
             old_synopsis = (dup_synopsis or "").strip()

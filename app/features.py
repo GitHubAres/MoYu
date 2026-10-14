@@ -16,6 +16,12 @@ import time
 from app.ai_tasks import create_task, fail_task, finish_task, start_task
 from app.ai_client import AIError, chat, chat_stream, get_ai_config, list_models
 from app.db import get_db
+from app.services.output_normalizer import (
+    build_contract_clause,
+    SKILL_ASSET_CONTRACTS,
+    extract_assets_block,
+    canonicalize_assets,
+)
 
 
 class _GenIn(BaseModel):
@@ -125,6 +131,28 @@ def resolve_skill(skill_id: int | None, task: str):
     return skill_row
 
 
+
+def get_top_hot_genres(limit: int = 10) -> list[str]:
+    """获取当前全网热点热榜中频次最高的热门题材标签列表。"""
+    try:
+        db = get_db()
+        rows = db.execute("SELECT genre_tags FROM hot_topics ORDER BY rank ASC LIMIT 100").fetchall()
+        import json
+        from collections import Counter
+        counter = Counter()
+        for r in rows:
+            try:
+                tags = json.loads(r["genre_tags"] or "[]")
+                for t in tags:
+                    t_str = str(t).strip()
+                    if t_str:
+                        counter[t_str] += 1
+            except Exception:
+                continue
+        return [g for g, _ in counter.most_common(limit)]
+    except Exception:
+        return []
+
 def build_skill_system_prompt(
     skill_id: int | None = None,
     task: str = "continue",
@@ -143,10 +171,22 @@ def build_skill_system_prompt(
     db = get_db()
     skill_row = resolve_skill(skill_id, task)
 
+    # M6: 条件式追加热门题材灵感（仅限立项、选题、大纲、灵感等策划阶段，正文续写/扩写等严格无副作用）
+    hot_hint = ""
+    trigger_kws = ["立项", "开坑", "灵感", "题材", "热点", "头脑风暴", "大纲", "选题", "策划", "方向"]
+    text_to_check = f"{task} {instruction} {context}"
+    if any(kw in text_to_check for kw in trigger_kws):
+        top_genres = get_top_hot_genres(10)
+        if top_genres:
+            hot_hint = f"当前全网热门题材 TOP10：{'、'.join(top_genres)}"
+
+
     if not skill_row:
         # 极限兜底，使用内置常量
         fallback_prompt = AIOrchestrator.BASIC_PROMPTS.get(task, AIOrchestrator.BASIC_PROMPTS["continue"])
         fallback_prompt += "\n" + AIOrchestrator.length_hint(length)
+        if hot_hint:
+            fallback_prompt += f"\n\n【参考灵感】{hot_hint}"
         return fallback_prompt, {"context": False, "selection": False, "instruction": False}
 
     name = skill_row["name"]
@@ -217,14 +257,13 @@ def build_skill_system_prompt(
     len_hint = AIOrchestrator.length_hint(length)
     sections.append(f"【输出长度要求】\n{len_hint}")
 
-    # 结构化产物交付契约（MOYU:ASSETS）——对齐《墨语产物交付规范》，闭合"生产端提示词"缺口
-    sections.append(
-        "【结构化产物交付契约 MOYU:ASSETS】\n"
-        "若任务涉及可沉淀入库的创作资产（人物/世界观/势力/物品/关系/时间线事件/伏笔/大纲节点/术语笔记），"
-        "请在回答末尾追加合法的 `MOYU:ASSETS` 契约块（HTML 注释包裹的 JSON，键含 work_info / entities / relations / "
-        "timeline_events / foreshadows / outline_nodes / chapter_synopses / notes）；正文自由书写，未涉及的键留空数组 []，"
-        "严禁将大段章节正文塞入契约块。完整键清单与边界红线以《墨语产物交付规范》为准。"
-    )
+    if hot_hint:
+        sections.append(f"【参考灵感】\n{hot_hint}")
+
+    # 结构化产物交付契约（MOYU:ASSETS，schema 强制版）——与 workflow 路径统一，闭合"生产端提示词"缺口
+    required_keys = SKILL_ASSET_CONTRACTS.get(name, [])
+    if required_keys:
+        sections.append(build_contract_clause(required_keys))
 
     final_sys_prompt = "\n\n".join(sections)
     return final_sys_prompt, consumed
@@ -532,27 +571,14 @@ class AlchemyEngine:
         if not cfg.get("ai_api_key") or not cfg.get("ai_model"):
             raise HTTPException(400, "尚未配置 AI 接口，请先到系统设置页配置")
 
+        # 统一契约：炼丹炉与技能体系共用同一 MOYU:ASSETS 契约（消除双轨）
+        contract = build_contract_clause(["entities", "outline_nodes"])
         sys_prompt = (
             "你是一位长篇小说世界观设定与剧情大纲架构专家。请通读用户给出的资料文本，"
             "提炼出世界观设定（人物/地点/势力/物品/术语）与剧情大纲节点。\n\n"
-            "必须输出严格合法的 JSON 格式（使用 ```json 代码块包裹），结构如下：\n"
-            "{\n"
-            '  "entities": [\n'
-            '    {\n'
-            '      "category": "character" | "place" | "faction" | "item" | "term",\n'
-            '      "name": "设定条目名称",\n'
-            '      "tags": "标签1, 标签2",\n'
-            '      "content": "详细设定说明（身份/性格/背景/特征/规则等）"\n'
-            '    }\n'
-            "  ],\n"
-            '  "outline": [\n'
-            '    {\n'
-            '      "title": "大纲章节或情节点标题",\n'
-            '      "synopsis": "该情节点或章节的剧情梗概",\n'
-            '      "parent": "可选所属分卷名或父节点标题"\n'
-            '    }\n'
-            "  ]\n"
-            "}"
+            "请严格按文末系统给定的 MOYU:ASSETS 契约块结构输出（键含 entities / outline_nodes），"
+            "设定说明与大纲梗概写入块内对应字段。\n\n"
+            + (contract + "\n\n" if contract else "")
         )
         messages = [
             {"role": "system", "content": sys_prompt},
@@ -560,35 +586,45 @@ class AlchemyEngine:
         ]
         try:
             raw_text, _ = await chat(messages, cfg)
-            data = _extract_json(raw_text)
         except AIError as e:
             raise HTTPException(502, str(e))
-        except Exception as e:
-            raise HTTPException(502, f"解析 AI 提炼结果失败：{e}")
 
-        entities = data.get("entities", []) if isinstance(data, dict) else []
-        outline = data.get("outline", []) if isinstance(data, dict) else []
-        valid_cats = {"character", "place", "faction", "item", "term"}
+        # 统一解析：优先走 MOYU:ASSETS 契约块，缺失则回退到旧 JSON 解析
+        assets = extract_assets_block(raw_text)
+        if assets:
+            canon = canonicalize_assets(assets)
+        else:
+            try:
+                data = _extract_json(raw_text)
+            except Exception:
+                data = {}
+            data = data if isinstance(data, dict) else {}
+            canon = canonicalize_assets({
+                "entities": data.get("entities", []),
+                "outline_nodes": data.get("outline", []),
+            })
+
         cleaned_entities = []
-        for e in entities:
-            if isinstance(e, dict) and str(e.get("name", "")).strip():
-                cat = str(e.get("category", "term")).lower().strip()
-                if cat not in valid_cats:
-                    cat = "term"
-                cleaned_entities.append({
-                    "category": cat,
-                    "name": str(e["name"]).strip(),
-                    "tags": str(e.get("tags", "")).strip(),
-                    "content": str(e.get("content", "")).strip(),
-                })
+        for e in canon.get("entities", []):
+            name = str(e.get("name", "")).strip()
+            if not name:
+                continue
+            cleaned_entities.append({
+                "category": str(e.get("category", "term")),
+                "name": name,
+                "tags": str(e.get("tags", "")).strip(),
+                "content": str(e.get("content", "")).strip(),
+            })
         cleaned_outline = []
-        for o in outline:
-            if isinstance(o, dict) and str(o.get("title", "")).strip():
-                cleaned_outline.append({
-                    "title": str(o["title"]).strip(),
-                    "synopsis": str(o.get("synopsis", "")).strip(),
-                    "parent": str(o.get("parent", "")).strip() if o.get("parent") else None,
-                })
+        for o in canon.get("outline_nodes", []):
+            title = str(o.get("title", "")).strip()
+            if not title:
+                continue
+            cleaned_outline.append({
+                "title": title,
+                "synopsis": str(o.get("synopsis", "")).strip(),
+                "parent": str(o.get("parent_title") or "").strip() or None,
+            })
         return {"entities": cleaned_entities, "outline": cleaned_outline}
 
     def import_lore(self, body: _ImportLoreIn):
@@ -596,6 +632,17 @@ class AlchemyEngine:
         work = db.execute("SELECT id FROM works WHERE id=?", (body.work_id,)).fetchone()
         if not work:
             raise HTTPException(404, "目标作品不存在")
+
+        # 统一契约归一：与技能体系共用 canonicalize_assets，保证分类/字段一致（消除双轨）
+        canon = canonicalize_assets({
+            "entities": body.entities or [],
+            "outline_nodes": [
+                {"title": o.get("title"), "synopsis": o.get("synopsis"), "parent_title": o.get("parent")}
+                for o in (body.outline or [])
+            ],
+        })
+        norm_entities = [e for e in canon.get("entities", []) if str(e.get("name", "")).strip()]
+        norm_outline = [o for o in canon.get("outline_nodes", []) if str(o.get("title", "")).strip()]
 
         existing_ents = {
             (r["category"], r["name"])
@@ -606,13 +653,11 @@ class AlchemyEngine:
         valid_cats = {"character", "place", "faction", "item", "term", "custom"}
         ent_created = 0
         skipped = 0
-        for e in body.entities:
-            cat = str(e.get("category", "term")).strip()
+        for e in norm_entities:
+            cat = str(e.get("category", "term")).lower().strip()
             if cat not in valid_cats:
                 cat = "term"
             name = str(e.get("name", "")).strip()
-            if not name:
-                continue
             if (cat, name) in existing_ents:
                 skipped += 1
                 continue
@@ -626,12 +671,10 @@ class AlchemyEngine:
 
         out_created = 0
         parent_map = {}
-        for o in body.outline:
+        for o in norm_outline:
             title = str(o.get("title", "")).strip()
-            if not title:
-                continue
             synopsis = str(o.get("synopsis", "")).strip()
-            parent_name = str(o.get("parent") or "").strip()
+            parent_name = str(o.get("parent_title") or "").strip()
             parent_id = None
             if parent_name:
                 if parent_name not in parent_map:

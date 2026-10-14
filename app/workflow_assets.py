@@ -54,6 +54,7 @@ class AssetOutlineIn(BaseModel):
     synopsis: str = ""
     is_volume: bool = False
     parent_id: Optional[int] = None
+    parent_title: Optional[str] = None
 
 
 class AssetChapterSynopsisIn(BaseModel):
@@ -758,7 +759,14 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
                 rejected.append({"kind": k_hint, "title": t, "reason": "疑似纯标题"})
         rejected.extend(heur_rejected)
 
-        # 故事立项补充
+        # 故事立项：优先采纳契约块中的 work_info，未提供或缺项时回落到启发式
+        b_wi = block.get("work_info") or {}
+        if isinstance(b_wi, dict):
+            for f_key in ("title", "genre", "intro"):
+                val = str(b_wi.get(f_key) or "").strip()
+                if val:
+                    assets["work_info"][f_key] = val
+
         if not assets["work_info"]["title"]:
             assets["work_info"]["title"] = heur_assets["work_info"]["title"]
         if not assets["work_info"]["genre"]:
@@ -810,10 +818,11 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
 CATEGORY_ALIASES = {
     "人物": "character", "角色": "character", "主角": "character", "配角": "character",
     "人物角色": "character", "主要角色": "character",
-    "地点": "place", "场景": "place", "地理": "place", "位置": "place",
+    "地点": "place", "场景": "place", "地理": "place", "位置": "place", "location": "place",
     "势力": "faction", "组织": "faction", "门派": "faction", "阵营": "faction",
     "道具": "item", "物品": "item", "神兵": "item", "兵器": "item", "物件": "item",
     "术语": "term", "设定": "term", "概念": "term", "世界观": "term", "规则": "term",
+    "lore": "term",
 }
 VALID_CATEGORIES = ("character", "place", "faction", "item", "term", "custom")
 

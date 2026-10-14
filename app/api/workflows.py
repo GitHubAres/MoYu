@@ -19,7 +19,7 @@ from app.db import get_db
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
-INPUT_MODES = {"chapter", "prev_output", "merge", "none"}
+INPUT_MODES = {"chapter", "prev_output", "merge", "none", "hotradar"}
 REVIEW_ACTIONS = {"approve", "edit", "skip", "abort"}
 
 

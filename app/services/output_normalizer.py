@@ -160,10 +160,19 @@ def extract_assets_block(text: str) -> dict | None:
         if not isinstance(data, dict):
             return None
         valid_keys = ["entities", "relations", "timeline_events", "foreshadows", "outline_nodes", "notes", "chapter_synopses"]
-        res: dict[str, list] = {}
+        res: dict = {}
         for k in valid_keys:
             val = data.get(k)
             res[k] = val if isinstance(val, list) else []
+        wi = data.get("work_info")
+        if isinstance(wi, dict):
+            res["work_info"] = {
+                "title": str(wi.get("title") or "").strip(),
+                "genre": str(wi.get("genre") or "").strip(),
+                "intro": str(wi.get("intro") or "").strip(),
+            }
+        else:
+            res["work_info"] = {"title": "", "genre": "", "intro": ""}
         return res
     except Exception:
         return None
@@ -249,24 +258,137 @@ def strip_assets_blocks(text: str) -> str:
     return text
 
 
+# 墨语产物契约：唯一权威 schema（被 build_contract_clause 与炼丹炉合并共用）
+ASSET_CONTRACT_KEYS = [
+    "work_info", "entities", "relations", "timeline_events",
+    "foreshadows", "outline_nodes", "chapter_synopses", "notes",
+]
+
+# 合法实体分类与伏笔状态枚举（契约强制校验边界）
+_CONTRACT_CATEGORIES = ("character", "place", "faction", "item", "term", "custom")
+_CONTRACT_FORESHADOW_STATUS = ("planted", "pending", "recovered")
+
+
+# 每技能应产出的资产键声明（契约适配式重构核心元数据）。
+# 这是「技能 → 墨语核心模块」的唯一映射源，被 build_skill_system_prompt 与
+# workflow_engine 共用，消除直接调用与 workflow 两条路径的契约口径分歧。
+# 键名严格取自 ASSET_CONTRACT_KEYS；空列表表示该技能不强制产出结构化资产。
+SKILL_ASSET_CONTRACTS: dict[str, list[str]] = {
+    # 正文类：以续写/扩写时"涌现资产"为主
+    "default-continue": ["entities", "foreshadows", "timeline_events"],
+    "default-expand":   ["entities", "foreshadows", "timeline_events"],
+    "default-shorten":  ["notes"],
+    "default-rewrite":  ["notes"],
+    # 规划类
+    "default-outline":  ["work_info", "outline_nodes", "entities", "relations", "foreshadows"],
+    "novel-premise":    ["work_info", "entities", "notes"],
+    "novel-world":      ["entities", "relations", "timeline_events", "notes"],
+    "novel-cast":       ["entities", "relations"],
+    "novel-scene":      ["outline_nodes", "foreshadows", "entities", "timeline_events"],
+    # novel-forge 为流程编排总控，自身直接沉淀编排与推演产物（实体/关系/时间线/伏笔/大纲/术语），
+    # 逐章梗概与细化立项由其路由的对应子技能（default-shorten / novel-premise 等）专项产出
+    "novel-forge":      ["entities", "relations", "timeline_events",
+                         "foreshadows", "outline_nodes", "notes"],
+    # 审校类：以 notes（问题/评分/改动）沉淀为主
+    "default-audit":    ["notes"],
+    "default-analysis": ["work_info", "notes"],
+    "de-ai-tone":       ["notes"],
+}
+
+
 def build_contract_clause(required_keys: list[str]) -> str:
-    """构建按任务声明产物键的 MOYU:ASSETS 契约提示词模板。"""
+    """构建 MOYU:ASSETS 契约提示词（schema 强制版）。
+
+    required_keys: 本任务需要产出的产物键；其余键保留并填空数组。
+    仅列出本任务涉及的产物键、以空数组/空对象占位，并附字段强规则，
+    使墨语 output_normalizer 以高识别率解析并入核心模块。
+    """
     if not required_keys:
         return ""
+    required = [k for k in ASSET_CONTRACT_KEYS if k in set(required_keys)]
+    if not required:
+        return ""
+    req_label = "、".join(required)
+
+    # 仅列出本任务涉及的产物键，键以空数组/空对象占位（模型照此结构填充）
     lines = []
-    for k in required_keys:
+    for k in required:
         if k == "work_info":
             lines.append('  "work_info": {"title": "", "genre": "", "intro": ""}')
         else:
             lines.append(f'  "{k}": []')
-    json_body = ",\n".join(lines)
+    example = "<!-- MOYU:ASSETS\n{\n" + ",\n".join(lines) + "\n}\nMOYU:ASSETS -->"
+
     return (
-        "【输出契约】若本步骤产出可入库资产，"
-        "必须在回答末尾追加如下契约块，正文可自由书写，但契约块必须存在且为合法 JSON：\n"
-        "<!-- MOYU:ASSETS\n"
-        "{\n"
-        f"{json_body}\n"
-        "}\n"
-        "MOYU:ASSETS -->\n"
-        "未涉及对应资产的种类填空数组，不要省略上述键。"
+        "【结构化产物交付契约 MOYU:ASSETS（强制）】\n"
+        "若本次产出可沉淀入库的创作资产，必须在回答**末尾**追加如下契约块"
+        "（HTML 注释包裹的合法 JSON），严格照此结构输出；正文写于契约块之外。\n"
+        f"{example}\n"
+        f"本任务必须产出的产物键：{req_label}（其余种类保留键并填空数组 []）。\n"
+        "字段规则：\n"
+        "1. entity.category 仅限 character/place/faction/item/term；人物实体可用 fields_json 承载欲望/创伤/弧光/说话方式等高维设定；\n"
+        "2. relations 子项结构：{\"from_name\": \"起点角色\", \"to_name\": \"终点角色\", \"label\": \"关系/冲突说明\"}；\n"
+        "3. timeline_events 子项结构：{\"time_label\": \"时间点\", \"event\": \"事件描述\", \"characters\": \"相关角色\"}；\n"
+        "4. foreshadows 子项结构：{\"title\": \"伏笔标题\", \"content\": \"线索内容\", \"status\": \"planted/pending/recovered\"}；\n"
+        "5. outline_node.is_volume=true 表示分卷，false 表示章节；parent_title 填所属分卷名；\n"
+        "6. 所有 title/name/event 须 ≤30 字、非空、非 AI 套话；\n"
+        "7. 严禁将大段章节正文塞入契约块，契约块只放结构化元数据。"
     )
+
+
+def canonicalize_assets(raw: dict | None) -> dict:
+    """将任意来源（契约块 / 启发式）抽取出的资产字典归一到权威 schema。
+
+    保证 8 个产物键全部存在且为 list（work_info 为 dict），
+    实体 category 归一到枚举，伏笔 status 归一到枚举，过滤非法条目交由调用方取舍。
+    """
+    res: dict = {k: [] for k in ASSET_CONTRACT_KEYS}
+    res["work_info"] = {"title": "", "genre": "", "intro": ""}
+    if not isinstance(raw, dict):
+        return res
+
+    if isinstance(raw.get("work_info"), dict):
+        wi = raw["work_info"]
+        res["work_info"] = {
+            "title": str(wi.get("title") or "").strip(),
+            "genre": str(wi.get("genre") or "").strip(),
+            "intro": str(wi.get("intro") or "").strip(),
+        }
+
+    for k in ASSET_CONTRACT_KEYS:
+        if k == "work_info":
+            continue
+        val = raw.get(k)
+        if isinstance(val, list):
+            res[k] = [v for v in val if isinstance(v, dict)]
+
+    # 实体 category 归一
+    for ent in res.get("entities", []):
+        cat = str(ent.get("category", "")).strip().lower()
+        if cat not in _CONTRACT_CATEGORIES:
+            # 中文别名兼容（兜底，与 workflow_assets.normalize_category 对齐）
+            alias = {
+                "人物": "character", "角色": "character", "主角": "character", "配角": "character",
+                "地点": "place", "场景": "place", "地理": "place", "location": "place",
+                "势力": "faction", "组织": "faction", "门派": "faction", "阵营": "faction",
+                "道具": "item", "物品": "item", "神兵": "item",
+                "术语": "term", "设定": "term", "概念": "term", "世界观": "term", "规则": "term",
+                "lore": "term",
+            }
+            ent["category"] = alias.get(cat, "term")
+        # fields_json 兜底为对象
+        fj = ent.get("fields_json")
+        if isinstance(fj, str):
+            try:
+                ent["fields_json"] = json.loads(fj) if fj.strip() else {}
+            except Exception:
+                ent["fields_json"] = {}
+        elif not isinstance(fj, dict):
+            ent["fields_json"] = {}
+
+    # 伏笔 status 归一
+    for fs in res.get("foreshadows", []):
+        st = str(fs.get("status", "")).strip().lower()
+        fs["status"] = st if st in _CONTRACT_FORESHADOW_STATUS else "planted"
+
+    return res

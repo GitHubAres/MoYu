@@ -50,4 +50,8 @@ def create_app(open_browser: bool = False) -> FastAPI:
 
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open("http://127.0.0.1:8321")).start()
+    # 启动热点雷达后台定时采集调度器
+    from .services.hotradar_scheduler import start_scheduler
+    start_scheduler()
+
     return app

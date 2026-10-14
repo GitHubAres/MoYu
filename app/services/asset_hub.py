@@ -379,3 +379,98 @@ def list_unbound_assets(db, work_id: int) -> dict:
         (work_id,)).fetchall()
     return {"foreshadows": [dict(r) for r in foreshadows],
             "timeline_events": [dict(r) for r in timeline_events]}
+
+
+def record_hot_topic_asset(
+    db,
+    work_id: Optional[int],
+    topic: dict[str, Any],
+) -> dict[str, Any]:
+    """作者主动收藏热点时，经 asset_hub 沉淀入库并生成合规 MOYU:ASSETS 契约块。
+    
+    按《墨语产物交付规范》映射至 notes 资产（若指定作品）或生成标准契约块，
+    未涉及的资产键统一输出为空数组 []。
+    """
+    import json
+    title = topic.get("title", "")
+    platform = topic.get("platform", "")
+    rank = topic.get("rank", 0)
+    heat = topic.get("heat", 0)
+    author = topic.get("author", "")
+    genre_tags = topic.get("genre_tags", [])
+    if isinstance(genre_tags, str):
+        try:
+            genre_tags = json.loads(genre_tags)
+        except Exception:
+            genre_tags = []
+
+    tags_str = "全网热点,灵感素材"
+    if genre_tags:
+        tags_str += "," + ",".join(genre_tags)
+
+    note_title = f"【热点灵感】{title}"
+    note_content = (
+        f"来源平台：{platform}\n"
+        f"榜单排名：第 {rank} 名\n"
+        f"平台热度：{heat}\n"
+        f"原作/作者：{author or '公开爆款'}\n"
+        f"题材标签：{', '.join(genre_tags) if genre_tags else '无'}\n"
+        f"收录说明：由作者主动收藏至灵感素材库，作为设定与破局参考。"
+    )
+
+    contract_payload = {
+        "work_info": {
+            "title": "",
+            "genre": genre_tags[0] if genre_tags else "",
+            "intro": f"参考【{platform}】第 {rank} 名《{title}》热点灵感",
+        },
+        "entities": [],
+        "relations": [],
+        "timeline_events": [],
+        "foreshadows": [],
+        "outline_nodes": [],
+        "chapter_synopses": [],
+        "notes": [
+            {
+                "title": note_title,
+                "content": note_content,
+                "tags": tags_str,
+            }
+        ],
+    }
+
+    contract_block = (
+        "<!-- MOYU:ASSETS\n"
+        + json.dumps(contract_payload, ensure_ascii=False, indent=2)
+        + "\nMOYU:ASSETS -->"
+    )
+
+    persisted = False
+    entity_id = None
+    if work_id:
+        # 若指定了作品，则将 note 写入万相谱术语（category='lore'）
+        existing = db.execute(
+            "SELECT id FROM entities WHERE work_id = ? AND name = ?",
+            (work_id, note_title),
+        ).fetchone()
+        if existing:
+            entity_id = existing[0]
+            db.execute(
+                "UPDATE entities SET content = ?, tags = ?, updated_at = datetime('now','localtime') WHERE id = ?",
+                (note_content, tags_str, entity_id),
+            )
+        else:
+            cur = db.execute(
+                "INSERT INTO entities (work_id, name, category, content, tags) VALUES (?, ?, 'lore', ?, ?)",
+                (work_id, note_title, note_content, tags_str),
+            )
+            entity_id = cur.lastrowid
+            persisted = True
+        db.commit()
+
+    return {
+        "ok": True,
+        "contract_block": contract_block,
+        "contract_payload": contract_payload,
+        "persisted_entity_id": entity_id,
+    }

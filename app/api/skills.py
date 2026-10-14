@@ -15,6 +15,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ..db import get_db
+from ..services.output_normalizer import SKILL_ASSET_CONTRACTS
 
 router = APIRouter(prefix="/skills", tags=["skills"])
 
@@ -129,7 +130,10 @@ def list_skills(
 
     sql += " ORDER BY CASE s.source WHEN 'builtin' THEN 0 WHEN 'custom' THEN 1 ELSE 2 END, s.id ASC"
     rows = conn.execute(sql, params).fetchall()
-    return [dict(r) for r in rows]
+    result = [dict(r) for r in rows]
+    for r in result:
+        r["asset_keys"] = SKILL_ASSET_CONTRACTS.get(r.get("name", ""), [])
+    return result
 
 
 @router.post("", status_code=201)
@@ -173,6 +177,7 @@ def get_skill_detail(skill_id: int):
     if not row:
         raise HTTPException(status_code=404, detail="Skill 不存在")
     skill_data = dict(row)
+    skill_data["asset_keys"] = SKILL_ASSET_CONTRACTS.get(skill_data.get("name", ""), [])
 
     files_rows = conn.execute(
         "SELECT id, path, size, updated_at FROM skill_files WHERE skill_id = ? ORDER BY path ASC",

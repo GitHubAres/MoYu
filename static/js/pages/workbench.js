@@ -253,6 +253,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     saveTimer = setTimeout(() => saveContent(), 2000);
     clearTimeout(entityDetectTimer);
     entityDetectTimer = setTimeout(() => syncDetectedEntities(), 1200);
+    scheduleIntakeHint();
   });
   /* 粘贴强制纯文本 */
   editor.addEventListener("paste", (e) => {
@@ -260,6 +261,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     const text = (e.clipboardData || window.clipboardData).getData("text/plain");
     document.execCommand("insertText", false, text);
   });
+  editor.addEventListener("click", onAuditMarkClick);
   titleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") titleInput.blur(); });
   titleInput.addEventListener("blur", renameChapter);
 
@@ -388,6 +390,7 @@ registerPage("workbench", async (view, { segs, params }) => {
       }
     }
     editor.textContent = useContent;
+    clearAuditHighlights();
     titleInput.value = chapter.title;
     prevWords = chapter.word_count || 0;
     dirty = false; saveError = false;
@@ -1287,12 +1290,30 @@ registerPage("workbench", async (view, { segs, params }) => {
       onclick: () => openEntityPickerDialog(),
     }, ui.icon("add", "text-[14px]"), "关联");
 
+    const intakeBtn = ui.el("button", {
+      class: "flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-secondary-container text-on-secondary-container text-[12px] font-label-sm hover:opacity-90 transition-opacity",
+      title: "识别本章全部新写内容（人物/地点/关系/道具/伏笔/时间线/大纲）并收录进各模块",
+      onclick: () => runSmartIntake(),
+    }, ui.icon("auto_awesome", "text-[14px]"), "智能收录");
+
+    const auditBtn = ui.el("button", {
+      class: "flex items-center gap-0.5 px-1.5 py-0.5 rounded-md hover:bg-surface-container text-error text-[12px] font-label-sm transition-colors",
+      title: "对本章做设定一致性体检，自动标注矛盾/遗忘/时间线问题",
+      onclick: () => runChapterAudit(),
+    }, ui.icon("health_and_safety", "text-[14px]"), "章节体检");
+
+    const diffBtn = ui.el("button", {
+      class: "flex items-center gap-0.5 px-1.5 py-0.5 rounded-md hover:bg-surface-container text-on-surface-variant text-[12px] font-label-sm transition-colors",
+      title: "对比本章与上一版本快照的差异",
+      onclick: () => showInlineDiff(),
+    }, ui.icon("compare", "text-[14px]"), "对比上一版");
+
     const entityHeader = ui.el("div", { class: "flex items-center justify-between" },
       ui.el("div", { class: "flex items-center gap-1.5" },
         ui.icon("psychology", "text-[16px] text-primary"),
         ui.el("span", { class: "font-label-sm text-label-sm font-semibold text-primary" }, "设定库联动"),
         countBadge),
-      ui.el("div", { class: "flex items-center gap-0.5" }, detectBtn, addEntityBtn));
+      ui.el("div", { class: "flex items-center gap-0.5 flex-wrap justify-end" }, detectBtn, addEntityBtn, intakeBtn, auditBtn, diffBtn));
 
     const entityListEl = ui.el("div", { class: "flex flex-col gap-0.5 max-h-[220px] overflow-y-auto" });
     entitySection.append(entityHeader, entityListEl);
@@ -1580,6 +1601,229 @@ registerPage("workbench", async (view, { segs, params }) => {
     renderList();
     updateSubmitBtn();
     root.append(overlay);
+  }
+
+  /* ---------- 章节智能收录（全资产：人物/地点/关系/道具/伏笔/时间线/大纲） ---------- */
+  async function runSmartIntake() {
+    if (!chapter) { ui.toast("请先选择章节", "info"); return; }
+    let data;
+    try {
+      data = await api.post(`/chapters/${chapter.id}/smart-intake`, { content: editorText(), auto_commit: false });
+    } catch (e) { ui.toast("智能识别失败：" + e.message, "err"); return; }
+    const assets = (data && data.assets) || {};
+    const totalNew = Object.values(assets).reduce(
+      (n, arr) => n + (Array.isArray(arr) ? arr.filter((x) => x && x.is_new).length : 0), 0);
+    if (totalNew === 0) { ui.toast("未发现新的可收录内容", "info"); return; }
+    openSmartIntakeDialog(assets, totalNew);
+  }
+
+  const INTAKE_MODULES = [
+    { key: "entities", label: "万象谱（人物/地点/道具/设定）" },
+    { key: "relations", label: "关系图谱" },
+    { key: "foreshadows", label: "伏笔看板" },
+    { key: "timeline_events", label: "剧情时间线" },
+    { key: "outline_nodes", label: "故事大纲" },
+    { key: "notes", label: "笔记 / 术语" },
+  ];
+
+  function openSmartIntakeDialog(assets, totalNew) {
+    if (!chapter) return;
+    const root = document.getElementById("modal-root");
+    const state = [];
+
+    const listBox = ui.el("div", { class: "flex flex-col gap-2 max-h-[52vh] overflow-y-auto pr-1" });
+    function renderList() {
+      listBox.innerHTML = "";
+      let shown = 0;
+      for (const mod of INTAKE_MODULES) {
+        const items = (assets[mod.key] || []).filter((x) => x && x.is_new);
+        if (!items.length) continue;
+        listBox.append(ui.el("div", { class: "text-[11px] font-semibold text-primary mt-1" }, mod.label));
+        for (const it of items) {
+          const st = { item: it, checked: true };
+          state.push(st);
+          const cb = ui.el("input", { type: "checkbox", class: "accent-[#316bf3] shrink-0" });
+          cb.checked = true;
+          cb.addEventListener("change", () => { st.checked = cb.checked; updateBtn(); });
+          const name = it.name || it.title || it.event || it.node_title || it.label || "(未命名)";
+          const sub = it.category ? ` · ${it.category}` : (it.label ? ` · ${it.label}` : "");
+          const snippet = it.content || it.synopsis || "";
+          listBox.append(ui.el("div", { class: "flex items-center gap-2 p-2 rounded-xl border border-border-feather bg-surface-container-lowest" },
+            cb,
+            ui.el("span", { class: "font-body-sm text-body-sm text-on-surface truncate flex-1" }, name + sub),
+            snippet ? ui.el("span", { class: "text-[11px] text-on-surface-variant line-clamp-1 italic truncate max-w-[40%]", title: snippet }, `“${snippet.slice(0, 30)}”`) : null));
+          shown++;
+        }
+      }
+      if (!shown) listBox.append(ui.el("div", { class: "p-4 text-center text-on-surface-variant text-[13px]" }, "没有需要收录的新内容"));
+    }
+
+    const submitBtn = ui.el("button", {
+      class: "px-4 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors disabled:opacity-40",
+      onclick: async () => {
+        const chosen = state.filter((s) => s.checked);
+        if (!chosen.length) return;
+        submitBtn.disabled = true; submitBtn.textContent = "收录中...";
+        try {
+          const res = await api.post(`/chapters/${chapter.id}/smart-intake`, { content: editorText(), auto_commit: true });
+          const s = res.summary || {};
+          const added = (s.entities_added || 0) + (s.relations_added || 0) + (s.foreshadows_added || 0)
+            + (s.timeline_events_added || 0) + (s.outlines_added || 0) + (s.notes_added || 0);
+          ui.toast(`已收录 ${added} 条新设定并关联至本章`, "ok");
+          overlay.remove();
+          try { allEntities = await api.get(`/works/${workId}/entities`); } catch (_) {}
+          await renderContext();
+        } catch (e) { ui.toast("收录失败：" + e.message, "err"); submitBtn.disabled = false; }
+      },
+    });
+    function updateBtn() {
+      const cnt = state.filter((s) => s.checked).length;
+      submitBtn.textContent = `确认收录 (${cnt})`;
+      submitBtn.disabled = cnt === 0;
+    }
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[620px] max-w-[calc(100vw-1.5rem)] shadow-[0_12px_32px_rgba(27,42,56,0.16)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.icon("auto_awesome", "text-[22px] text-primary"),
+            ui.el("div", { class: "flex flex-col" },
+              ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "发现本章新写内容"),
+              ui.el("p", { class: "text-[12px] text-on-surface-variant" }, `检测到 ${totalNew} 条未收录内容，可选择收录进万象谱 / 关系图谱 / 伏笔看板 / 时间线 / 大纲：`))),
+          ui.el("button", { class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant cursor-pointer", onclick: () => overlay.remove() }, ui.icon("close", "text-[20px]"))),
+        listBox,
+        ui.el("div", { class: "flex items-center justify-end gap-2 pt-2 border-t border-border-feather" },
+          ui.el("button", { class: "px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-label-md text-label-md cursor-pointer", onclick: () => overlay.remove() }, "取消"),
+          submitBtn)));
+
+    renderList();
+    updateBtn();
+    root.append(overlay);
+  }
+
+  /* ---------- 编辑器内联前后对比 ---------- */
+  async function showInlineDiff() {
+    if (!chapter) { ui.toast("请先选择章节", "info"); return; }
+    let versions;
+    try { versions = await api.get(`/chapters/${chapter.id}/versions`); }
+    catch (e) { ui.toast("读取版本失败：" + e.message, "err"); return; }
+    if (!versions || !versions.length) { ui.toast("暂无历史版本可对比", "info"); return; }
+    const target = versions[0];
+    let full;
+    try { full = await api.get(`/versions/${target.id}`); }
+    catch (e) { ui.toast("读取版本内容失败", "err"); return; }
+    const prev = (full.content || "");
+    const cur = editorText();
+    const { A, B, del, add } = lineDiff(prev, cur);
+    const root = document.getElementById("modal-root");
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[760px] max-w-[calc(100vw-1.5rem)] shadow-[0_12px_32px_rgba(27,42,56,0.16)] flex flex-col gap-space-md max-h-[86vh]" },
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.icon("compare", "text-[22px] text-primary"),
+            ui.el("div", { class: "flex flex-col" },
+              ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "对比上一版本"),
+              ui.el("p", { class: "text-[12px] text-on-surface-variant" }, `版本 #${target.id}${target.label ? " · " + target.label : ""}（红=旧版独有，绿=当前新增）`))),
+          ui.el("button", { class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant cursor-pointer", onclick: () => overlay.remove() }, ui.icon("close", "text-[20px]"))),
+        ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-2 gap-2 overflow-y-auto" },
+          ui.el("div", { class: "flex flex-col gap-1 min-w-0" },
+            ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "上一版本"),
+            renderDiffLines(A, del, "diff-del")),
+          ui.el("div", { class: "flex flex-col gap-1 min-w-0" },
+            ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "当前正文"),
+            renderDiffLines(B, add, "diff-add"))),
+        ui.el("div", { class: "flex items-center justify-end" },
+          ui.el("button", { class: "px-4 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md cursor-pointer", onclick: () => overlay.remove() }, "关闭"))));
+    root.append(overlay);
+  }
+
+  /* ---------- 章节体检 + AI 问题染色标注 ---------- */
+  async function runChapterAudit() {
+    if (!chapter) { ui.toast("请先选择章节", "info"); return; }
+    ui.toast("正在对本章做一致性体检…", "info");
+    let res;
+    try {
+      res = await api.post(`/audit/run`, { work_id: workId, chapter_ids: [chapter.id] });
+    } catch (e) { ui.toast("体检失败：" + e.message, "err"); return; }
+    const issues = (res && res.issues) || [];
+    if (!issues.length) { ui.toast("未发现设定矛盾 / 遗忘 / 时间线问题 🎉", "ok"); clearAuditHighlights(); return; }
+    applyAuditHighlights(issues);
+    const high = issues.filter((i) => i.severity === "high").length;
+    ui.toast(`体检完成：发现 ${issues.length} 处问题（高危 ${high}），已在正文标注`, high ? "err" : "info");
+  }
+
+  function clearAuditHighlights() {
+    editor.querySelectorAll("mark[data-issue]").forEach((m) => {
+      m.replaceWith(document.createTextNode(m.textContent));
+    });
+    editor.normalize();
+  }
+
+  function applyAuditHighlights(issues) {
+    clearAuditHighlights();
+    const palette = {
+      high: ["rgba(239,68,68,0.28)", "#ef4444"],
+      medium: ["rgba(249,115,22,0.28)", "#f97316"],
+      low: ["rgba(234,179,8,0.32)", "#eab308"],
+    };
+    for (const issue of issues) {
+      const q = (issue.quote || "").trim();
+      if (q.length < 2) continue;
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+      let node, done = false;
+      while ((node = walker.nextNode()) && !done) {
+        const idx = node.nodeValue.indexOf(q);
+        if (idx < 0) continue;
+        const range = document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + q.length);
+        const color = palette[issue.severity] || palette.low;
+        const mark = document.createElement("mark");
+        mark.style.background = color[0];
+        mark.style.borderBottom = "2px solid " + color[1];
+        mark.style.color = "inherit";
+        mark.dataset.issue = JSON.stringify({ type: issue.type, severity: issue.severity, issue: issue.issue, entity: issue.entity });
+        mark.title = `[${issue.type} · ${issue.severity}] ${issue.issue}`;
+        try { range.surroundContents(mark); done = true; } catch (e) { /* 跨节点跳过 */ }
+      }
+    }
+  }
+
+  function onAuditMarkClick(e) {
+    const mk = e.target.closest && e.target.closest("mark[data-issue]");
+    if (!mk) return;
+    let info;
+    try { info = JSON.parse(mk.dataset.issue); } catch (_) { return; }
+    ui.toast(`【${info.type} · ${info.severity}】${info.issue}${info.entity ? "（" + info.entity + "）" : ""}`,
+      info.severity === "high" ? "err" : "info");
+  }
+
+  let intakeHintTimer = null;
+  let intakeHintShownFor = "";
+  function scheduleIntakeHint() {
+    clearTimeout(intakeHintTimer);
+    intakeHintTimer = setTimeout(async () => {
+      if (!chapter) return;
+      try {
+        const data = await api.post(`/chapters/${chapter.id}/smart-intake`, { content: editorText(), auto_commit: false });
+        const assets = (data && data.assets) || {};
+        const newCount = Object.values(assets).reduce(
+          (n, arr) => n + (Array.isArray(arr) ? arr.filter((x) => x && x.is_new).length : 0), 0);
+        if (newCount > 0) {
+          const sig = newCount + "|" + editorText().slice(-200);
+          if (sig !== intakeHintShownFor) {
+            intakeHintShownFor = sig;
+            ui.toast(`检测到 ${newCount} 条新内容，可点「智能收录」入库`, "info");
+          }
+        }
+      } catch (_) { /* 忽略探测失败 */ }
+    }, 2600);
   }
 
   /* ---------- 实体挑选弹窗 ---------- */

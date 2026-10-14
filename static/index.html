@@ -6,11 +6,11 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" name="viewport"/>
 <title>墨语MoYu · 本地写作工作台</title>
-<link rel="icon" type="image/svg+xml" href="/static/logo.svg?v=2.1.2"/>
-<link rel="alternate icon" type="image/png" href="/static/logo.png?v=2.1.2"/>
-<link href="/static/vendor/fonts.css?v=2.1.2" rel="stylesheet"/>
-<link href="/static/css/app.css?v=2.1.2" rel="stylesheet"/>
-<script src="/static/vendor/tailwind.js?v=2.1.2"></script>
+<link rel="icon" type="image/svg+xml" href="/static/logo.svg?v=2.2.0"/>
+<link rel="alternate icon" type="image/png" href="/static/logo.png?v=2.2.0"/>
+<link href="/static/vendor/fonts.css?v=2.2.0" rel="stylesheet"/>
+<link href="/static/css/app.css?v=2.2.0" rel="stylesheet"/>
+<script src="/static/vendor/tailwind.js?v=2.2.0"></script>
 <style type="text/tailwindcss">
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
@@ -120,6 +120,7 @@
       <a data-route="board" href="#/board" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">view_kanban</span><span class="font-body-sm text-body-sm">伏笔看板</span></a>
       <a data-route="graph" href="#/graph" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">hub</span><span class="font-body-sm text-body-sm">关系图谱</span></a>
       <a data-route="timeline" href="#/timeline" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">timeline</span><span class="font-body-sm text-body-sm">剧情时间线</span></a>
+      <a data-route="hotradar" href="#/hotradar" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">radar</span><span class="font-body-sm text-body-sm">热点雷达</span></a>
       <a data-route="alchemy" href="#/alchemy" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">science</span><span class="font-body-sm text-body-sm">创作实验室</span></a>
       <a data-route="skills" href="#/skills" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">auto_awesome</span><span class="font-body-sm text-body-sm">Skill 市场</span></a>
       <a data-route="workflows" href="#/workflows" class="nav-item flex items-center gap-space-sm px-space-sm py-space-xs rounded-xl text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface transition-all duration-200"><span class="material-symbols-outlined text-[20px]">alt_route</span><span class="font-body-sm text-body-sm">写作工作流</span></a>
@@ -170,32 +171,33 @@
 </div>
 <div id="toast-root" class="fixed bottom-6 left-4 right-4 sm:left-auto sm:right-6 z-[100] flex flex-col gap-2 pointer-events-none items-center sm:items-end"></div>
 <div id="modal-root"></div>
-<script src="/static/js/api.js?v=2.1.2"></script>
-<script src="/static/js/ui.js?v=2.1.2"></script>
-<script src="/static/js/router.js?v=2.1.2"></script>
-  <script src="/static/js/store.js?v=2.1.2"></script>
-<script src="/static/js/pages/login.js?v=2.1.2"></script>
-<script src="/static/js/pages/bookshelf.js?v=2.1.2"></script>
-<script src="/static/js/pages/workbench_chat.js?v=2.1.2"></script>
-<script src="/static/js/pages/workbench.js?v=2.1.2"></script>
-<script src="/static/js/pages/tasks.js?v=2.1.2"></script>
-<script src="/static/js/pages/outline.js?v=2.1.2"></script>
-<script src="/static/js/pages/entities.js?v=2.1.2"></script>
-<script src="/static/js/pages/board.js?v=2.1.2"></script>
-<script src="/static/js/pages/skills.js?v=2.1.2"></script>
-<script src="/static/js/pages/workflows.js?v=2.1.2"></script>
-<script src="/static/js/pages/versions.js?v=2.1.2"></script>
-<script src="/static/js/pages/io.js?v=2.1.2"></script>
-<script src="/static/js/pages/settings.js?v=2.1.2"></script>
-<script src="/static/js/pages/audit.js?v=2.1.2"></script>
-<script src="/static/js/pages/graph.js?v=2.1.2"></script>
-<script src="/static/js/pages/timeline.js?v=2.1.2"></script>
-<script src="/static/js/pages/alchemy.js?v=2.1.2"></script>
-<script src="/static/js/pages/gallery.js?v=2.1.2"></script>
-<script src="/static/js/pages/announcement.js?v=2.1.2"></script>
+<script src="/static/js/api.js?v=2.2.0"></script>
+<script src="/static/js/ui.js?v=2.2.0"></script>
+<script src="/static/js/router.js?v=2.2.0"></script>
+  <script src="/static/js/store.js?v=2.2.0"></script>
+<script src="/static/js/pages/login.js?v=2.2.0"></script>
+<script src="/static/js/pages/bookshelf.js?v=2.2.0"></script>
+<script src="/static/js/pages/workbench_chat.js?v=2.2.0"></script>
+<script src="/static/js/pages/workbench.js?v=2.2.0"></script>
+<script src="/static/js/pages/tasks.js?v=2.2.0"></script>
+<script src="/static/js/pages/outline.js?v=2.2.0"></script>
+<script src="/static/js/pages/entities.js?v=2.2.0"></script>
+<script src="/static/js/pages/board.js?v=2.2.0"></script>
+<script src="/static/js/pages/skills.js?v=2.2.0"></script>
+<script src="/static/js/pages/workflows.js?v=2.2.0"></script>
+<script src="/static/js/pages/versions.js?v=2.2.0"></script>
+<script src="/static/js/pages/io.js?v=2.2.0"></script>
+<script src="/static/js/pages/settings.js?v=2.2.0"></script>
+<script src="/static/js/pages/audit.js?v=2.2.0"></script>
+<script src="/static/js/pages/graph.js?v=2.2.0"></script>
+<script src="/static/js/pages/timeline.js?v=2.2.0"></script>
+<script src="/static/js/pages/hotradar.js?v=2.2.0"></script>
+  <script src="/static/js/pages/alchemy.js?v=2.2.0"></script>
+<script src="/static/js/pages/gallery.js?v=2.2.0"></script>
+<script src="/static/js/pages/announcement.js?v=2.2.0"></script>
 <!-- MoYu-fingerprint: hidden-mark -->
 <div id="moyu-fingerprint" style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;" aria-hidden="true">MoYu-fingerprint</div>
-<script src="/static/js/app.js?v=2.1.2"></script>
+<script src="/static/js/app.js?v=2.2.0"></script>
 </body>
 </html>
 
