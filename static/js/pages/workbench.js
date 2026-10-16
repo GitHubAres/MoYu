@@ -239,7 +239,13 @@ registerPage("workbench", async (view, { segs, params }) => {
     class: "flex items-center gap-1 px-space-sm py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high text-on-surface transition-all",
     onclick: toggleFocus,
   }, ui.icon("center_focus_strong", "text-[18px]"), ui.el("span", { class: "font-label-md text-label-md" }, "专注模式"));
-  ui.setActions(focusBtn);
+  /* 顶栏：剧情一致性巡检 */
+  const consistencyBtn = ui.el("button", {
+    class: "flex items-center gap-1 px-space-sm py-1.5 rounded-full bg-secondary-container hover:opacity-90 text-on-secondary-container transition-all cursor-pointer",
+    title: "深入巡检当前章节与万相谱设定、时间线、伏笔的一致性与吃书风险",
+    onclick: () => runConsistencyCheck(),
+  }, ui.icon("fact_check", "text-[18px]"), ui.el("span", { class: "font-label-md text-label-md" }, "一致性巡检"));
+  ui.setActions(consistencyBtn, focusBtn);
 
   /* 保存失败时点击指示器重试 */
   document.getElementById("save-indicator").onclick = () => { if (saveError) saveContent(); };
@@ -1778,6 +1784,166 @@ registerPage("workbench", async (view, { segs, params }) => {
     root.append(overlay);
   }
 
+  /* ---------- 剧情一致性巡检与吃书预警 (Phase 2) ---------- */
+  async function runConsistencyCheck() {
+    if (!chapter) { ui.toast("请先选择章节", "info"); return; }
+    ui.toast("正在装配本章人物/时间线/伏笔并启动一致性巡检…", "info");
+    let res;
+    try {
+      res = await api.post(`/chapters/${chapter.id}/consistency-check`, { content: editorText() });
+    } catch (e) {
+      ui.toast("一致性巡检失败：" + e.message, "err");
+      return;
+    }
+    const conflicts = (res && res.conflicts) || [];
+    if (!conflicts.length) {
+      ui.toast("巡检完毕：本章与万相谱档案、时间线、伏笔完全吻合，未发现吃书风险 🎉", "ok");
+      clearAuditHighlights();
+      return;
+    }
+    openConsistencyModal(conflicts);
+  }
+
+  function openConsistencyModal(conflicts) {
+    const root = document.getElementById("modal-root");
+    const typeMap = {
+      character_status: { label: "人物状态矛盾", color: "text-error bg-error/10 border-error/20" },
+      item_status: { label: "物品/道具冲突", color: "text-warning bg-warning/10 border-warning/20" },
+      timeline_error: { label: "时间线/先后错位", color: "text-primary bg-primary/10 border-primary/20" },
+      foreshadow_break: { label: "伏笔断裂/暗坑", color: "text-secondary bg-secondary/10 border-secondary/20" },
+    };
+
+    const countError = conflicts.filter(c => c.severity === "error").length;
+    const countWarn = conflicts.filter(c => c.severity === "warn").length;
+
+    const listEl = ui.el("div", { class: "flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-1" });
+
+    conflicts.forEach((c) => {
+      const typeInfo = typeMap[c.type] || { label: c.type, color: "text-on-surface-variant bg-surface-container" };
+      const sevBadge = c.severity === "error"
+        ? ui.el("span", { class: "px-2 py-0.5 rounded text-[11px] font-semibold bg-error text-on-error" }, "严重吃书")
+        : (c.severity === "warn"
+          ? ui.el("span", { class: "px-2 py-0.5 rounded text-[11px] font-semibold bg-warning text-on-warning" }, "潜在矛盾")
+          : ui.el("span", { class: "px-2 py-0.5 rounded text-[11px] font-semibold bg-surface-container-high text-on-surface" }, "细节提示"));
+
+      const locateBtn = ui.el("button", {
+        class: "px-2 py-1 rounded text-[12px] bg-surface-container hover:bg-surface-container-high text-on-surface transition-colors cursor-pointer flex items-center gap-1",
+        onclick: () => {
+          if (c.quote) {
+            locateQuoteInEditor(c.quote);
+            overlay.remove();
+          }
+        }
+      }, ui.icon("search", "text-[14px]"), "正文定位");
+
+      const adoptBtn = ui.el("button", {
+        class: "px-2 py-1 rounded text-[12px] bg-primary text-on-primary hover:bg-primary-container transition-colors cursor-pointer flex items-center gap-1",
+        title: "对比差异并一键采纳该修订建议",
+        onclick: () => {
+          promptRevisionModal(c);
+          overlay.remove();
+        }
+      }, ui.icon("edit", "text-[14px]"), "采纳建议");
+
+      const card = ui.el("div", { class: "p-3 rounded-xl border border-border-feather bg-surface-container-lowest flex flex-col gap-2" },
+        ui.el("div", { class: "flex items-center justify-between gap-2 flex-wrap" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            sevBadge,
+            ui.el("span", { class: `px-2 py-0.5 rounded text-[11px] font-medium ${typeInfo.color}` }, typeInfo.label),
+            c.entity_name ? ui.el("span", { class: "font-semibold text-[13px] text-primary" }, `【${c.entity_name}】`) : null
+          ),
+          ui.el("div", { class: "flex items-center gap-1" },
+            c.quote ? locateBtn : null,
+            (c.suggestion || c.replacement) ? adoptBtn : null
+          )
+        ),
+        ui.el("p", { class: "text-[13px] text-on-surface leading-relaxed font-body-sm" }, c.description),
+        c.quote ? ui.el("div", { class: "p-2 rounded-lg bg-surface-container-low text-[12px] text-on-surface-variant italic border-l-2 border-primary/40" },
+          `“${c.quote}”`
+        ) : null,
+        c.suggestion ? ui.el("div", { class: "text-[12px] text-primary bg-primary/5 p-2 rounded-lg border border-primary/10 flex items-start gap-1.5" },
+          ui.icon("lightbulb", "text-[16px] shrink-0 mt-0.5"),
+          ui.el("span", {}, `修订建议：${c.suggestion}`)
+        ) : null
+      );
+      listEl.append(card);
+    });
+
+    const highlightAllBtn = ui.el("button", {
+      class: "px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors cursor-pointer flex items-center gap-1",
+      onclick: () => {
+        const issues = conflicts.map(c => ({
+          type: c.type,
+          severity: c.severity === "error" ? "high" : (c.severity === "warn" ? "medium" : "low"),
+          issue: c.description,
+          entity: c.entity_name,
+          quote: c.quote
+        }));
+        applyAuditHighlights(issues);
+        overlay.remove();
+        ui.toast(`已将 ${conflicts.length} 处吃书预警在正文中高亮标注`, "ok");
+      }
+    }, ui.icon("border_color", "text-[16px]"), "正文全部高亮标出");
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[90] bg-ink-black/40 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); }
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[680px] max-w-[calc(100vw-1.5rem)] shadow-[0_12px_32px_rgba(27,42,56,0.16)] flex flex-col gap-space-md max-h-[88vh]" },
+        ui.el("div", { class: "flex items-center justify-between border-b border-border-feather pb-3" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.icon("fact_check", "text-[24px] text-primary"),
+            ui.el("div", { class: "flex flex-col" },
+              ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "剧情一致性巡检 · 吃书预警报告"),
+              ui.el("p", { class: "text-[12px] text-on-surface-variant" }, `检出 ${conflicts.length} 处潜在冲突（严重吃书 ${countError} 项，潜在矛盾 ${countWarn} 项）`)
+            )
+          ),
+          ui.el("button", { class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant cursor-pointer", onclick: () => overlay.remove() }, ui.icon("close", "text-[20px]"))
+        ),
+        listEl,
+        ui.el("div", { class: "flex items-center justify-between pt-3 border-t border-border-feather" },
+          ui.el("button", {
+            class: "px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-label-md text-label-md cursor-pointer",
+            onclick: () => { clearAuditHighlights(); ui.toast("已清除正文高亮", "info"); }
+          }, "清除正文高亮"),
+          ui.el("div", { class: "flex items-center gap-2" },
+            highlightAllBtn,
+            ui.el("button", {
+              class: "px-4 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md cursor-pointer",
+              onclick: () => overlay.remove()
+            }, "关闭")
+          )
+        )
+      )
+    );
+    root.append(overlay);
+  }
+
+  function locateQuoteInEditor(quote) {
+    const q = (quote || "").trim();
+    if (!q || q.length < 2) return;
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+    let node;
+    while ((node = walker.nextNode())) {
+      const idx = node.nodeValue.indexOf(q);
+      if (idx >= 0) {
+        const range = document.createRange();
+        range.setStart(node, idx);
+        range.setEnd(node, idx + q.length);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        const parent = node.parentElement;
+        if (parent && parent.scrollIntoView) {
+          parent.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+        ui.toast("已在正文中定位到冲突原文", "info");
+        return;
+      }
+    }
+    ui.toast("未能在当前正文中精确定位该片段", "warn");
+  }
+
   /* ---------- 章节体检 + AI 问题染色标注 ---------- */
   async function runChapterAudit() {
     if (!chapter) { ui.toast("请先选择章节", "info"); return; }
@@ -1823,20 +1989,236 @@ registerPage("workbench", async (view, { segs, params }) => {
         mark.style.background = color[0];
         mark.style.borderBottom = "2px solid " + color[1];
         mark.style.color = "inherit";
-        mark.dataset.issue = JSON.stringify({ type: issue.type, severity: issue.severity, issue: issue.issue, entity: issue.entity });
-        mark.title = `[${issue.type} · ${issue.severity}] ${issue.issue}`;
+        mark.style.cursor = "pointer";
+        mark.dataset.issue = JSON.stringify({
+          type: issue.type,
+          severity: issue.severity,
+          issue: issue.issue,
+          entity: issue.entity,
+          quote: q,
+          suggestion: issue.suggestion || "",
+          replacement: issue.replacement || ""
+        });
+        mark.title = `点击查看吃书预警与一键修订建议: [${issue.type}] ${issue.issue}`;
         try { range.surroundContents(mark); done = true; } catch (e) { /* 跨节点跳过 */ }
       }
+    }
+  }
+
+  let activeMarkPopup = null;
+  function closeActiveMarkPopup() {
+    if (activeMarkPopup) {
+      activeMarkPopup.remove();
+      activeMarkPopup = null;
     }
   }
 
   function onAuditMarkClick(e) {
     const mk = e.target.closest && e.target.closest("mark[data-issue]");
     if (!mk) return;
+    e.stopPropagation();
+    closeActiveMarkPopup();
+
     let info;
     try { info = JSON.parse(mk.dataset.issue); } catch (_) { return; }
-    ui.toast(`【${info.type} · ${info.severity}】${info.issue}${info.entity ? "（" + info.entity + "）" : ""}`,
-      info.severity === "high" ? "err" : "info");
+
+    const rect = mk.getBoundingClientRect();
+    const popup = ui.el("div", {
+      class: "fixed z-[85] bg-surface-container-lowest border border-border-feather rounded-xl p-3 shadow-[0_8px_24px_rgba(27,42,56,0.18)] max-w-sm flex flex-col gap-2 text-on-surface animate-fade-in",
+      style: `top: ${Math.min(window.innerHeight - 240, rect.bottom + 6)}px; left: ${Math.max(12, Math.min(window.innerWidth - 380, rect.left - 20))}px;`,
+      onclick: (ev) => ev.stopPropagation()
+    });
+
+    const header = ui.el("div", { class: "flex items-center justify-between gap-2 border-b border-border-feather pb-1.5" },
+      ui.el("div", { class: "flex items-center gap-1.5" },
+        ui.icon("warning", "text-[16px] text-error"),
+        ui.el("span", { class: "font-semibold text-[12px] text-primary" }, `【${info.type}】${info.entity ? " " + info.entity : ""}`)
+      ),
+      ui.el("button", {
+        class: "p-0.5 rounded hover:bg-surface-container text-on-surface-variant cursor-pointer",
+        onclick: () => closeActiveMarkPopup()
+      }, ui.icon("close", "text-[16px]"))
+    );
+
+    const desc = ui.el("p", { class: "text-[12px] text-on-surface leading-relaxed" }, info.issue);
+
+    const quoteBox = ui.el("div", { class: "text-[11px] text-on-surface-variant bg-surface-container-low p-1.5 rounded italic border-l-2 border-error/50 line-clamp-2" },
+      `“${info.quote || mk.textContent}”`
+    );
+
+    const actions = ui.el("div", { class: "flex items-center justify-end gap-1.5 pt-1 border-t border-border-feather mt-1" });
+
+    const adoptBtn = ui.el("button", {
+      class: "px-2.5 py-1 rounded-lg bg-primary text-on-primary text-[12px] font-label-sm hover:bg-primary-container transition-colors cursor-pointer flex items-center gap-1",
+      onclick: () => {
+        closeActiveMarkPopup();
+        promptRevisionModal(info, mk);
+      }
+    }, ui.icon("edit", "text-[14px]"), "采纳修订");
+
+    const dismissBtn = ui.el("button", {
+      class: "px-2 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant text-[12px] cursor-pointer",
+      onclick: () => {
+        mk.replaceWith(document.createTextNode(mk.textContent));
+        editor.normalize();
+        closeActiveMarkPopup();
+        ui.toast("已清除该处标注", "info");
+      }
+    }, "忽略");
+
+    actions.append(dismissBtn, adoptBtn);
+    popup.append(header, desc, quoteBox, actions);
+    document.body.append(popup);
+    activeMarkPopup = popup;
+
+    const onDocClick = () => {
+      closeActiveMarkPopup();
+      document.removeEventListener("click", onDocClick);
+    };
+    setTimeout(() => document.addEventListener("click", onDocClick), 50);
+  }
+
+  function promptRevisionModal(info, targetMark = null) {
+    if (!chapter) return;
+    const root = document.getElementById("modal-root");
+
+    const originText = (info.quote || (targetMark ? targetMark.textContent : "")).trim();
+    let defaultReplacement = (info.replacement || "").trim();
+    if (!defaultReplacement && info.suggestion) {
+      const m = info.suggestion.match(/[“'‘「]([^”'’」]+)[”'’」]/);
+      if (m) defaultReplacement = m[1].trim();
+      else defaultReplacement = info.suggestion.replace(/^建议(?:修改为|改为|调整为)[:：]?s*/, "").trim();
+    }
+
+    const inputEl = ui.el("textarea", {
+      class: "w-full p-2.5 rounded-xl border border-border-feather bg-surface-container-lowest text-on-surface font-body-sm text-[13px] leading-relaxed focus:outline-none focus:border-primary resize-y min-h-[72px]",
+      placeholder: "输入用于替换原句的新剧情文本…"
+    });
+    inputEl.value = defaultReplacement;
+
+    const diffPreview = ui.el("div", { class: "flex flex-col gap-1.5 p-3 rounded-xl bg-surface-container-low border border-border-feather text-[12px]" });
+    function updateDiffPreview() {
+      diffPreview.innerHTML = "";
+      diffPreview.append(
+        ui.el("div", { class: "flex items-start gap-1.5 text-error" },
+          ui.el("span", { class: "font-mono font-bold shrink-0" }, "[- 原文]"),
+          ui.el("span", { class: "line-through opacity-85 break-all" }, originText || "(未指定原文)")
+        ),
+        ui.el("div", { class: "flex items-start gap-1.5 text-success" },
+          ui.el("span", { class: "font-mono font-bold shrink-0" }, "[+ 修订]"),
+          ui.el("span", { class: "font-medium break-all" }, inputEl.value.trim() || "(留空将直接删除原文)")
+        )
+      );
+    }
+    inputEl.addEventListener("input", updateDiffPreview);
+    updateDiffPreview();
+
+    const confirmBtn = ui.el("button", {
+      class: "px-4 py-1.5 rounded-lg bg-primary text-on-primary font-label-md text-label-md hover:bg-primary-container transition-colors cursor-pointer flex items-center gap-1",
+      onclick: async () => {
+        const newText = inputEl.value;
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = "正在采纳…";
+        const ok = await applyTextReplacement(originText, newText, info.issue || info.description, targetMark);
+        if (ok) {
+          overlay.remove();
+        } else {
+          confirmBtn.disabled = false;
+          confirmBtn.textContent = "确认替换并保存快照";
+        }
+      }
+    }, ui.icon("check", "text-[16px]"), "确认替换并保存快照");
+
+    const overlay = ui.el("div", {
+      class: "fixed inset-0 z-[95] bg-ink-black/45 backdrop-blur-sm flex items-center justify-center",
+      onclick: (e) => { if (e.target === overlay) overlay.remove(); }
+    },
+      ui.el("div", { class: "bg-surface-container-lowest rounded-xl p-space-lg w-[580px] max-w-[calc(100vw-1.5rem)] shadow-[0_12px_32px_rgba(27,42,56,0.2)] flex flex-col gap-space-md" },
+        ui.el("div", { class: "flex items-center justify-between border-b border-border-feather pb-3" },
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.icon("rule", "text-[22px] text-primary"),
+            ui.el("div", { class: "flex flex-col" },
+              ui.el("h3", { class: "font-headline-sm text-headline-sm text-primary font-semibold" }, "采纳一致性修订建议"),
+              ui.el("p", { class: "text-[12px] text-on-surface-variant" }, "系统将在替换前自动沉淀版本快照，支持无损撤回。")
+            )
+          ),
+          ui.el("button", { class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant cursor-pointer", onclick: () => overlay.remove() }, ui.icon("close", "text-[20px]"))
+        ),
+        (info.issue || info.description) ? ui.el("div", { class: "text-[12px] text-on-surface bg-surface-container-low p-2.5 rounded-xl border border-border-feather" },
+          ui.el("span", { class: "font-semibold text-primary" }, "冲突诊断："),
+          info.issue || info.description
+        ) : null,
+        ui.el("div", { class: "flex flex-col gap-1.5" },
+          ui.el("label", { class: "font-label-sm text-label-sm font-semibold text-on-surface" }, "修订后正文内容："),
+          inputEl
+        ),
+        diffPreview,
+        ui.el("div", { class: "flex items-center justify-end gap-2 pt-2 border-t border-border-feather" },
+          ui.el("button", { class: "px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface font-label-md text-label-md cursor-pointer", onclick: () => overlay.remove() }, "取消"),
+          confirmBtn
+        )
+      )
+    );
+    root.append(overlay);
+    setTimeout(() => { inputEl.focus(); inputEl.select(); }, 60);
+  }
+
+  async function applyTextReplacement(originQuote, newText, reason, targetMark = null) {
+    if (!chapter) return false;
+
+    try {
+      await saveContent("auto");
+    } catch (_) {}
+
+    if (targetMark && targetMark.isConnected) {
+      const textNode = document.createTextNode(newText);
+      targetMark.replaceWith(textNode);
+      editor.normalize();
+    } else if (originQuote) {
+      const q = originQuote.trim();
+      const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+      let node, replaced = false;
+      while ((node = walker.nextNode()) && !replaced) {
+        const idx = node.nodeValue.indexOf(q);
+        if (idx >= 0) {
+          const before = node.nodeValue.substring(0, idx);
+          const after = node.nodeValue.substring(idx + q.length);
+          node.nodeValue = before + newText + after;
+          replaced = true;
+        }
+      }
+      if (!replaced) {
+        const full = editorText();
+        if (full.includes(q)) {
+          const updated = full.replace(q, newText);
+          editor.textContent = updated;
+        } else {
+          ui.toast("未能在当前正文中找到匹配的原文字句，请手动编辑", "warn");
+          return false;
+        }
+      }
+    } else {
+      ui.toast("缺少替换原文字句", "warn");
+      return false;
+    }
+
+    dirty = true;
+    scheduleCounts();
+    saveLocalBackup(chapter.id, editorText());
+    try {
+      await api.put(`/chapters/${chapter.id}`, {
+        content: editorText(),
+        save_version: true,
+        version_label: `[吃书修复] 采纳修订：${(reason || originQuote || "").slice(0, 30)}`
+      });
+      dirty = false;
+      ui.setSaveIndicator("saved");
+      ui.toast("已成功采纳修订并生成版本快照！🎉", "ok");
+      return true;
+    } catch (e) {
+      ui.toast("采纳后保存失败：" + e.message, "err");
+      return false;
+    }
   }
 
   let intakeHintTimer = null;

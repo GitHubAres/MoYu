@@ -551,3 +551,21 @@ def rebind_unbound_assets(work_id: int, body: RebindIn):
         "foreshadows_rebound": foreshadows_rebound,
         "timeline_events_rebound": timeline_events_rebound,
     }
+
+class ConsistencyCheckIn(BaseModel):
+    content: str | None = None
+
+
+@router.post("/chapters/{chapter_id}/consistency-check")
+async def check_chapter_consistency_endpoint(chapter_id: int, body: ConsistencyCheckIn = ConsistencyCheckIn()):
+    """审校章节正文，检查与万相谱/时间线/伏笔的一致性并预警吃书风险。"""
+    db = get_db()
+    chap = db.execute("SELECT c.id, v.work_id FROM chapters c JOIN volumes v ON c.volume_id = v.id WHERE c.id = ?", (chapter_id,)).fetchone()
+    if not chap:
+        raise HTTPException(404, "章节不存在")
+    work_id = chap["work_id"]
+
+    from app.services.consistency_service import inspect_chapter_consistency
+    conflicts = await inspect_chapter_consistency(db, work_id=work_id, chapter_id=chapter_id, content=body.content)
+    return {"ok": True, "chapter_id": chapter_id, "conflicts": conflicts}
+
