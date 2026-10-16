@@ -315,3 +315,61 @@ def test_workflow_sync_assets_apply_to_chapter_and_versions(client):
     assert latest_ver["source"] == "workflow"
     assert f"工作流 #{run_id}" in latest_ver["label"]
 
+
+def test_workflow_sync_assets_append_mode(client):
+    """验证工作流步骤反哺正文在 append 追加模式下的行为：保留原正文并在文末追加"""
+    w, v, c = make_wvc(client, "正文追加测试作品")
+    work_id = w["id"]
+    chapter_id = c["id"]
+    db = get_db()
+
+    # 1. 预先向该章节写入已有正文
+    initial_text = "这是原有的前文内容。"
+    db.execute("UPDATE chapters SET content=?, word_count=? WHERE id=?", (initial_text, len(initial_text), chapter_id))
+    db.commit()
+
+    # 2. 模拟工作流步骤产出
+    cur = db.execute(
+        """INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step)
+           VALUES (1, ?, ?, 'running', 0)""",
+        (work_id, chapter_id)
+    )
+    run_id = cur.lastrowid
+
+    append_text = "这是通过工作流追加的新情节。"
+    db.execute(
+        """INSERT INTO workflow_run_steps (run_id, step_seq, title, status, output, token_used)
+           VALUES (?, 0, '续写推演', 'approved', ?, 180)""",
+        (run_id, append_text)
+    )
+    db.commit()
+
+    # 3. 执行追加反哺 apply_mode="append"
+    sync_res = client.post(f"/api/workflows/runs/{run_id}/steps/0/sync-assets", json={
+        "chapter_id": chapter_id,
+        "apply_to_chapter": True,
+        "chapter_content": append_text,
+        "apply_mode": "append",
+        "entities": [],
+        "relations": [],
+        "outline_nodes": [],
+        "chapter_synopses": [],
+        "timeline_events": [],
+        "foreshadows": [],
+        "notes": []
+    })
+    assert sync_res.status_code == 200
+    assert sync_res.json()["summary"]["chapter_synced"] is True
+
+    # 4. 验证章节正文是否已包含前后两部分
+    chap_row = db.execute("SELECT content, word_count FROM chapters WHERE id=?", (chapter_id,)).fetchone()
+    expected_content = initial_text + "\n\n" + append_text
+    assert chap_row["content"] == expected_content
+    from app.db import word_count
+    assert chap_row["word_count"] == word_count(expected_content)
+
+    # 5. 验证版本记录 label 包含“追加”
+    versions = db.execute("SELECT * FROM chapter_versions WHERE chapter_id=? ORDER BY id DESC", (chapter_id,)).fetchall()
+    assert len(versions) >= 1
+    assert "追加" in versions[0]["label"]
+

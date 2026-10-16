@@ -910,20 +910,114 @@ async function renderRun(view, runId) {
       body.append(chapGroup);
     }
 
-    // 0.8 目标章节正文反哺 · 写入并沉淀版本
+    // 0.8 目标章节正文反哺 · 写入并沉淀版本 (支持全量替换 / 文末追加 / 实时差异对比)
     let syncProseCb = null;
     let proseContentInput = null;
+    let proseMode = "replace"; // "replace" | "append"
+    let diffContainer = null;
+    let diffVisible = false;
     const rawProse = (assets && assets._raw_prose) || "";
+
     if (rawProse && rawProse.trim()) {
       syncProseCb = ui.el("input", { type: "checkbox", checked: false, class: "rounded border-outline text-primary mt-0.5" });
       const charCountSpan = ui.el("span", { class: "text-[11px] text-on-surface-variant font-mono" }, `约 ${rawProse.trim().length} 字`);
+      
       proseContentInput = ui.el("textarea", {
-        class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant focus:border-primary text-body-sm text-on-surface outline-none min-h-[90px] max-h-[220px] resize-y font-body-sm",
+        class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant focus:border-primary text-body-sm text-on-surface outline-none min-h-[90px] max-h-[200px] resize-y font-body-sm",
         placeholder: "将本步骤生成的剧情/正文反哺写入目标章节...",
       }, rawProse.trim());
       proseContentInput.addEventListener("input", () => {
         charCountSpan.textContent = `约 ${proseContentInput.value.trim().length} 字`;
+        if (diffVisible) updateDiffView();
       });
+
+      // 模式切换 Radio
+      const modeReplaceRadio = ui.el("input", { type: "radio", name: "prose_sync_mode", value: "replace", checked: true, class: "text-primary" });
+      const modeAppendRadio = ui.el("input", { type: "radio", name: "prose_sync_mode", value: "append", class: "text-primary" });
+      
+      const onModeChange = () => {
+        proseMode = modeAppendRadio.checked ? "append" : "replace";
+        if (diffVisible) updateDiffView();
+      };
+      modeReplaceRadio.addEventListener("change", onModeChange);
+      modeAppendRadio.addEventListener("change", onModeChange);
+
+      // 差异对比折叠面板
+      const diffToggleBtn = ui.el("button", {
+        type: "button",
+        class: "flex items-center gap-1 text-[11px] px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant transition-colors",
+      }, ui.icon("difference", "text-[14px]"), "对比与当前章节差异");
+
+      diffContainer = ui.el("div", { class: "hidden flex flex-col gap-1.5 p-2.5 rounded-lg bg-surface border border-outline-variant/60 font-mono text-[12px] max-h-[180px] overflow-y-auto" });
+
+      async function getTargetChapterOriginalContent() {
+        const chapId = (chapterSelect && chapterSelect.value) ? Number(chapterSelect.value) : null;
+        if (!chapId) return "";
+        try {
+          const cData = await api.get(`/chapters/${chapId}`);
+          return cData.content || "";
+        } catch (_) {
+          return "";
+        }
+      }
+
+      async function updateDiffView() {
+        diffContainer.innerHTML = '<span class="text-on-surface-variant">正在读取目标章节正文比对...</span>';
+        const orig = await getTargetChapterOriginalContent();
+        const incoming = proseContentInput.value;
+        const targetExpected = (proseMode === "append" && orig.trim()) ? (orig.trimEnd() + "\n\n" + incoming.trim()) : incoming;
+
+        const origLines = (orig || "").split("\n");
+        const nextLines = (targetExpected || "").split("\n");
+
+        diffContainer.innerHTML = "";
+        const statBar = ui.el("div", { class: "flex items-center justify-between text-[11px] pb-1 border-b border-outline-variant/40 mb-1 font-sans text-on-surface-variant" },
+          ui.el("span", {}, `原章节: ${orig.trim().length} 字 → 反哺后: ${targetExpected.trim().length} 字 (${proseMode === "append" ? "追加模式" : "全量覆盖"})`),
+          ui.el("span", { class: "text-tertiary" }, targetExpected.trim().length >= orig.trim().length ? `+${targetExpected.trim().length - orig.trim().length} 字` : `-${orig.trim().length - targetExpected.trim().length} 字`));
+        diffContainer.append(statBar);
+
+        if (!orig.trim()) {
+          diffContainer.append(ui.el("div", { class: "text-emerald-600 dark:text-emerald-400" }, "[当前目标章节为空，将全部作为新正文写入]"));
+        } else {
+          // 简易并排行对比呈现
+          const maxLines = Math.max(origLines.length, nextLines.length);
+          for (let i = 0; i < Math.min(maxLines, 60); i++) {
+            const oL = origLines[i];
+            const nL = nextLines[i];
+            if (oL === nL) {
+              diffContainer.append(ui.el("div", { class: "text-on-surface-variant/80 truncate" }, `  ${oL || ""}`));
+            } else {
+              if (oL !== undefined) {
+                diffContainer.append(ui.el("div", { class: "text-rose-600 dark:text-rose-400 bg-rose-500/10 px-1 rounded truncate" }, `- ${oL}`));
+              }
+              if (nL !== undefined) {
+                diffContainer.append(ui.el("div", { class: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-1 rounded truncate" }, `+ ${nL}`));
+              }
+            }
+          }
+          if (maxLines > 60) {
+            diffContainer.append(ui.el("div", { class: "text-center text-on-surface-variant text-[11px] pt-1" }, `... 剩余 ${maxLines - 60} 行差异已省略 ...`));
+          }
+        }
+      }
+
+      diffToggleBtn.onclick = async () => {
+        diffVisible = !diffVisible;
+        if (diffVisible) {
+          diffContainer.classList.remove("hidden");
+          diffToggleBtn.classList.add("bg-primary/10", "text-primary");
+          await updateDiffView();
+        } else {
+          diffContainer.classList.add("hidden");
+          diffToggleBtn.classList.remove("bg-primary/10", "text-primary");
+        }
+      };
+
+      if (chapterSelect) {
+        chapterSelect.addEventListener("change", () => {
+          if (diffVisible) updateDiffView();
+        });
+      }
 
       const proseGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
         ui.el("div", { class: "flex items-center justify-between" },
@@ -932,8 +1026,13 @@ async function renderRun(view, runId) {
             ui.icon("history_edu", "text-[16px] text-tertiary"),
             "章节正文反哺 · 采纳写入并沉淀历史版本"),
           charCountSpan),
-        ui.el("div", { class: "text-[11px] text-on-surface-variant leading-relaxed" },
-          "勾选后，将直接更新上方所选章节的正文内容，并在章节版本库中留存一条快照记录（安全防丢，随时可撤销回滚）。"),
+        ui.el("div", { class: "flex items-center justify-between flex-wrap gap-2 pt-0.5" },
+          ui.el("div", { class: "flex items-center gap-3 text-[12px] text-on-surface" },
+            ui.el("span", { class: "font-medium text-on-surface-variant" }, "反哺模式:"),
+            ui.el("label", { class: "flex items-center gap-1 cursor-pointer" }, modeReplaceRadio, "全量覆盖"),
+            ui.el("label", { class: "flex items-center gap-1 cursor-pointer" }, modeAppendRadio, "追加到文末")),
+          diffToggleBtn),
+        diffContainer,
         proseContentInput);
       body.append(proseGroup);
     }
@@ -1226,6 +1325,7 @@ async function renderRun(view, runId) {
             if (syncProseCb && syncProseCb.checked) {
               payload.apply_to_chapter = true;
               payload.chapter_content = proseContentInput ? proseContentInput.value : "";
+              payload.apply_mode = proseMode || "replace";
             }
             try {
               const res = await api.post(`/workflows/runs/${runId}/steps/${stepSeq}/sync-assets`, payload);

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from typing import Optional, List, Dict, Any, Tuple, Literal
 # 墨语 MoYu - Copyright (c) 2026 墨语MoYu开发团队 · MIT
 # Licensed under the MIT License. See LICENSE.
 """工作流步骤创作资产提取与各业务系统规范同步服务"""
@@ -80,6 +81,7 @@ class SyncAssetsIn(BaseModel):
     chapter_id: Optional[int] = None
     apply_to_chapter: bool = False
     chapter_content: Optional[str] = None
+    apply_mode: Literal["replace", "append"] = "replace"
 
 
 def clean_str(s: str) -> str:
@@ -1098,21 +1100,29 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
             )
             summary["notes_added"] += 1
 
-    # 5. 文章正文与版本沉淀同步
+    # 5. 文章正文与版本沉淀同步 (支持替换 replace 与追加 append 模式)
     chapter_id = target_chap_id
     if body.apply_to_chapter and chapter_id and body.chapter_content:
         from app.db import word_count
         chap = db.execute("SELECT * FROM chapters WHERE id=?", (chapter_id,)).fetchone()
         if chap:
-            wc = word_count(body.chapter_content)
+            orig_content = chap["content"] or ""
+            if body.apply_mode == "append" and orig_content.strip():
+                final_content = orig_content.rstrip() + "\n\n" + body.chapter_content.strip()
+                label_suffix = "追加"
+            else:
+                final_content = body.chapter_content
+                label_suffix = "采纳"
+            wc = word_count(final_content)
+            run_label = f"工作流 #{run_id} 全流程汇总{label_suffix}" if seq == 0 else f"工作流 #{run_id} 步骤 {seq + 1} {label_suffix}"
             db.execute(
                 """INSERT INTO chapter_versions (chapter_id, content, word_count, source, label)
                    VALUES (?, ?, ?, 'workflow', ?)""",
-                (chapter_id, body.chapter_content, wc, (f"工作流 #{run_id} 全流程汇总采纳" if seq == 0 else f"工作流 #{run_id} 步骤 {seq + 1} 采纳")),
+                (chapter_id, final_content, wc, run_label),
             )
             db.execute(
                 "UPDATE chapters SET content=?, word_count=?, updated_at=datetime('now','localtime') WHERE id=?",
-                (body.chapter_content, wc, chapter_id),
+                (final_content, wc, chapter_id),
             )
             summary["chapter_synced"] = True
 
