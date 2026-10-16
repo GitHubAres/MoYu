@@ -891,8 +891,31 @@ async function renderRun(view, runId) {
     const entChecks = [];
     if ((assets.entities || []).length > 0) {
       const entGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
-        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
-          ui.icon("group", "text-[16px]"), `万相谱实体 (${assets.entities.length}个)`));
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+            ui.icon("group", "text-[16px]"), `万相谱实体 (${assets.entities.length}个)`),
+          ui.el("div", { class: "flex items-center gap-1 text-[11px]" },
+            ui.el("button", {
+              type: "button",
+              class: "px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 font-medium",
+              title: "仅勾选人物主角与法宝核心实体，避免龙套污染",
+              onclick: () => {
+                entChecks.forEach(c => {
+                  const isCore = c.data.category === "character" || c.data.category === "item" || (c.data.fields_json && c.data.fields_json.includes("主角"));
+                  c.cb.checked = isCore;
+                });
+              }
+            }, "🎯 核心优先"),
+            ui.el("button", {
+              type: "button",
+              class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+              onclick: () => entChecks.forEach(c => c.cb.checked = true)
+            }, "全选"),
+            ui.el("button", {
+              type: "button",
+              class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+              onclick: () => entChecks.forEach(c => c.cb.checked = false)
+            }, "全清"))));
       const grid = ui.el("div", { class: "grid grid-cols-1 sm:grid-cols-2 gap-2" });
       assets.entities.forEach((ent) => {
         const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
@@ -944,7 +967,19 @@ async function renderRun(view, runId) {
         ui.el("div", { class: "flex items-center justify-between" },
           ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
             ui.icon("format_list_bulleted", "text-[16px]"), `故事大纲 (${assets.outline_nodes.length}个节点)`),
-          ui.el("span", { class: "text-[11px] text-on-surface-variant" }, "同名节点将更新其梗概（空梗概不覆盖）")));
+          ui.el("div", { class: "flex items-center gap-2" },
+            ui.el("span", { class: "text-[11px] text-on-surface-variant hidden sm:inline" }, "同名更新梗概"),
+            ui.el("div", { class: "flex items-center gap-1 text-[11px]" },
+              ui.el("button", {
+                type: "button",
+                class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+                onclick: () => outlineChecks.forEach(c => c.cb.checked = true)
+              }, "全选"),
+              ui.el("button", {
+                type: "button",
+                class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+                onclick: () => outlineChecks.forEach(c => c.cb.checked = false)
+              }, "全清")))));
       const list = ui.el("div", { class: "flex flex-col gap-1.5" });
       assets.outline_nodes.forEach((node) => {
         const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
@@ -969,8 +1004,20 @@ async function renderRun(view, runId) {
     const timelineChecks = [];
     if ((assets.timeline_events || []).length > 0) {
       const teGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
-        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
-          ui.icon("timeline", "text-[16px] text-secondary"), `剧情时间线事件 (${assets.timeline_events.length}条)`));
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+            ui.icon("timeline", "text-[16px] text-secondary"), `剧情时间线事件 (${assets.timeline_events.length}条)`),
+          ui.el("div", { class: "flex items-center gap-1 text-[11px]" },
+            ui.el("button", {
+              type: "button",
+              class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+              onclick: () => timelineChecks.forEach(c => c.cb.checked = true)
+            }, "全选"),
+            ui.el("button", {
+              type: "button",
+              class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+              onclick: () => timelineChecks.forEach(c => c.cb.checked = false)
+            }, "全清"))));
       const list = ui.el("div", { class: "flex flex-col gap-1.5" });
       assets.timeline_events.forEach((ev) => {
         const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });
@@ -1019,8 +1066,20 @@ async function renderRun(view, runId) {
     const foreshadowChecks = [];
     if ((assets.foreshadows || []).length > 0) {
       const fsGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
-        ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
-          ui.icon("bookmark", "text-[16px]"), `伏笔计划表 (${assets.foreshadows.length}条)`));
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("div", { class: "flex items-center gap-1.5 font-label-sm text-label-sm font-semibold text-primary" },
+            ui.icon("bookmark", "text-[16px]"), `伏笔计划表 (${assets.foreshadows.length}条)`),
+          ui.el("div", { class: "flex items-center gap-1 text-[11px]" },
+            ui.el("button", {
+              type: "button",
+              class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+              onclick: () => foreshadowChecks.forEach(c => c.cb.checked = true)
+            }, "全选"),
+            ui.el("button", {
+              type: "button",
+              class: "px-1.5 py-0.5 rounded hover:bg-surface-container text-on-surface-variant",
+              onclick: () => foreshadowChecks.forEach(c => c.cb.checked = false)
+            }, "全清"))));
       const list = ui.el("div", { class: "flex flex-col gap-1.5" });
       assets.foreshadows.forEach((fs) => {
         const cb = ui.el("input", { type: "checkbox", checked: true, class: "rounded border-outline text-primary mt-0.5" });

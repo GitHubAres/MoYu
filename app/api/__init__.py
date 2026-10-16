@@ -20,9 +20,9 @@ def version():
 
 from . import (ai, alchemy, announcement, audit, auth, board, chat, entities, gallery, graph,  # noqa: E402
                hotradar, io_export, outlines, prefs, skills,
-               search, seed, style, tasks, timeline, update, versions, workflows, works)
+               search, seed, style, tasks, timeline, update, versions, workflows, works, protagonist)
 
 for _m in (auth, prefs, works, ai, chat, outlines, entities, versions, board,
            hotradar, io_export, skills, audit, seed, search,
-           graph, timeline, style, alchemy, gallery, tasks, update, announcement, workflows):
+           graph, timeline, style, alchemy, gallery, tasks, update, announcement, workflows, protagonist):
     router.include_router(_m.router)

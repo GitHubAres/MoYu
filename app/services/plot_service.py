@@ -98,6 +98,26 @@ def batch_sync_triad_assets(
                 "SELECT id, synopsis FROM outline_nodes WHERE work_id = ? AND title = ?",
                 (work_id, title),
             ).fetchone()
+
+        # 归一化查重：去除标点符号与空白进行相似度匹配，防止同名卷或微小标点差异导致重复节点
+        if not dup:
+            import re
+            norm_target = re.sub(r'[\s:：·\-—_,\.，。!！?？/、|*#`]+', '', title).lower()
+            existing_all = db.execute(
+                "SELECT id, title, synopsis, parent_id FROM outline_nodes WHERE work_id = ?",
+                (work_id,)
+            ).fetchall()
+            for ex in existing_all:
+                ex_norm = re.sub(r'[\s:：·\-—_,\.，。!！?？/、|*#`]+', '', ex["title"] or '').lower()
+                if ex_norm and ex_norm == norm_target:
+                    dup = ex
+                    break
+                if n.get("is_volume") and ex["parent_id"] is None:
+                    m_curr_vol = re.match(r'^(第[0-9一二三四五六七八九十百]+卷|卷[0-9一二三四五六七八九十]+)', title)
+                    m_ex_vol = re.match(r'^(第[0-9一二三四五六七八九十百]+卷|卷[0-9一二三四五六七八九十]+)', ex["title"] or '')
+                    if m_curr_vol and m_ex_vol and m_curr_vol.group(1) == m_ex_vol.group(1):
+                        dup = ex
+                        break
         if not dup:
             sort_order = db.execute(
                 "SELECT COALESCE(MAX(sort_order), 0) + 1 FROM outline_nodes WHERE work_id = ? AND parent_id IS ?",

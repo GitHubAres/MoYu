@@ -86,6 +86,12 @@ def clean_str(s: str) -> str:
     return re.sub(r'[*#_`]', '', s).strip()
 
 
+def normalize_title(s: str) -> str:
+    """去除非字母数字汉字及常见分隔符，用于标题相似性去重。"""
+    cleaned = clean_str(s or '')
+    return re.sub(r'[\s:：·\-—_,\.，。!！?？/、|]+', '', cleaned).lower()
+
+
 def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
     assets = {
         "work_info": {
@@ -516,7 +522,9 @@ def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
         mv = vol_pattern.match(line)
         if mv:
             prefix, v_title, v_desc = mv.groups()
-            full_title = f"{prefix} {v_title.strip()}".strip()
+            clean_v_title = clean_str(v_title or '').strip(' :：·-—*#')
+            clean_prefix = clean_str(prefix or '').strip()
+            full_title = f"{clean_prefix} {clean_v_title}".strip() if clean_v_title else clean_prefix
             synopsis_lines = []
             for nxt in lines[i+1:i+10]:
                 if nxt.startswith(('#', '---')):
@@ -533,7 +541,9 @@ def _heuristic_extract_assets(text: str) -> tuple[dict, list[dict]]:
         mc = chap_pattern.match(line)
         if mc:
             prefix, c_title, c_desc = mc.groups()
-            full_title = f"{prefix} {c_title.strip()}".strip()
+            clean_c_title = clean_str(c_title or '').strip(' :：·-—*#')
+            clean_c_prefix = clean_str(prefix or '').strip()
+            full_title = f"{clean_c_prefix} {clean_c_title}".strip() if clean_c_title else clean_c_prefix
             event_desc = []
             for nxt in lines[i+1:i+6]:
                 if nxt.startswith(('#', '---')):
@@ -784,11 +794,14 @@ def extract_structured_assets_from_text(text: str, source_kind: str = "ai") -> d
             ("notes", "title"),
         ]:
             seen_titles = {item.get(title_key, "") for item in assets[field]}
+            seen_norm_titles = {normalize_title(item.get(title_key, "")) for item in assets[field] if item.get(title_key)}
             for h_item in heur_assets.get(field, []):
                 h_title = h_item.get(title_key, "")
-                if h_title and h_title not in seen_titles:
+                h_norm = normalize_title(h_title)
+                if h_title and h_title not in seen_titles and h_norm not in seen_norm_titles:
                     assets[field].append(h_item)
                     seen_titles.add(h_title)
+                    seen_norm_titles.add(h_norm)
 
         assets["_rejected"] = rejected
         assets["source"] = source
@@ -1046,7 +1059,8 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
                 db.execute("UPDATE outline_nodes SET synopsis = ? WHERE id = ?", (syn, row["id"]))
                 summary["chapter_synopses_updated"] += 1
 
-    # 4.5 世界观设定同步（归入万象谱术语）
+    # 4.5 世界观设定同步（归入万相谱术语，严格过滤写作方法论/节奏说明备忘，避免污染实体辞典）
+    METHODOLOGY_KEYWORDS = ("节奏控制", "前三章", "立项核心", "核心硬规则", "核心看点", "方法论", "创作说明", "商业分析", "设计思路")
     for note in body.notes:
         ok_note, r_note = sanitize_asset_item(
             {"name": note.title, "title": note.title, "content": note.content, "tags": note.tags}, "note")
@@ -1058,6 +1072,13 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
         n_title = (note.title or "").strip()
         if not n_title:
             continue
+        # 拦截方法论与泛化创作说明，不作为实体入库
+        if any(kw in n_title for kw in METHODOLOGY_KEYWORDS):
+            summary["rejected_count"] += 1
+            if len(summary["rejected_items"]) < 20:
+                summary["rejected_items"].append({"kind": "note", "title": n_title, "reason": "创作备忘/方法论，免污染实体辞典"})
+            continue
+
         exist_note = db.execute(
             "SELECT id, content FROM entities WHERE work_id=? AND name=?", (work_id, n_title)
         ).fetchone()

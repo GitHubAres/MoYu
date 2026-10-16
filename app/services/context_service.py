@@ -111,11 +111,38 @@ def assemble_writing_context(
     include_prev_chapter: bool = True,
     include_outline: bool = True,
     include_style: bool = True,
+    include_protagonist: bool = True,
     current_chapter_limit: int = 3000,
     prev_chapter_limit: int = 500,
 ) -> str:
-    """统一为写作/对话装配领域上下文（正文 + 前情 + 三位一体大纲 + 万相谱实体 + 文风档案）。"""
+    """统一为写作/对话装配领域上下文（主角状态 + 正文 + 前情 + 三位一体大纲 + 万相谱实体 + 文风档案）。"""
     parts = []
+
+    # 0. 主角金手指与当前状态看板（商业网文核心战力/挂钩锁定）
+    if include_protagonist and work_id:
+        p_row = db.execute(
+            """SELECT name, content, fields_json FROM entities 
+               WHERE work_id = ? AND category = 'character' AND (tags LIKE '%主角%' OR fields_json LIKE '%主角%')
+               ORDER BY id ASC LIMIT 1""",
+            (work_id,)
+        ).fetchone()
+        if p_row:
+            p_fields = {}
+            try:
+                p_fields = json.loads(p_row["fields_json"] or "{}")
+            except Exception:
+                pass
+            p_lines = [f"【主角战力与金手指状态板】{p_row['name']}"]
+            if p_fields.get("cultivation_level"):
+                p_lines.append(f"当前修为/等级: {p_fields['cultivation_level']}")
+            if p_fields.get("cheat_name"):
+                p_lines.append(f"金手指/外挂: {p_fields['cheat_name']} (进度: {p_fields.get('cheat_progress', '生效中')})")
+            if p_fields.get("current_resources"):
+                p_lines.append(f"当前关键资源/寿元: {p_fields['current_resources']}")
+            if p_fields.get("core_goals"):
+                p_lines.append(f"现阶段目标与冲突: {p_fields['core_goals']}")
+            if len(p_lines) > 1:
+                parts.append("\n".join(p_lines))
 
     # 1. 当前章节正文（前 3000 字）
     if include_current_chapter and chapter_id:

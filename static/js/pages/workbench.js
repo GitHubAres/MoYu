@@ -1034,7 +1034,42 @@ registerPage("workbench", async (view, { segs, params }) => {
       ui.el("div", { class: "flex items-center justify-between" },
         ui.el("span", { class: "text-[11px] text-on-surface-variant" }, "技能在输入框上方任务标签右侧按任务选择"),
         ui.el("a", { class: "text-[11px] text-primary hover:underline cursor-pointer", href: "#/skills", onclick: (e) => { e.preventDefault(); location.hash = "#/skills"; } }, "管理技能 →")));
+    // 商业网文：主角金手指与数值战力板挂载
+    const protagonistCard = ui.el("div", {
+      class: "p-3 rounded-xl bg-surface-container-low border border-primary/20 flex flex-col gap-1.5 font-label-sm text-label-sm mb-1 shadow-xs"
+    },
+      ui.el("div", { class: "flex items-center justify-between" },
+        ui.el("div", { class: "flex items-center gap-1.5 font-semibold text-primary" },
+          ui.icon("shield_with_heart", "text-[16px] text-primary"),
+          ui.el("span", {}, "主角战力与金手指")),
+        ui.el("button", {
+          type: "button",
+          class: "px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-medium flex items-center gap-1",
+          onclick: () => openProtagonistModal(workId)
+        }, ui.icon("edit", "text-[12px]"), "编辑状态")),
+      ui.el("div", { id: "workbench-protagonist-summary", class: "text-[12px] text-on-surface-variant line-clamp-2" }, "加载主角数值与金手指状态...")
+    );
+
+    // 异步加载主角简述
+    setTimeout(async () => {
+      try {
+        const pRes = await api.get(`/works/${workId}/protagonist`);
+        const pEl = document.getElementById("workbench-protagonist-summary");
+        if (pEl && pRes.ok && pRes.data) {
+          const d = pRes.data;
+          if (d.name || d.cultivation_level || d.cheat_name) {
+            pEl.innerHTML = `<span class="font-semibold text-on-surface">${d.name || "主角"}</span> · ` +
+              `<span class="text-primary">${d.cultivation_level || "未定境界"}</span> · ` +
+              `<span class="text-secondary">${d.cheat_name || "金手指"} (${d.cheat_progress || "已激活"})</span>`;
+          } else {
+            pEl.textContent = "未配置主角金手指与战力，点击右上角设置以置顶注入创作Prompt。";
+          }
+        }
+      } catch (_) {}
+    }, 100);
+
     const drawerContextBox = ui.el("div", { class: "flex flex-col gap-2" },
+      protagonistCard,
       ctxBox,
       relatedBox,
       ui.el("div", { class: "flex flex-wrap gap-1 pt-2 border-t border-border-feather/50" },
@@ -2305,3 +2340,101 @@ registerPage("workbench", async (view, { segs, params }) => {
     }
   }
 });
+
+function openProtagonistModal(wId) {
+  const overlay = ui.el("div", {
+    class: "fixed inset-0 bg-scrim/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in",
+    onclick: (e) => { if (e.target === overlay) overlay.remove(); },
+  });
+
+  const box = ui.el("div", {
+    class: "bg-surface text-on-surface rounded-2xl shadow-xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden border border-outline-variant",
+  });
+
+  const header = ui.el("div", { class: "flex items-center justify-between p-4 border-b border-outline-variant bg-surface-container-low" },
+    ui.el("div", { class: "flex items-center gap-2" },
+      ui.icon("shield_with_heart", "text-primary text-[22px]"),
+      ui.el("h3", { class: "font-headline-sm text-headline-sm font-semibold text-primary" }, "主角战力与金手指状态板"),
+      ui.el("span", { class: "px-2 py-0.5 rounded-full bg-primary/10 text-primary font-label-sm text-[11px]" }, "置顶注入正文创作Prompt")),
+    ui.el("button", {
+      class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant",
+      onclick: () => overlay.remove(),
+    }, ui.icon("close", "text-[20px]")));
+
+  const body = ui.el("div", { class: "p-4 overflow-y-auto flex flex-col gap-3 font-body-sm text-body-sm" });
+
+  const inputName = ui.el("input", { class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm outline-none focus:border-primary", placeholder: "例如：陆渊 / 萧炎" });
+  const inputLevel = ui.el("input", { class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm outline-none focus:border-primary", placeholder: "例如：炼体三重：铜皮铁骨 / 练气大圆满" });
+  const inputCheat = ui.el("input", { class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm outline-none focus:border-primary", placeholder: "例如：万劫推演熔炉 / 熟练度面板" });
+  const inputProgress = ui.el("input", { class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm outline-none focus:border-primary", placeholder: "例如：演化度 15/100 / 功法第二层(34%)" });
+  const inputResources = ui.el("input", { class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm outline-none focus:border-primary", placeholder: "例如：气血丹 85粒、真元残余 4成、寿元 32年" });
+  const inputGoals = ui.el("textarea", { class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm outline-none focus:border-primary min-h-[50px] resize-y", placeholder: "现阶段最迫切目标与矛盾：例如 夺取灵脉、反杀刺客..." });
+  const inputNotes = ui.el("textarea", { class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant text-on-surface text-body-sm outline-none focus:border-primary min-h-[40px] resize-y", placeholder: "心性特征、禁忌设定等" });
+
+  body.append(
+    ui.el("div", { class: "grid grid-cols-2 gap-2" },
+      ui.el("div", { class: "flex flex-col gap-1" }, ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium" }, "主角姓名"), inputName),
+      ui.el("div", { class: "flex flex-col gap-1" }, ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium" }, "当前修为 / 等级境界"), inputLevel)),
+    ui.el("div", { class: "grid grid-cols-2 gap-2" },
+      ui.el("div", { class: "flex flex-col gap-1" }, ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium" }, "金手指名称 / 核心外挂"), inputCheat),
+      ui.el("div", { class: "flex flex-col gap-1" }, ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium" }, "金手指演化 / 充能进度"), inputProgress)),
+    ui.el("div", { class: "flex flex-col gap-1" }, ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium" }, "当前关键资源 / 丹药 / 寿元"), inputResources),
+    ui.el("div", { class: "flex flex-col gap-1" }, ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium" }, "现阶段核心目标与冲突 (防战力跑偏)"), inputGoals),
+    ui.el("div", { class: "flex flex-col gap-1" }, ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium" }, "心性与性格备忘"), inputNotes)
+  );
+
+  // 加载现有数据
+  (async () => {
+    try {
+      const res = await api.get(`/works/${wId}/protagonist`);
+      if (res.ok && res.data) {
+        const d = res.data;
+        inputName.value = d.name || "";
+        inputLevel.value = d.cultivation_level || "";
+        inputCheat.value = d.cheat_name || "";
+        inputProgress.value = d.cheat_progress || "";
+        inputResources.value = d.current_resources || "";
+        inputGoals.value = d.core_goals || "";
+        inputNotes.value = d.notes || "";
+      }
+    } catch (_) {}
+  })();
+
+  const footer = ui.el("div", { class: "flex items-center justify-end gap-2 p-4 border-t border-outline-variant bg-surface-container-low" },
+    ui.el("button", {
+      class: "px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm",
+      onclick: () => overlay.remove(),
+    }, "取消"),
+    ui.el("button", {
+      class: "px-4 py-2 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm font-medium hover:opacity-90 flex items-center gap-1.5 shadow-sm",
+      onclick: async () => {
+        const payload = {
+          name: inputName.value.trim(),
+          cultivation_level: inputLevel.value.trim(),
+          cheat_name: inputCheat.value.trim(),
+          cheat_progress: inputProgress.value.trim(),
+          current_resources: inputResources.value.trim(),
+          core_goals: inputGoals.value.trim(),
+          notes: inputNotes.value.trim(),
+        };
+        try {
+          await api.put(`/works/${wId}/protagonist`, payload);
+          ui.toast("主角战力状态已更新，后续AI续写将自动置顶装配！", "ok");
+          const pEl = document.getElementById("workbench-protagonist-summary");
+          if (pEl) {
+            pEl.innerHTML = `<span class="font-semibold text-on-surface">${payload.name || "主角"}</span> · ` +
+              `<span class="text-primary">${payload.cultivation_level || "未定境界"}</span> · ` +
+              `<span class="text-secondary">${payload.cheat_name || "金手指"} (${payload.cheat_progress || "已激活"})</span>`;
+          }
+          overlay.remove();
+        } catch (e) {
+          ui.toast("保存失败：" + e.message, "err");
+        }
+      }
+    }, ui.icon("check", "text-[16px]"), "保存状态板")
+  );
+
+  box.append(header, body, footer);
+  overlay.append(box);
+  document.body.append(overlay);
+}
