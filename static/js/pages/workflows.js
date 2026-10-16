@@ -662,6 +662,9 @@ async function renderRun(view, runId) {
   let pollTimer = null;
   let editingSeq = null;
   let hasAutoOpenedSummary = false;
+  // 步骤卡片折叠状态缓存：默认折叠已完成步骤，展开当前执行中或等待审核步骤
+  const collapsedSteps = new Set();
+  let initializedCollapse = false;
 
   async function tick() {
     let run;
@@ -757,6 +760,16 @@ async function renderRun(view, runId) {
             class: "px-3 py-2 rounded-xl bg-surface-container text-on-surface font-label-sm text-label-sm hover:bg-surface-container-high flex items-center gap-1",
           }, ui.icon("format_list_bulleted", "text-[16px]"), "查看大纲") : null));
       headCard.append(summaryBanner);
+    }
+
+    // 首次加载时：自动将已完成的旧步骤折叠，保持当前运行中/审核中的步骤展开
+    if (!initializedCollapse && run.steps && run.steps.length > 0) {
+      run.steps.forEach((s) => {
+        if (s.status === "approved" || s.status === "skipped") {
+          collapsedSteps.add(s.step_seq);
+        }
+      });
+      initializedCollapse = true;
     }
 
     stepsBox.innerHTML = "";
@@ -1448,14 +1461,52 @@ async function renderRun(view, runId) {
     const isLiveActive = isRunning && run.live_output && run.live_output.step_seq === s.step_seq && run.live_output.output;
     const liveText = isLiveActive ? run.live_output.output : "";
 
-    const header = ui.el("div", { class: "flex items-center gap-2" },
+    const isCollapsed = collapsedSteps.has(s.step_seq) && !waiting && !isRunning;
+
+    const collapseToggleBtn = ui.el("button", {
+      type: "button",
+      class: "p-1 rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors ml-auto flex items-center gap-1 text-[11px]",
+      title: isCollapsed ? "展开步骤详情" : "折叠步骤详情",
+      onclick: (e) => {
+        e.stopPropagation();
+        if (collapsedSteps.has(s.step_seq)) {
+          collapsedSteps.delete(s.step_seq);
+        } else {
+          collapsedSteps.add(s.step_seq);
+        }
+        tick();
+      },
+    },
+      ui.icon(isCollapsed ? "expand_more" : "expand_less", "text-[18px]"));
+
+    const header = ui.el("div", {
+      class: "flex items-center gap-2 cursor-pointer select-none",
+      onclick: () => {
+        if (!waiting && !isRunning) {
+          if (collapsedSteps.has(s.step_seq)) collapsedSteps.delete(s.step_seq);
+          else collapsedSteps.add(s.step_seq);
+          tick();
+        }
+      },
+    },
       ui.el("span", { class: `w-6 h-6 rounded-full flex items-center justify-center font-label-sm text-label-sm shrink-0 ${waiting ? "bg-error text-on-error" : isRunning ? "bg-primary text-on-primary animate-pulse" : "bg-primary-container text-on-primary-container"}` }, String(s.step_seq + 1)),
-      ui.el("span", { class: "font-body-sm text-body-sm text-on-surface font-medium" }, s.title),
-      ui.el("span", { class: `px-2 py-0.5 rounded-full font-label-sm text-label-sm ${st.cls}` }, st.label),
-      isLiveActive ? ui.el("span", { class: "px-2 py-0.5 rounded bg-surface-container-high text-primary font-mono text-label-xs animate-pulse" }, `正在输出: ${liveText.replace(/\s+/g, "").length} 字`) : null,
-      s.elapsed_ms ? ui.el("span", { class: "ml-auto font-label-sm text-label-sm text-on-surface-variant" }, `${(s.elapsed_ms / 1000).toFixed(1)}s · ${s.token_used || 0} token`) : null);
+      ui.el("span", { class: "font-body-sm text-body-sm text-on-surface font-medium truncate" }, s.title),
+      ui.el("span", { class: `px-2 py-0.5 rounded-full font-label-sm text-label-sm shrink-0 ${st.cls}` }, st.label),
+      isLiveActive ? ui.el("span", { class: "px-2 py-0.5 rounded bg-surface-container-high text-primary font-mono text-label-xs animate-pulse shrink-0" }, `正在输出: ${liveText.replace(/\s+/g, "").length} 字`) : null,
+      s.elapsed_ms ? ui.el("span", { class: "hidden sm:inline font-label-sm text-label-sm text-on-surface-variant ml-auto mr-1 shrink-0" }, `${(s.elapsed_ms / 1000).toFixed(1)}s · ${s.token_used || 0} token`) : null,
+      collapseToggleBtn);
 
     const card = wfCard(`flex flex-col gap-3 ${waiting ? "border-error/50 ring-1 ring-error/30" : isRunning ? "border-primary/50 ring-1 ring-primary/20 bg-surface-container-lowest/90" : ""}`, header);
+
+    if (isCollapsed) {
+      // 折叠状态下仅展示一行简洁摘要与展开提示
+      const summaryText = s.output ? (stripMoyuAssetsBlock(s.output).trim().slice(0, 100) + "...") : "步骤已完成，点击展开详情与成果";
+      card.append(ui.el("div", {
+        class: "text-[12px] text-on-surface-variant/80 truncate px-1 cursor-pointer",
+        onclick: () => { collapsedSteps.delete(s.step_seq); tick(); },
+      }, summaryText));
+      return card;
+    }
 
     if (s.ref_step_seqs && s.ref_step_seqs.length > 0) {
       const refLabels = s.ref_step_seqs.map((idx) => `步骤 ${idx + 1}`).join("、");
