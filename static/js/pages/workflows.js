@@ -584,6 +584,28 @@ async function renderEditor(view, idOrNew) {
       ui.el("div", {}, ui.el("label", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "固定指令"), instIn),
       ui.el("div", { class: "flex items-center gap-2" }, reviewToggle,
         ui.el("span", { class: "font-label-sm text-label-sm text-on-surface-variant" }, "确认闸是安全底线：未确认的生成绝不进入下一步")));
+    // 若步骤失败、或已完成但作者希望从该步重新推演，提供【从此步重跑】快捷入口
+    if ((s.status === "failed" || s.status === "approved" || s.status === "skipped") && run.status !== "running") {
+      const isFailed = s.status === "failed";
+      const retryStepBtn = ui.el("div", { class: "flex items-center justify-end pt-1" },
+        ui.el("button", {
+          class: `flex items-center gap-1 px-2.5 py-1 rounded-lg font-label-sm text-label-xs transition-colors ${isFailed ? "bg-error-container text-on-error-container hover:bg-error hover:text-white" : "border border-border-feather text-on-surface-variant hover:text-primary hover:border-primary/50"}`,
+          title: isFailed ? "重新运行此失败步骤" : "以此步骤为起点，清除后续记录并重新推演生成",
+          onclick: async () => {
+            const ok = await ui.confirm("断点重跑步骤", `确定要从步骤 ${s.step_seq + 1}「${s.title}」开始断点重新推演吗？${s.status === "approved" ? "该操作将重置此步并从该步继续向下执行。" : ""}`, "确认重跑");
+            if (!ok) return;
+            try {
+              await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/retry`);
+              ui.toast(`已触发步骤 ${s.step_seq + 1} 断点续跑`, "ok");
+              tick();
+            } catch (e) {
+              ui.toast("重跑失败：" + e.message, "err");
+            }
+          },
+        }, ui.icon("replay", "text-[13px]"), isFailed ? "重试此失败步骤" : "以此步为断点重跑"));
+      card.append(retryStepBtn);
+    }
+
     return card;
   }
 
@@ -1241,14 +1263,20 @@ async function renderRun(view, runId) {
   function renderRunStep(run, s) {
     const st = WF_STEP_STATUS[s.status] || { label: s.status, cls: "bg-surface-container-high text-on-surface-variant" };
     const waiting = s.status === "awaiting_review";
+    const isRunning = s.status === "running";
+
+    // 检查是否有后端活跃的实时流式缓冲区
+    const isLiveActive = isRunning && run.live_output && run.live_output.step_seq === s.step_seq && run.live_output.output;
+    const liveText = isLiveActive ? run.live_output.output : "";
 
     const header = ui.el("div", { class: "flex items-center gap-2" },
-      ui.el("span", { class: `w-6 h-6 rounded-full flex items-center justify-center font-label-sm text-label-sm shrink-0 ${waiting ? "bg-error text-on-error" : "bg-primary-container text-on-primary-container"}` }, String(s.step_seq + 1)),
+      ui.el("span", { class: `w-6 h-6 rounded-full flex items-center justify-center font-label-sm text-label-sm shrink-0 ${waiting ? "bg-error text-on-error" : isRunning ? "bg-primary text-on-primary animate-pulse" : "bg-primary-container text-on-primary-container"}` }, String(s.step_seq + 1)),
       ui.el("span", { class: "font-body-sm text-body-sm text-on-surface font-medium" }, s.title),
       ui.el("span", { class: `px-2 py-0.5 rounded-full font-label-sm text-label-sm ${st.cls}` }, st.label),
+      isLiveActive ? ui.el("span", { class: "px-2 py-0.5 rounded bg-surface-container-high text-primary font-mono text-label-xs animate-pulse" }, `正在输出: ${liveText.replace(/\s+/g, "").length} 字`) : null,
       s.elapsed_ms ? ui.el("span", { class: "ml-auto font-label-sm text-label-sm text-on-surface-variant" }, `${(s.elapsed_ms / 1000).toFixed(1)}s · ${s.token_used || 0} token`) : null);
 
-    const card = wfCard(`flex flex-col gap-3 ${waiting ? "border-error/50 ring-1 ring-error/30" : ""}`, header);
+    const card = wfCard(`flex flex-col gap-3 ${waiting ? "border-error/50 ring-1 ring-error/30" : isRunning ? "border-primary/50 ring-1 ring-primary/20 bg-surface-container-lowest/90" : ""}`, header);
 
     if (s.ref_step_seqs && s.ref_step_seqs.length > 0) {
       const refLabels = s.ref_step_seqs.map((idx) => `步骤 ${idx + 1}`).join("、");
@@ -1260,6 +1288,19 @@ async function renderRun(view, runId) {
 
     if (s.review_note) {
       card.append(ui.el("div", { class: "font-label-sm text-label-sm text-on-surface-variant" }, `确认备注：${s.review_note}`));
+    }
+
+    if (isRunning && isLiveActive) {
+      // 实时流式输出预览区域
+      const livePre = ui.el("pre", {
+        class: "streaming-caret whitespace-pre-wrap font-body-sm text-body-sm text-on-surface bg-surface-container-low/70 rounded-xl p-3 border border-primary/20 max-h-80 overflow-y-auto leading-relaxed",
+      }, stripMoyuAssetsBlock(liveText));
+      const liveContainer = ui.el("div", { class: "flex flex-col gap-1.5" },
+        ui.el("div", { class: "flex items-center justify-between font-label-sm text-label-xs text-primary font-medium" },
+          ui.el("span", { class: "flex items-center gap-1" }, ui.icon("stream", "text-[14px]"), "AI 实时构思与输出中…"),
+          ui.el("span", { class: "text-on-surface-variant font-normal" }, "每秒动态刷新")),
+        livePre);
+      card.append(liveContainer);
     }
 
     if (s.output) {

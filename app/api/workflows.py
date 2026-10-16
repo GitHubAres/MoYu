@@ -214,6 +214,10 @@ def _run_detail(db, run_id: int) -> dict:
         out["outline_node_title"] = nd["title"] if nd else ""
     else:
         out["outline_node_title"] = ""
+
+    # 注入当前运行步骤的实时流式输出缓冲区
+    live = workflow_engine.get_live_output(run_id)
+    out["live_output"] = live
     return out
 
 
@@ -295,6 +299,34 @@ def cancel_run(run_id: int):
         return {"ok": True, "status": run["status"]}
     workflow_engine.cancel_run(run_id)
     return {"ok": True, "status": "cancelled"}
+
+
+@router.post("/runs/{run_id}/steps/{seq}/retry")
+async def retry_step(run_id: int, seq: int):
+    """单步断点重试/重新生成：将该步骤重置为 pending，并从该步骤开始断点续跑。"""
+    db = get_db()
+    run = db.execute("SELECT * FROM workflow_runs WHERE id = ?", (run_id,)).fetchone()
+    if not run:
+        raise HTTPException(404, "工作流实例不存在")
+    if run["status"] == "done":
+        # 允许已完成的工作流对某一步骤发起重新生成
+        pass
+    # 重置当前步骤为 pending，清除旧输出与审核备注
+    db.execute(
+        """UPDATE workflow_run_steps SET status='pending', output='', review_note='',
+           token_used=0, elapsed_ms=0, updated_at=datetime('now','localtime')
+           WHERE run_id = ? AND step_seq = ?""",
+        (run_id, seq),
+    )
+    # 状态设置为 running，当前步骤推进到 seq
+    db.execute(
+        """UPDATE workflow_runs SET status='running', error_msg='', current_step=?
+           WHERE id=?""",
+        (seq, run_id),
+    )
+    db.commit()
+    workflow_engine.resume_run(run_id)
+    return {"ok": True, "status": "running", "step_seq": seq}
 
 
 @router.post("/runs/{run_id}/retry")

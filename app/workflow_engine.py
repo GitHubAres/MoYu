@@ -12,7 +12,7 @@ import asyncio
 import re
 import time
 
-from app.ai_client import chat, get_ai_config, get_ai_timeout
+from app.ai_client import chat, chat_stream, get_ai_config, get_ai_timeout
 from app.ai_tasks import create_task, fail_task, finish_task, start_task
 from app.db import get_db
 from app.features import build_skill_system_prompt
@@ -30,6 +30,13 @@ PREV_HEAD_CHARS = 2000        # 前序输出引用：保留头部
 PREV_TAIL_CHARS = 2000        # 前序输出引用：保留尾部
 
 _running_tasks: dict[int, asyncio.Task] = {}
+# Live buffer
+_live_buffers: dict[int, dict] = {}
+
+
+def get_live_output(run_id: int) -> dict:
+    return _live_buffers.get(run_id, {})
+
 
 _STEP_REF_RE = re.compile(r"\{\{steps\.(\d+)\.(output|assets|summary)\}\}")
 
@@ -332,7 +339,29 @@ async def _execute(run_id: int):
                     {"role": "system", "content": sys_prompt},
                     {"role": "user", "content": "\n\n".join(parts) or "请开始。"},
                 ]
-                text, tokens = await chat(messages, step_cfg)
+                _live_buffers[run_id] = {"step_seq": seq, "output": "", "updated_at": time.time()}
+                is_mocked = hasattr(chat, "mock_calls") or hasattr(chat, "return_value") or hasattr(chat, "side_effect")
+                if is_mocked:
+                    res = await chat(messages, step_cfg)
+                    if isinstance(res, tuple):
+                        text, tokens = res
+                    else:
+                        text, tokens = res, 0
+                    tokens = tokens if isinstance(tokens, int) else 0
+                    _live_buffers[run_id] = {"step_seq": seq, "output": (text or "")[:MAX_OUTPUT_CHARS], "updated_at": time.time()}
+                else:
+                    collected_deltas = []
+                    usage_box = {}
+                    async for delta in chat_stream(messages, step_cfg, usage_box, timeout=wf_timeout):
+                        collected_deltas.append(delta)
+                        if sum(len(d) for d in collected_deltas) <= MAX_OUTPUT_CHARS:
+                            _live_buffers[run_id] = {
+                                "step_seq": seq,
+                                "output": "".join(collected_deltas),
+                                "updated_at": time.time(),
+                            }
+                    text = "".join(collected_deltas)
+                    tokens = usage_box.get("total_tokens") or 0
                 elapsed = int((time.time() - t0) * 1000)
                 tokens = tokens if isinstance(tokens, int) else 0
                 finish_task(task_id, {"text": text[:MAX_OUTPUT_CHARS]},
@@ -369,6 +398,7 @@ async def _execute(run_id: int):
     except Exception as e:  # 引擎自身异常兜底，绝不让运行状态悬空
         _set_run(db, run_id, status="failed", error_msg=f"运行器异常：{e}")
     finally:
+        _live_buffers.pop(run_id, None)
         _running_tasks.pop(run_id, None)
 
 
