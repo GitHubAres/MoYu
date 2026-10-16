@@ -253,3 +253,65 @@ def test_batch_sync_outline_synopsis_update_and_stats(client):
     row3 = db.execute("SELECT synopsis FROM outline_nodes WHERE work_id = ? AND title = ?", (work_id, "第二章 踏雪无痕")).fetchone()
     assert row3 is not None
     assert row3["synopsis"] == "新章节梗概"
+
+
+def test_workflow_sync_assets_apply_to_chapter_and_versions(client):
+    """验证工作流步骤反哺正文：成功写入目标章节、重新计算字数并沉淀版本快照"""
+    w, v, c = make_wvc(client, "正文反哺测试作品")
+    work_id = w["id"]
+    chapter_id = c["id"]
+    db = get_db()
+
+    # 1. 模拟工作流运行实例（工作流本身可能无 chapter_id，通过请求 body 传入目标 chapter_id）
+    cur = db.execute(
+        """INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step)
+           VALUES (1, ?, NULL, 'running', 0)""",
+        (work_id,)
+    )
+    run_id = cur.lastrowid
+
+    prose_content = "林渊负手立于青云古殿前，残剑轻鸣，震碎了漫天流云。"
+    db.execute(
+        """INSERT INTO workflow_run_steps (run_id, step_seq, title, status, output, token_used)
+           VALUES (?, 0, '正文精修推演', 'approved', ?, 200)""",
+        (run_id, prose_content)
+    )
+    db.commit()
+
+    # 2. 检查 step extracted-assets 是否返回 raw_text
+    ext_res = client.get(f"/api/workflows/runs/{run_id}/steps/0/extracted-assets")
+    assert ext_res.status_code == 200
+    assert ext_res.json()["raw_text"] == prose_content
+
+    # 3. 执行反哺：指定 chapter_id，且 apply_to_chapter 为 True
+    sync_res = client.post(f"/api/workflows/runs/{run_id}/steps/0/sync-assets", json={
+        "chapter_id": chapter_id,
+        "apply_to_chapter": True,
+        "chapter_content": prose_content,
+        "entities": [],
+        "relations": [],
+        "outline_nodes": [],
+        "chapter_synopses": [],
+        "timeline_events": [],
+        "foreshadows": [],
+        "notes": []
+    })
+    assert sync_res.status_code == 200
+    data = sync_res.json()
+    assert data["ok"] is True
+    assert data["summary"]["chapter_synced"] is True
+
+    # 4. 验证章节正文和字数是否已更新
+    chap_row = db.execute("SELECT content, word_count FROM chapters WHERE id=?", (chapter_id,)).fetchone()
+    assert chap_row["content"] == prose_content
+    from app.db import word_count
+    assert chap_row["word_count"] == word_count(prose_content)
+
+    # 5. 验证版本记录是否已沉淀入库 (chapter_versions)
+    versions = db.execute("SELECT * FROM chapter_versions WHERE chapter_id=? ORDER BY id DESC", (chapter_id,)).fetchall()
+    assert len(versions) >= 1
+    latest_ver = versions[0]
+    assert latest_ver["content"] == prose_content
+    assert latest_ver["source"] == "workflow"
+    assert f"工作流 #{run_id}" in latest_ver["label"]
+

@@ -1099,8 +1099,7 @@ def sync_assets_to_database(db, work_id: int, body: SyncAssetsIn, run_id: int = 
             summary["notes_added"] += 1
 
     # 5. 文章正文与版本沉淀同步
-    run = db.execute("SELECT chapter_id FROM workflow_runs WHERE id=?", (run_id,)).fetchone()
-    chapter_id = run["chapter_id"] if run else None
+    chapter_id = target_chap_id
     if body.apply_to_chapter and chapter_id and body.chapter_content:
         from app.db import word_count
         chap = db.execute("SELECT * FROM chapters WHERE id=?", (chapter_id,)).fetchone()

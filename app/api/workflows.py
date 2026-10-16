@@ -378,7 +378,7 @@ def get_extracted_assets(run_id: int, seq: int, body: Optional[ExtractContentIn]
         if not rs:
             raise HTTPException(404, "工作流步骤不存在")
         raw_text = rs["output"] or ""
-    return {"ok": True, "assets": extract_structured_assets_from_text(raw_text)}
+    return {"ok": True, "raw_text": raw_text, "assets": extract_structured_assets_from_text(raw_text)}
 
 
 @router.get("/runs/{run_id}/summary-assets")

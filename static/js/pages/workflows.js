@@ -771,6 +771,7 @@ async function renderRun(view, runId) {
       try {
         const res = await api.get(`/workflows/runs/${runId}/steps/${stepSeq}/extracted-assets`);
         assets = res.assets || { work_info: {}, entities: [], relations: [], outline_nodes: [], foreshadows: [] };
+        if (res.raw_text) assets._raw_prose = res.raw_text;
       } catch (e) {
         ui.toast("提取创作资产失败：" + e.message, "err");
         return;
@@ -907,6 +908,34 @@ async function renderRun(view, runId) {
         chapterSelect
       );
       body.append(chapGroup);
+    }
+
+    // 0.8 目标章节正文反哺 · 写入并沉淀版本
+    let syncProseCb = null;
+    let proseContentInput = null;
+    const rawProse = (assets && assets._raw_prose) || "";
+    if (rawProse && rawProse.trim()) {
+      syncProseCb = ui.el("input", { type: "checkbox", checked: false, class: "rounded border-outline text-primary mt-0.5" });
+      const charCountSpan = ui.el("span", { class: "text-[11px] text-on-surface-variant font-mono" }, `约 ${rawProse.trim().length} 字`);
+      proseContentInput = ui.el("textarea", {
+        class: "w-full px-2.5 py-1.5 rounded-lg bg-surface border border-outline-variant focus:border-primary text-body-sm text-on-surface outline-none min-h-[90px] max-h-[220px] resize-y font-body-sm",
+        placeholder: "将本步骤生成的剧情/正文反哺写入目标章节...",
+      }, rawProse.trim());
+      proseContentInput.addEventListener("input", () => {
+        charCountSpan.textContent = `约 ${proseContentInput.value.trim().length} 字`;
+      });
+
+      const proseGroup = ui.el("div", { class: "flex flex-col gap-2 p-3 rounded-xl bg-surface-container-low border border-outline-variant/60" },
+        ui.el("div", { class: "flex items-center justify-between" },
+          ui.el("label", { class: "flex items-center gap-2 cursor-pointer font-label-sm text-label-sm font-semibold text-primary" },
+            syncProseCb,
+            ui.icon("history_edu", "text-[16px] text-tertiary"),
+            "章节正文反哺 · 采纳写入并沉淀历史版本"),
+          charCountSpan),
+        ui.el("div", { class: "text-[11px] text-on-surface-variant leading-relaxed" },
+          "勾选后，将直接更新上方所选章节的正文内容，并在章节版本库中留存一条快照记录（安全防丢，随时可撤销回滚）。"),
+        proseContentInput);
+      body.append(proseGroup);
     }
 
     // 1. 万相谱实体
@@ -1194,6 +1223,10 @@ async function renderRun(view, runId) {
             if (chapterSelect && chapterSelect.value) {
               payload.chapter_id = Number(chapterSelect.value);
             }
+            if (syncProseCb && syncProseCb.checked) {
+              payload.apply_to_chapter = true;
+              payload.chapter_content = proseContentInput ? proseContentInput.value : "";
+            }
             try {
               const res = await api.post(`/workflows/runs/${runId}/steps/${stepSeq}/sync-assets`, payload);
               const sm = res.summary || {};
@@ -1208,6 +1241,7 @@ async function renderRun(view, runId) {
               if (sm.foreshadows_added) tips.push(`伏笔+${sm.foreshadows_added}`);
               if (sm.notes_added) tips.push(`术语+${sm.notes_added}`);
               if (sm.rejected_count) tips.push(`已过滤 ${sm.rejected_count} 条无效条目`);
+              if (sm.chapter_synced) tips.push("章节正文已更新并沉淀版本");
               const targetWorkId = res.work_id || (assets && assets.run_meta && assets.run_meta.work_id);
               if (window.store && targetWorkId) {
                 if (window.store.plot) window.store.plot.notifyChanged(targetWorkId);
@@ -1530,13 +1564,13 @@ async function renderRun(view, runId) {
           ui.el("span", { class: "text-on-surface-variant" }, "将本步骤生成的世界观、人物、道具、大纲等规范导入到各功能模块")),
         ui.el("button", {
           class: "flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 transition-opacity",
-          onclick: () => showAssetSyncModal(runId, s.step_seq, null, null),
+          onclick: () => showAssetSyncModal(runId, s.step_seq, { _raw_prose: s.output }, null),
         }, ui.icon("inventory_2", "text-[16px]"), "规范同步至作品库")));
       card.append(ui.el("div", { class: "flex flex-wrap gap-2" },
         ui.el("button", {
           class: "flex items-center gap-1 px-3 py-1.5 rounded-lg bg-primary text-on-primary font-label-sm text-label-sm hover:opacity-90 shadow-sm",
           onclick: () => {
-            showAssetSyncModal(runId, s.step_seq, null, async () => {
+            showAssetSyncModal(runId, s.step_seq, { _raw_prose: s.output }, async () => {
               await api.post(`/workflows/runs/${runId}/steps/${s.step_seq}/review`, { action: "approve" });
               tick();
             }, "步骤产出 · 前置配置与规范导入");
