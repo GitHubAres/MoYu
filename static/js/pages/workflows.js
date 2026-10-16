@@ -1277,21 +1277,66 @@ async function renderRun(view, runId) {
     const allCheckboxes = [...entChecks, ...relChecks, ...outlineChecks, ...foreshadowChecks, ...noteChecks];
 
     const footer = ui.el("div", { class: "flex items-center justify-between p-4 border-t border-outline-variant bg-surface-container-low" },
-      ui.el("div", { class: "flex gap-2" },
+      ui.el("div", { class: "flex flex-wrap items-center gap-1.5" },
+        ui.el("span", { class: "text-[12px] text-on-surface-variant font-medium mr-0.5" }, "快速预设:"),
         ui.el("button", {
-          class: "px-2.5 py-1 text-[13px] rounded text-on-surface-variant hover:bg-surface-container",
+          type: "button",
+          class: "px-2 py-0.8 text-[12px] rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-medium transition-colors",
+          title: "一键全选所有识别到的资产与设定",
           onclick: () => {
             allCheckboxes.forEach(c => c.cb.checked = true);
+            chapterSynopsisChecks.forEach(c => c.cb.checked = true);
+            timelineChecks.forEach(c => c.cb.checked = true);
             if (syncWorkInfoCb) syncWorkInfoCb.checked = true;
+            if (syncProseCb) syncProseCb.checked = true;
+            ui.toast("已应用预设：全部规范与正文", "ok");
           },
         }, "全选"),
         ui.el("button", {
-          class: "px-2.5 py-1 text-[13px] rounded text-on-surface-variant hover:bg-surface-container",
+          type: "button",
+          class: "px-2 py-0.8 text-[12px] rounded-lg bg-primary/10 hover:bg-primary/20 text-primary font-medium transition-colors",
+          title: "仅勾选正文、主角角色与核心法宝，避免配角龙套与繁琐枝节污染设定库",
+          onclick: () => {
+            // 清空所有普通项
+            allCheckboxes.forEach(c => c.cb.checked = false);
+            chapterSynopsisChecks.forEach(c => c.cb.checked = false);
+            timelineChecks.forEach(c => c.cb.checked = false);
+            if (syncWorkInfoCb) syncWorkInfoCb.checked = false;
+            // 勾选正文
+            if (syncProseCb) syncProseCb.checked = true;
+            // 勾选核心主角与法宝实体
+            entChecks.forEach(c => {
+              const isCore = c.data.category === "character" || c.data.category === "item" || (c.data.fields_json && c.data.fields_json.includes("主角")) || (c.data.tags && c.data.tags.includes("主角"));
+              c.cb.checked = !!isCore;
+            });
+            ui.toast("已应用预设：仅正文与核心主角", "ok");
+          },
+        }, "🎯 仅正文+主角"),
+        ui.el("button", {
+          type: "button",
+          class: "px-2 py-0.8 text-[12px] rounded-lg bg-secondary/10 hover:bg-secondary/20 text-secondary font-medium transition-colors",
+          title: "仅勾选大纲节点、章节梗概与剧情时间线，不更新正文与实体",
           onclick: () => {
             allCheckboxes.forEach(c => c.cb.checked = false);
             if (syncWorkInfoCb) syncWorkInfoCb.checked = false;
+            if (syncProseCb) syncProseCb.checked = false;
+            outlineChecks.forEach(c => c.cb.checked = true);
+            chapterSynopsisChecks.forEach(c => c.cb.checked = true);
+            timelineChecks.forEach(c => c.cb.checked = true);
+            ui.toast("已应用预设：仅大纲与剧情线", "ok");
           },
-        }, "反选")),
+        }, "📖 仅大纲与剧情"),
+        ui.el("button", {
+          type: "button",
+          class: "px-2 py-0.8 text-[12px] rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant font-medium transition-colors",
+          onclick: () => {
+            allCheckboxes.forEach(c => c.cb.checked = false);
+            chapterSynopsisChecks.forEach(c => c.cb.checked = false);
+            timelineChecks.forEach(c => c.cb.checked = false);
+            if (syncWorkInfoCb) syncWorkInfoCb.checked = false;
+            if (syncProseCb) syncProseCb.checked = false;
+          },
+        }, "清空")),
       ui.el("div", { class: "flex gap-2" },
         ui.el("button", {
           class: "px-4 py-2 rounded-lg bg-surface-container text-on-surface font-label-sm text-label-sm",
