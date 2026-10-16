@@ -101,7 +101,11 @@ with tarfile.open(tar_filename, "w:gz") as tar:
         tar.add("app", filter=tar_filter)
     if os.path.exists("static/js"):
         tar.add("static/js", filter=tar_filter)
-    for rf in ["run.py", "requirements.txt", "static/index.html"]:
+    if os.path.exists("static/css"):
+        tar.add("static/css", filter=tar_filter)
+    if os.path.exists("tests"):
+        tar.add("tests", filter=tar_filter)
+    for rf in ["run.py", "requirements.txt", "static/index.html", "README.md"]:
         if os.path.exists(rf):
             tar.add(rf)
 

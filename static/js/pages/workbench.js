@@ -2079,7 +2079,7 @@ registerPage("workbench", async (view, { segs, params }) => {
         ui.el("span", { class: "font-body-sm text-body-sm text-on-surface" }, `${ui.fmtWords(chapter.word_count || 0)} 字`))));
   }
 
-  /* ---------- 生成（SSE 流式） ---------- */
+  /* ---------- 生成（SSE 流式打字机） ---------- */
 
   async function runGenerate() {
     if (generating || !chapter) return;
@@ -2125,6 +2125,7 @@ registerPage("workbench", async (view, { segs, params }) => {
     generating = true;
     syncGenBtns();
     let curCard = null, gotDone = false, sawDelta = false;
+    let wasAborted = false;
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
@@ -2141,32 +2142,45 @@ registerPage("workbench", async (view, { segs, params }) => {
           let evt;
           try { evt = JSON.parse(frame.slice(5).trim()); } catch (e) { continue; }
           if (evt.task_id) {
-            updateTaskStatus(evt.task_id, "当前生成任务运行中…");
+            updateTaskStatus(evt.task_id, "正文打字机流式生成中…");
           } else if (evt.error) {
             ui.toast(evt.error, "err");
-            if (curCard) { finishCard(curCard, true); curCard = null; }
+            if (curCard) { finishCard(curCard, true, false); curCard = null; }
           } else if (evt.start) {
-            if (curCard) finishCard(curCard);   // 上一候选结束
+            if (curCard) finishCard(curCard, false, false);   // 上一候选平滑结束
             curCard = addCandidateCard(evt.candidate);
           } else if (evt.delta !== undefined && curCard) {
             sawDelta = true;
             curCard._text += evt.delta;
             curCard._body.textContent = curCard._text;
-            curCard.scrollIntoView({ block: "nearest" });
+            if (curCard._counter) {
+              const count = curCard._text.replace(/\s+/g, "").length;
+              curCard._counter.textContent = `${count} 字`;
+            }
+            curCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
           } else if (evt.done) {
             gotDone = true;
-            if (curCard) { finishCard(curCard); curCard = null; }
-            updateTaskStatus(evt.task_id, "当前生成任务已完成");
+            if (curCard) { finishCard(curCard, false, false); curCard = null; }
+            updateTaskStatus(evt.task_id, "正文生成已完成");
           }
         }
       }
     } catch (e) {
-      if (e.name !== "AbortError") ui.toast("生成中断：" + e.message, "err");
+      if (e.name === "AbortError") {
+        wasAborted = true;
+        ui.toast("已按要求中止 AI 正文流式生成，保留已产出片段", "info");
+      } else {
+        ui.toast("生成中断：" + e.message, "err");
+      }
     }
-    /* 停止 / 中断时已生成内容保留；完全没收到内容的空卡视为失败清理掉 */
+    /* 停止 / 中断时已生成内容保留并附加明确已中止标记；完全没收到内容的空卡清理 */
     if (curCard) {
-      if (!curCard._text && !gotDone) { curCard.remove(); if (!sawDelta) ui.toast("生成中断：未收到有效内容，请重试", "err"); }
-      else finishCard(curCard);
+      if (!curCard._text && !gotDone) {
+        curCard.remove();
+        if (!sawDelta && !wasAborted) ui.toast("生成中断：未收到有效内容，请重试", "err");
+      } else {
+        finishCard(curCard, false, wasAborted);
+      }
     }
     generating = false;
     abortCtrl = null;
@@ -2181,31 +2195,48 @@ registerPage("workbench", async (view, { segs, params }) => {
     });
     const actions = ui.el("div", { class: "hidden flex-wrap gap-1 pt-1" });
     const taskName = { continue: "续写", expand: "扩写", condense: "缩写", polish: "改写润色" }[aiTask] || aiTask;
+    const counter = ui.el("span", {
+      class: "px-1.5 py-0.5 rounded bg-surface-container-high text-on-surface-variant font-mono text-[11px]",
+    }, "0 字");
     const card = ui.el("div", {
-      class: "ai-glow bg-surface-container-lowest rounded-xl p-space-sm flex flex-col gap-1",
+      class: "ai-glow bg-surface-container-lowest rounded-xl p-space-sm flex flex-col gap-1 transition-all duration-200",
     },
       ui.el("div", { class: "flex items-center gap-2" },
         ui.el("span", { class: "px-1.5 py-0.5 rounded bg-secondary-container text-on-secondary-container font-label-sm text-label-sm" }, "AI 生成"),
         ui.el("span", { class: "flex-1 font-label-sm text-label-sm text-on-surface-variant" }, `候选 ${idx + 1} · ${taskName}`),
-        /* 流式期间卡内也放停止按钮，避免面板滚动后够不到 */
+        counter,
+        /* 流式打字机卡内一键停止按钮 */
         ui.el("button", {
-          class: "card-stop flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-error-container text-on-error-container font-label-sm text-label-sm",
+          class: "card-stop flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-error-container text-on-error-container hover:bg-error hover:text-white font-label-sm text-label-sm transition-colors",
           onclick: () => abortCtrl && abortCtrl.abort(),
-        }, ui.icon("stop", "text-[13px]"), "停止")),
+        }, ui.icon("stop", "text-[14px]"), "停止")),
       body, actions);
     card._body = body;
     card._actions = actions;
+    card._counter = counter;
     card._text = "";
     candidatesBox.append(card);
     card.scrollIntoView({ block: "nearest", behavior: "smooth" });
     return card;
   }
 
-  function finishCard(card, isError = false) {
+  function finishCard(card, isError = false, wasAborted = false) {
     card._body.classList.remove("streaming-caret");
     const stop = card.querySelector(".card-stop");
     if (stop) stop.remove();
     if (isError && !card._text) { card.remove(); return; }
+    if (wasAborted) {
+      const header = card.querySelector(".flex.items-center.gap-2");
+      if (header && !header.querySelector(".abort-badge")) {
+        header.append(ui.el("span", {
+          class: "abort-badge px-1.5 py-0.5 rounded bg-error-container/60 text-error font-label-sm text-label-sm",
+        }, "已中止"));
+      }
+    }
+    if (card._counter && card._text) {
+      const count = card._text.replace(/\s+/g, "").length;
+      card._counter.textContent = `${count} 字`;
+    }
     const a = card._actions;
     a.classList.remove("hidden");
     a.classList.add("flex");

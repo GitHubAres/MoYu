@@ -380,27 +380,65 @@ class AIOrchestrator:
 
         async def event_stream():
             full_texts = [[] for _ in range(body.candidates)]
+            usage_box = {}
             total_tokens = 0
+            is_completed = False
             try:
                 yield "data: " + json.dumps({"task_id": task_id}, ensure_ascii=False) + "\n\n"
                 for i in range(body.candidates):
                     yield "data: " + json.dumps({"candidate": i, "start": True}, ensure_ascii=False) + "\n\n"
-                    async for delta in chat_stream(messages, cfg, {}):
+                    cur_box = {}
+                    async for delta in chat_stream(messages, cfg, cur_box):
                         full_texts[i].append(delta)
                         yield "data: " + json.dumps({"candidate": i, "delta": delta}, ensure_ascii=False) + "\n\n"
+                    if cur_box.get("total_tokens"):
+                        total_tokens += cur_box["total_tokens"]
                 texts = ["".join(t) for t in full_texts]
                 elapsed = int((time.time() - start_time) * 1000)
                 finish_task(task_id, {"candidates": texts, "candidate_count": len(texts)},
                             token_used=total_tokens, elapsed_ms=elapsed)
+                is_completed = True
                 yield "data: " + json.dumps({"done": True, "usage": {"total_tokens": total_tokens}, "task_id": task_id}, ensure_ascii=False) + "\n\n"
+            except (asyncio.CancelledError, GeneratorExit):
+                elapsed = int((time.time() - start_time) * 1000)
+                texts = ["".join(t) for t in full_texts]
+                has_any = any(bool(t.strip()) for t in texts)
+                if has_any:
+                    finish_task(task_id, {"candidates": texts, "candidate_count": len(texts), "aborted": True},
+                                token_used=total_tokens, elapsed_ms=elapsed)
+                else:
+                    cancel_task(task_id)
+                raise
             except AIError as e:
                 fail_task(task_id, str(e), int((time.time() - start_time) * 1000))
                 yield "data: " + json.dumps({"error": str(e), "task_id": task_id}, ensure_ascii=False) + "\n\n"
             except Exception as e:
                 fail_task(task_id, f"生成失败：{e}", int((time.time() - start_time) * 1000))
                 yield "data: " + json.dumps({"error": f"生成失败：{e}", "task_id": task_id}, ensure_ascii=False) + "\n\n"
+            finally:
+                if not is_completed:
+                    try:
+                        tk = get_task(task_id)
+                        if tk.get("status") == "running":
+                            elapsed = int((time.time() - start_time) * 1000)
+                            texts = ["".join(t) for t in full_texts]
+                            if any(bool(t.strip()) for t in texts):
+                                finish_task(task_id, {"candidates": texts, "candidate_count": len(texts), "aborted": True},
+                                            token_used=total_tokens, elapsed_ms=elapsed)
+                            else:
+                                cancel_task(task_id)
+                    except Exception:
+                        pass
 
-        return StreamingResponse(event_stream(), media_type="text/event-stream")
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache, no-transform",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     async def test_connection(self, body: _TestIn | None = None):
         cfg = get_ai_config()

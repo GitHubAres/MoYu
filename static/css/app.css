@@ -101,13 +101,24 @@ body.theme-paper { background: #f5f0e6; }
 body.theme-paper .bg-surface, body.theme-paper .bg-surface-container-lowest { background: #fbf7ec !important; }
 body.theme-paper .bg-surface-container-low { background: #f0ead9 !important; }
 
-/* 流式生成光标 */
+/* 流式生成打字机光标与状态 */
 .streaming-caret::after {
   content: "▍";
-  color: #2563EB;
-  animation: blink 1s steps(1) infinite;
+  display: inline-block;
+  margin-left: 2px;
+  color: #1B2A38;
+  vertical-align: -1px;
+  animation: typewriter-pulse 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  text-shadow: 0 0 6px rgba(27, 42, 56, 0.35);
 }
-@keyframes blink { 50% { opacity: 0; } }
+.dark .streaming-caret::after {
+  color: #93C5FD;
+  text-shadow: 0 0 6px rgba(147, 197, 253, 0.5);
+}
+@keyframes typewriter-pulse {
+  0%, 100% { opacity: 1; transform: scaleY(1); }
+  50% { opacity: 0.15; transform: scaleY(0.92); }
+}
 
 /* 骨架屏 */
 .skeleton {
