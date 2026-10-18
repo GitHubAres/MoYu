@@ -1494,8 +1494,13 @@ def seed_builtin_workflows(conn: sqlite3.Connection | None = None):
     # 清理所有旧版 builtin 工作流定义，确保全面刷新为 5 大新工作流
     old_builtin_wf_ids = [r[0] for r in conn.execute("SELECT id FROM workflows WHERE builtin = 1").fetchall()]
     for old_wfid in old_builtin_wf_ids:
-        conn.execute("DELETE FROM workflow_steps WHERE workflow_id = ?", (old_wfid,))
-        conn.execute("DELETE FROM workflows WHERE id = ?", (old_wfid,))
+        has_runs = conn.execute("SELECT 1 FROM workflow_runs WHERE workflow_id = ?", (old_wfid,)).fetchone()
+        if has_runs:
+            # 若历史运行记录存在外键依赖，取消其内置标志并停用，保留历史追溯
+            conn.execute("UPDATE workflows SET builtin = 0, enabled = 0, name = name || ' [已废弃]' WHERE id = ?", (old_wfid,))
+        else:
+            conn.execute("DELETE FROM workflow_steps WHERE workflow_id = ?", (old_wfid,))
+            conn.execute("DELETE FROM workflows WHERE id = ?", (old_wfid,))
 
     samples = [
         {
