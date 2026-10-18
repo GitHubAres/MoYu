@@ -644,6 +644,7 @@ async function renderRun(view, runId) {
   // 步骤卡片折叠状态缓存：默认折叠已完成步骤，展开当前执行中或等待审核步骤
   const collapsedSteps = new Set();
   let initializedCollapse = false;
+  let lastRunJson = null;
 
   async function tick() {
     let run;
@@ -663,6 +664,34 @@ async function renderRun(view, runId) {
   function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
 
   function render(run) {
+    // 保护机制：若用户当前正处于鼠标选中/复制阶段（选区非空且在步骤区域内），暂停该秒 DOM 销毁重绘，杜绝回弹！
+    const currentSel = window.getSelection();
+    if (currentSel && !currentSel.isCollapsed && currentSel.toString().trim().length > 0) {
+      if (stepsBox && stepsBox.contains(currentSel.anchorNode)) {
+        return; // 用户正在查阅或划词复制，安全跳过本轮 DOM 刷新
+      }
+    }
+
+    // 内容差异比对：序列化判断步骤内容是否实质发生变化；若完全一致则不重构 steps DOM 树
+    const currentRunJson = JSON.stringify({
+      status: run.status,
+      finished: run.finished_steps,
+      error: run.error_msg,
+      live_seq: run.live_output ? run.live_output.step_seq : null,
+      live_len: run.live_output && run.live_output.output ? run.live_output.output.length : 0,
+      steps: (run.steps || []).map((s) => ({
+        seq: s.step_seq,
+        status: s.status,
+        output_len: (s.output || "").length,
+        has_note: !!s.review_note,
+        collapsed: collapsedSteps.has(s.step_seq),
+        editing: editingSeq === s.step_seq
+      }))
+    });
+
+    const isStepsIdentical = (lastRunJson === currentRunJson);
+    lastRunJson = currentRunJson;
+
     headCard.innerHTML = "";
     const pct = run.total_steps ? Math.round((run.finished_steps / run.total_steps) * 100) : 0;
     const stLabel = WF_RUN_STATUS[run.status] || run.status;
@@ -751,8 +780,10 @@ async function renderRun(view, runId) {
       initializedCollapse = true;
     }
 
-    stepsBox.innerHTML = "";
-    (run.steps || []).forEach((s) => stepsBox.append(renderRunStep(run, s)));
+    if (!isStepsIdentical) {
+      stepsBox.innerHTML = "";
+      (run.steps || []).forEach((s) => stepsBox.append(renderRunStep(run, s)));
+    }
   }
 
 
