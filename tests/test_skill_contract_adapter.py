@@ -19,6 +19,7 @@ EXPECTED_NAMES = {
     "default-continue", "default-expand", "default-shorten", "default-rewrite",
     "default-outline", "default-audit", "default-analysis", "novel-premise",
     "novel-world", "novel-cast", "novel-scene", "novel-forge", "de-ai-tone",
+    "novel-timeline", "novel-foreshadow", "novel-magic-system", "prose-combat", "audit-timeline", "audit-foreshadow",
 }
 
 OLD_SOFT_CLAUSE = "请在回答末尾追加合法的"

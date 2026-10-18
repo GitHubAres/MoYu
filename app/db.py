@@ -35,6 +35,10 @@ from .builtin_skill_data import (
     CHARACTER_ARC_MODELS,
     WORLDBUILDING_CHECKLIST,
     SCENE_BEATS,
+    TIMELINE_ANCHOR_RULES,
+    FORESHADOW_CRAFT,
+    POWER_SCALING_RULES,
+    COMBAT_RHYTHM,
 )
 
 
@@ -418,6 +422,8 @@ CREATE TABLE IF NOT EXISTS skills (
     applies_to  TEXT NOT NULL DEFAULT '',      -- 兼容旧任务类型：continue,expand,... 空=通用
     source      TEXT NOT NULL DEFAULT 'custom',-- builtin|custom|migrated|imported
     icon        TEXT NOT NULL DEFAULT 'auto_awesome',
+    builtin_version TEXT DEFAULT '1.0.0',
+    user_modified   INTEGER DEFAULT 0,
     created_at  TEXT DEFAULT (datetime('now','localtime')),
     updated_at  TEXT DEFAULT (datetime('now','localtime'))
 );
@@ -633,6 +639,10 @@ MIGRATIONS = {
         ("author", "TEXT DEFAULT ''"),
         ("collected", "INTEGER DEFAULT 0"),
         ("fetched_at", "TEXT DEFAULT (datetime('now','localtime'))"),
+    ],
+    "skills": [
+        ("builtin_version", "TEXT DEFAULT '1.0.0'"),
+        ("user_modified", "INTEGER DEFAULT 0"),
     ],
 }
 
@@ -2319,6 +2329,180 @@ F0 → F6。**F3 是本技能的主体，但它的动作都是"路由"而非"自
             ("references/creation-pipeline.md", CREATION_PIPELINE),
         ],
     },
+    {
+        "name": "novel-timeline",
+        "title": "编年史·剧情大事记时序编排",
+        "description": "梳理宏观年号、关键历史前史节点与单卷大事件先后次序，排查物理位移与因果冲突。",
+        "applies_to": "timeline",
+        "icon": "timeline",
+        "version": "1.0.0",
+        "body_md": """# 剧情大事记与时间线编排 (Novel Timeline)
+
+【上下文】
+{{context}}
+
+【当前选区】
+{{selection}}
+
+【写作要求】
+{{instruction}}
+
+你是一位严谨的编年史官与长篇小说时序架构师。请根据输入的故事大纲、前史事件或章节进展，梳理并生成结构化大事记时间线。
+
+【执行准则】：
+1. 纪元与锚点规范：每条事件必须具备明确的【时间锚点】(time_label，如"天授三年秋"、"战前三日"、"破晓时分")。
+2. 因果链条闭环：明确标记事件的前因、发生主体与后续影响，严禁因果倒置。
+3. 空间与速度校验：严格校验角色在两地之间的位移时耗，防止逻辑穿帮。
+
+【交付契约】：
+正文提供清晰易读的时间轴纲目；文末附 MOYU:ASSETS 契约块，产出 timeline_events 结构化数组。
+""",
+        "files": [
+            ("references/timeline-anchor-rules.md", TIMELINE_ANCHOR_RULES),
+        ],
+    },
+    {
+        "name": "novel-foreshadow",
+        "title": "草蛇灰线·伏笔布网与回收规划",
+        "description": "规划贯穿全书的核心伏笔与暗线网络，按埋设、浮现推进、收网引爆三段式设计悬念与反转。",
+        "applies_to": "foreshadow",
+        "icon": "psychology",
+        "version": "1.0.0",
+        "body_md": """# 草蛇灰线：长篇伏笔与暗线布网 (Novel Foreshadow)
+
+【上下文】
+{{context}}
+
+【当前选区】
+{{selection}}
+
+【写作要求】
+{{instruction}}
+
+你是一位精通悬疑反转与长线布局的故事架构师。请为当前故事设计严密的伏笔网或规划已有伏笔的回收路径。
+
+【执行准则】：
+1. 三段式状态生命周期：
+   - planted（埋设）：表面合理借口遮蔽真实目的；
+   - pending（推进）：随剧情自然掠过，加深潜意识线索；
+   - recovered（收网）：在关键戏剧高潮作为胜负手或惊天反转揭开。
+2. 严禁突兀机械降神：所有关键转折必须在前期有据可循。
+
+【交付契约】：
+文末必须附加 MOYU:ASSETS 契约块，产出 foreshadows 与 timeline_events。
+""",
+        "files": [
+            ("references/foreshadow-craft.md", FORESHADOW_CRAFT),
+        ],
+    },
+    {
+        "name": "novel-magic-system",
+        "title": "战力平衡·修炼等级与代价值设计",
+        "description": "设计修炼阶梯、法则境界、神通法宝与严苛的代价惩罚机制，防御长篇战力崩坏与通胀。",
+        "applies_to": "system",
+        "icon": "military_tech",
+        "version": "1.0.0",
+        "body_md": """# 修炼体系与战力法则构建 (Novel Magic System)
+
+【上下文】
+{{context}}
+
+【当前选区】
+{{selection}}
+
+【写作要求】
+{{instruction}}
+
+你是一位专精网文力量体系平衡的数值与世界观架构师。请构建清晰、严谨且充满代价值的超自然力量/修炼阶梯。
+
+【核心原则】：
+1. 阶梯质变感：每个等级具备不可替代的质变能力与特征。
+2. 代价与天花板：越高级的能力，反噬与消耗越严苛。
+3. 契约产出：所有术语必须归一为 category=term 的实体卡片。
+""",
+        "files": [
+            ("references/power-scaling-rules.md", POWER_SCALING_RULES),
+        ],
+    },
+    {
+        "name": "prose-combat",
+        "title": "惊险博弈·动作拆解与招式节拍",
+        "description": "专精武戏动作碰撞、攻防博弈、空间利用与受力反馈，杜绝无痛对轰与回合制假打。",
+        "applies_to": "combat",
+        "icon": "sports_martial_arts",
+        "version": "1.0.0",
+        "body_md": """# 武戏动作与惊险博弈 (Prose Combat)
+
+【上下文】
+{{context}}
+
+【当前选区】
+{{selection}}
+
+【写作要求】
+{{instruction}}
+
+你是一位专精冷热兵器搏杀与法术对决的武戏执笔专家。请撰写高张力、具象化的动作博弈场面。
+
+【行文戒律】：
+1. 空间与掩体交互：严禁站桩对轰，充分利用地形障碍与兵刃距离。
+2. 生理受力与代价：写出肌肉震颤、骨骼受力、兵刃缺口与真气逆行。
+3. 节奏极化：进攻用极短句连缀，回气对峙用长句铺陈。
+""",
+        "files": [
+            ("references/combat-rhythm.md", COMBAT_RHYTHM),
+        ],
+    },
+    {
+        "name": "audit-timeline",
+        "title": "时序核对·因果逻辑闭环校对",
+        "description": "专项排查章节正文与大事记中的时间倒错、地理位移超速与伤势恢复窗口矛盾。",
+        "applies_to": "audit",
+        "icon": "update",
+        "version": "1.0.0",
+        "body_md": """# 时序因果核对专家 (Audit Timeline)
+
+【上下文】
+{{context}}
+
+【当前选区】
+{{selection}}
+
+【写作要求】
+{{instruction}}
+
+请审查当前章节与已有大事记，排查所有时间线与时空因果穿帮问题。
+产出标准 notes 格式记录诊断问题与修订指引。
+""",
+        "files": [
+            ("references/timeline-anchor-rules.md", TIMELINE_ANCHOR_RULES),
+        ],
+    },
+    {
+        "name": "audit-foreshadow",
+        "title": "伏笔核验·断裂预警与长期遗忘门禁",
+        "description": "核对全书未回收伏笔，排查长期未推进的线索断裂、矛盾或提前揭底漏洞。",
+        "applies_to": "audit",
+        "icon": "find_in_page",
+        "version": "1.0.0",
+        "body_md": """# 伏笔生命周期核验 (Audit Foreshadow)
+
+【上下文】
+{{context}}
+
+【当前选区】
+{{selection}}
+
+【写作要求】
+{{instruction}}
+
+请比对正文与已有伏笔清单，指出伏笔是否断裂、回收是否突兀。
+产出标准 notes 格式记录诊断问题与建议。
+""",
+        "files": [
+            ("references/foreshadow-craft.md", FORESHADOW_CRAFT),
+        ],
+    },
 ]
 
 
@@ -2346,29 +2530,55 @@ def migrate_and_seed_skills(conn: sqlite3.Connection | None = None):
                 UserWarning,
                 stacklevel=2,
             )
-        conn.execute("""
-            INSERT INTO skills(name, title, description, body_md, version, enabled, applies_to, source, icon)
-            VALUES (?, ?, ?, ?, '1.0.0', 1, ?, 'builtin', ?)
-            ON CONFLICT(name) DO UPDATE SET
-                title = excluded.title,
-                description = excluded.description,
-                body_md = excluded.body_md,
-                applies_to = excluded.applies_to,
-                source = 'builtin',
-                icon = excluded.icon
-        """, (s["name"], s["title"], s["description"], s["body_md"], s["applies_to"], s["icon"]))
-
-        skill_id = conn.execute("SELECT id FROM skills WHERE name = ?", (s["name"],)).fetchone()[0]
-        for fpath, fcontent in s.get("files", []):
-            fsize = len(fcontent.encode("utf-8"))
+        seed_ver = s.get("version", "1.0.0")
+        existing_skill = conn.execute("SELECT id, user_modified, builtin_version FROM skills WHERE name = ?", (s["name"],)).fetchone()
+        if not existing_skill:
             conn.execute("""
-                INSERT INTO skill_files(skill_id, path, content, size, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(skill_id, path) DO UPDATE SET
-                    content = excluded.content,
-                    size = excluded.size,
-                    updated_at = excluded.updated_at
-            """, (skill_id, fpath, fcontent, fsize, now))
+                INSERT INTO skills(name, title, description, body_md, version, enabled, applies_to, source, icon, builtin_version, user_modified)
+                VALUES (?, ?, ?, ?, ?, 1, ?, 'builtin', ?, ?, 0)
+            """, (s["name"], s["title"], s["description"], s["body_md"], seed_ver, s.get("applies_to", ""), s.get("icon", "auto_awesome"), seed_ver))
+            skill_id = conn.execute("SELECT id FROM skills WHERE name = ?", (s["name"],)).fetchone()[0]
+            for fpath, fcontent in s.get("files", []):
+                fsize = len(fcontent.encode("utf-8"))
+                conn.execute("""
+                    INSERT INTO skill_files(skill_id, path, content, size, updated_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (skill_id, fpath, fcontent, fsize, now))
+        else:
+            skill_id = existing_skill[0]
+            is_user_modified = int(existing_skill[1] or 0)
+            cur_builtin_ver = str(existing_skill[2] or "1.0.0")
+            if not is_user_modified and cur_builtin_ver != seed_ver:
+                conn.execute("""
+                    UPDATE skills SET
+                        title = ?,
+                        description = ?,
+                        body_md = ?,
+                        version = ?,
+                        applies_to = ?,
+                        icon = ?,
+                        builtin_version = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                """, (s["title"], s["description"], s["body_md"], seed_ver, s.get("applies_to", ""), s.get("icon", "auto_awesome"), seed_ver, now, skill_id))
+                for fpath, fcontent in s.get("files", []):
+                    fsize = len(fcontent.encode("utf-8"))
+                    conn.execute("""
+                        INSERT INTO skill_files(skill_id, path, content, size, updated_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(skill_id, path) DO UPDATE SET
+                            content = excluded.content,
+                            size = excluded.size,
+                            updated_at = excluded.updated_at
+                    """, (skill_id, fpath, fcontent, fsize, now))
+            else:
+                conn.execute("""
+                    UPDATE skills SET
+                        title = ?,
+                        icon = ?,
+                        applies_to = ?
+                    WHERE id = ?
+                """, (s["title"], s.get("icon", "auto_awesome"), s.get("applies_to", ""), skill_id))
 
     # 3. 若未完成旧数据迁移，将 prompts 表内容平滑迁移至 skills 表
     if not already_done:

@@ -221,6 +221,10 @@ def update_skill(skill_id: int, body: SkillUpdate):
         updates["icon"] = body.icon.strip()
     if body.body_md is not None:
         updates["body_md"] = body.body_md
+        updates["user_modified"] = 1
+
+    if body.description is not None:
+        updates["user_modified"] = 1
 
     if not updates:
         return get_skill_detail(skill_id)
@@ -347,6 +351,7 @@ def upsert_skill_file(skill_id: int, path: str, body: SkillFileCreate):
         """,
         (skill_id, valid_path, body.content, content_len, now),
     )
+    conn.execute("UPDATE skills SET user_modified = 1, updated_at = ? WHERE id = ?", (now, skill_id))
     conn.commit()
     return {"ok": True, "path": valid_path, "size": content_len, "updated_at": now}
 

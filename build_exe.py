@@ -58,7 +58,8 @@ def _write_version_file() -> Path:
 
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    parts = [int(x) for x in VERSION.split(".")]
+    clean_v = re.match(r"^\d+(\.\d+)*", VERSION).group(0) if re.match(r"^\d+(\.\d+)*", VERSION) else "1.0.0"
+    parts = [int(x) for x in clean_v.split(".")]
 
     parts += [0] * (4 - len(parts))
 

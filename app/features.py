@@ -119,12 +119,29 @@ def resolve_skill(skill_id: int | None, task: str):
             raise HTTPException(status_code=400, detail=f"指定的 Skill「{skill_row['title']}」已被禁用")
     else:
         # 兜底：根据 task 匹配默认 builtin Skill
-        # 前端任务名与技能 applies_to 命名存在历史差异，统一映射
-        TASK_SKILL_MAP = {"condense": "shorten", "polish": "rewrite", "analyze": "analysis", "check": "audit"}
+        # 支持 alias 映射、前端任务名与历史 applies_to 映射
+        TASK_SKILL_MAP = {
+            "condense": "shorten",
+            "polish": "rewrite",
+            "analyze": "analysis",
+            "check": "audit",
+            "prose-continue": "continue",
+            "prose-expand": "expand",
+            "prose-polish": "rewrite",
+            "audit-synopsis-distill": "shorten",
+            "novel-outline-macro": "outline",
+            "audit-consistency": "audit",
+            "audit-pacing-rhythm": "analysis",
+            "audit-de-aitone": "rewrite",
+        }
         skill_task = TASK_SKILL_MAP.get(task, task)
-        cand_names = [f"default-{skill_task}", "default-continue"]
+        cand_names = [
+            f"default-{skill_task}",
+            skill_task,
+            f"default-continue",
+        ]
         for cn in cand_names:
-            skill_row = db.execute("SELECT * FROM skills WHERE name = ?", (cn,)).fetchone()
+            skill_row = db.execute("SELECT * FROM skills WHERE name = ? AND enabled = 1", (cn,)).fetchone()
             if skill_row:
                 break
 

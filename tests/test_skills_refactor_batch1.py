@@ -11,7 +11,8 @@ def test_triad_and_writing_skills_contract_pure_text(client):
     expected_names = {
         "default-continue", "default-expand", "default-shorten", "default-rewrite",
         "default-outline", "default-audit", "default-analysis", "novel-premise",
-        "novel-world", "novel-cast", "novel-scene", "novel-forge", "de-ai-tone"
+        "novel-world", "novel-cast", "novel-scene", "novel-forge", "de-ai-tone",
+        "novel-timeline", "novel-foreshadow", "novel-magic-system", "prose-combat", "audit-timeline", "audit-foreshadow",
     }
     assert set(skills_map.keys()) == expected_names
     

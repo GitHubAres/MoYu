@@ -132,7 +132,9 @@ def strip_heading_only_lines(text: str) -> tuple[str, list[dict]]:
 
 
 def extract_assets_block(text: str) -> dict | None:
-    """解析 <!-- MOYU:ASSETS ... MOYU:ASSETS --> 资产契约块，严格容错解析。"""
+    """解析 <!-- MOYU:ASSETS ... MOYU:ASSETS --> 资产契约块，严格容错解析。
+    取文本中最后一个匹配块，防范前文引用的示例干扰；若未闭合尝试末尾宽容补齐。
+    """
     if not text:
         return None
     patterns = [
@@ -141,10 +143,24 @@ def extract_assets_block(text: str) -> dict | None:
     ]
     raw_json = None
     for pat in patterns:
-        match = re.search(pat, text, re.IGNORECASE)
-        if match:
-            raw_json = match.group(1).strip()
+        matches = list(re.finditer(pat, text, re.IGNORECASE))
+        if matches:
+            raw_json = matches[-1].group(1).strip()
             break
+
+    # 宽容处理：如果因 token 截断未闭合
+    if raw_json is None and "<!-- MOYU:ASSETS" in text.upper():
+        idx = text.upper().rfind("<!-- MOYU:ASSETS")
+        tail = text[idx + len("<!-- MOYU:ASSETS"):].strip()
+        # 去掉可能的开门注释符号
+        if tail.startswith("-->"):
+            tail = tail[3:].strip()
+        # 补齐尾部
+        if "{" in tail and not tail.endswith("}"):
+            raw_json = tail + "}"
+        else:
+            raw_json = tail
+
     if raw_json is None:
         return None
     # 剥离 markdown 代码围栏
@@ -277,22 +293,26 @@ SKILL_ASSET_CONTRACTS: dict[str, list[str]] = {
     # 正文类：以续写/扩写时"涌现资产"为主
     "default-continue": ["entities", "foreshadows", "timeline_events"],
     "default-expand":   ["entities", "foreshadows", "timeline_events"],
-    "default-shorten":  ["notes"],
+    "default-shorten":  ["chapter_synopses", "notes"],
     "default-rewrite":  ["notes"],
+    "prose-combat":     ["timeline_events", "notes"],
     # 规划类
-    "default-outline":  ["work_info", "outline_nodes", "entities", "relations", "foreshadows"],
-    "novel-premise":    ["work_info", "entities", "notes"],
-    "novel-world":      ["entities", "relations", "timeline_events", "notes"],
-    "novel-cast":       ["entities", "relations"],
-    "novel-scene":      ["outline_nodes", "foreshadows", "entities", "timeline_events"],
-    # novel-forge 为流程编排总控，自身直接沉淀编排与推演产物（实体/关系/时间线/伏笔/大纲/术语），
-    # 逐章梗概与细化立项由其路由的对应子技能（default-shorten / novel-premise 等）专项产出
-    "novel-forge":      ["entities", "relations", "timeline_events",
-                         "foreshadows", "outline_nodes", "notes"],
+    "default-outline":    ["work_info", "outline_nodes", "entities", "relations", "foreshadows"],
+    "novel-premise":      ["work_info", "entities", "notes"],
+    "novel-world":        ["entities", "relations", "timeline_events", "notes"],
+    "novel-cast":         ["entities", "relations"],
+    "novel-scene":        ["outline_nodes", "foreshadows", "entities", "timeline_events"],
+    "novel-timeline":     ["timeline_events"],
+    "novel-foreshadow":   ["foreshadows", "timeline_events"],
+    "novel-magic-system": ["entities", "notes"],
+    "novel-forge":        ["entities", "relations", "timeline_events",
+                           "foreshadows", "outline_nodes", "notes"],
     # 审校类：以 notes（问题/评分/改动）沉淀为主
     "default-audit":    ["notes"],
     "default-analysis": ["work_info", "notes"],
     "de-ai-tone":       ["notes"],
+    "audit-timeline":   ["timeline_events", "notes"],
+    "audit-foreshadow": ["foreshadows", "notes"],
 }
 
 
