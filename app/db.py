@@ -1477,7 +1477,13 @@ def migrate_and_seed_skills(conn: sqlite3.Connection | None = None):
 
 
 def seed_builtin_workflows(conn: sqlite3.Connection | None = None):
-    """内置示例工作流种子：章节标准生产流 + 新书开坑五连流。幂等（按名字+builtin 判重）。"""
+    """基于 v2.5.0 最新 24 项全景 Skill 矩阵，构建 5 大高价值工业级预设工作流：
+    1. 单章极致研磨流 (5步)：细纲节拍 -> 顺流续写 -> 潜台词对白精炼 -> 剧情一致性巡检 -> 沉香精修定稿
+    2. 新书全景开炉孵化流 (6步)：灵感立项 -> 世界观法则 -> 万相谱群像 -> 势力割据拓扑 -> 分卷宏观总纲 -> 首章分场细纲
+    3. 惊险博弈高潮戏精雕流 (4步)：武戏动作拆解 -> 五感通感临场摹写 -> 伏笔反转收网核验 -> 黄金章末卡点断章
+    4. 剧情时序与逻辑质检流 (3步)：剧情大事件时序编织 -> 剧情吃书与状态巡检 -> 剧情心电图张弛诊断
+    5. 全书核心设定推演流 (4步)：修炼战力法则与代价 -> 阵营割据博弈动力学 -> 草蛇灰线伏笔布网 -> 主角命途蜕变轨迹
+    """
     if conn is None:
         conn = get_db()
 
@@ -1485,35 +1491,90 @@ def seed_builtin_workflows(conn: sqlite3.Connection | None = None):
         row = conn.execute("SELECT id FROM skills WHERE name = ?", (name,)).fetchone()
         return row[0] if row else None
 
+    # 清理所有旧版 builtin 工作流定义，确保全面刷新为 5 大新工作流
+    old_builtin_wf_ids = [r[0] for r in conn.execute("SELECT id FROM workflows WHERE builtin = 1").fetchall()]
+    for old_wfid in old_builtin_wf_ids:
+        conn.execute("DELETE FROM workflow_steps WHERE workflow_id = ?", (old_wfid,))
+        conn.execute("DELETE FROM workflows WHERE id = ?", (old_wfid,))
+
     samples = [
         {
-            "name": "章节标准生产流",
-            "description": "一章的标准生产流程：生成草稿 → 一致性检查 → 润色定稿。草稿完成后需人工确认，检查与润色自动衔接。",
-            "icon": "alt_route",
+            "name": "单章极致研磨流",
+            "description": "单章工业级闭环：分场细纲节拍 → 顺流执笔推进 → 机锋对白雕琢 → 剧情吃书冲突巡检 → 沉香去AI腔精修定稿。关键生成与质检设确认闸。",
+            "icon": "edit_note",
             "steps": [
-                ("生成本章草稿", "prose-continue", "chapter", None,
-                 "顺着本章已有内容与上下文续写本章草稿，保持人物口吻与文风一致。", "medium", 1),
-                ("一致性检查", "audit-consistency", "prev_output", 0,
-                 "对上一步生成的草稿做设定一致性检查，只输出问题清单，不要修改文本。", "medium", 0),
-                ("润色定稿", "prose-polish", "prev_output", 0,
-                 "在保持情节与设定不变的前提下润色草稿文字，去除 AI 腔与总结式收尾。", "medium", 0),
+                ("分场节拍排布", "novel-scene", "chapter", None,
+                 "结合当前章节目标，梳理3~4场戏剧冲突动作与出入点。", "medium", 1),
+                ("顺流执笔正文", "prose-continue", "prev_output", 0,
+                 "依据上一步分场细纲顺承文势撰写正文，保持人物文风，杜绝AI套话。", "long", 1),
+                ("机锋对白雕琢", "prose-dialogue", "prev_output", 1,
+                 "精炼本章人物对话，注入潜台词交锋与身份口癖，强化心理博弈。", "long", 0),
+                ("吃书漏洞巡检", "audit-consistency", "prev_output", 2,
+                 "比对设定集与伏笔池，严格排查本章是否存在人物状态矛盾或设定吃书穿帮。", "medium", 1),
+                ("沉香精修定稿", "prose-polish", "prev_output", 2,
+                 "在保持剧情不变前提下剔除AI假大空虚词，增强动词与行文质感完成定稿。", "long", 0),
             ],
         },
         {
-            "name": "新书开坑五连流",
-            "description": "从一个想法到可落笔的细纲：立项 → 世界观 → 人物 → 大纲 → 分场细纲。每个阶段完成后停下来由你确认，再进入下一阶段。",
+            "name": "新书全景开炉孵化流",
+            "description": "从灵感碎片到万字细纲闭环孵化：核心立项与金手指 → 世界观法则 → 万相谱群像 → 势力割据拓扑 → 分卷宏观总纲 → 首章分场细纲。",
             "icon": "hub",
             "steps": [
-                ("故事立项", "novel-premise", "none", None,
-                 "我只有一个初步想法，请帮我做故事立项与定位。", "medium", 1),
-                ("世界观设定", "novel-world", "prev_output", 0,
-                 "基于已确认的立项方向搭建世界观与规则体系。", "long", 1),
-                ("人物与关系", "novel-cast", "merge", 1,
-                 "基于立项与世界观设定，设计主要人物档案与关系网。", "long", 1),
-                ("故事大纲", "novel-outline-macro", "merge", 2,
-                 "基于立项、世界观与人物设定，生成故事大纲与伏笔回收计划。", "long", 1),
-                ("首章分场细纲", "novel-scene", "prev_output", 3,
-                 "把大纲的第一章拆成可落笔的分场细纲。", "long", 1),
+                ("核心立项与卖点", "novel-premise", "none", None,
+                 "基于灵感碎片提炼核心困局、金手指差异化优势与全书主线引擎。", "medium", 1),
+                ("世界观底层法则", "novel-world", "prev_output", 0,
+                 "构筑三界九域地理版图、文明历史底色与不可动摇的超自然法则代价。", "long", 1),
+                ("万相谱群像档案", "novel-cast", "merge", 1,
+                 "设计主角、核心配角与宿敌的欲望、软肋与人物纠缠关系。", "long", 1),
+                ("势力割据博弈网", "novel-faction-graph", "merge", 2,
+                 "梳理各大宗门、王朝与隐秘势力的地盘利益、表面盟约与暗中宿怨。", "long", 1),
+                ("分卷宏观大主线", "novel-outline-macro", "merge", 3,
+                 "规划全书分卷起承转合、阶段性波峰危机与大高潮节拍。", "long", 1),
+                ("首章分场微细纲", "novel-scene", "prev_output", 4,
+                 "拆解第一卷首章的3场入场动作、悬念阻碍与章末黄金钩子。", "long", 1),
+            ],
+        },
+        {
+            "name": "惊险博弈高潮戏精雕流",
+            "description": "专打硬仗的高潮戏重度研磨：武戏拆招与博弈 → 五感通感临场摹写 → 伏笔反转收网核验 → 黄金章末卡点断章留钩子。",
+            "icon": "sports_martial_arts",
+            "steps": [
+                ("武戏拆招与攻防", "prose-combat", "chapter", None,
+                 "充分利用环境掩体展开刀兵法术碰撞，写出受力反馈与内息代价，拒绝无痛假打。", "long", 1),
+                ("五感通感临场感", "prose-sensory", "prev_output", 0,
+                 "调动冷热触觉、气味与声响留白，大幅提升高潮大战的临场压迫感。", "long", 0),
+                ("伏笔反转收网核验", "audit-foreshadow", "prev_output", 1,
+                 "核对本场大战中揭开的伏笔线索是否逻辑自洽、有据可循。", "medium", 1),
+                ("章末黄金钩子设计", "novel-hook-engineer", "prev_output", 1,
+                 "在高潮余波处提炼最具悬念的卡点断章钩子，引爆读者强烈追读期待。", "short", 0),
+            ],
+        },
+        {
+            "name": "剧情时序与逻辑质检流",
+            "description": "防吃书防崩坏安全网：剧情大事件时序编织 → 剧情吃书与状态巡检 → 剧情心电图张弛诊断。",
+            "icon": "verified_user",
+            "steps": [
+                ("剧情时序大事件编织", "novel-timeline", "chapter", None,
+                 "提取本卷或本章关键剧情节点与时间锚点，校验位移时耗与因果先后。", "medium", 1),
+                ("吃书与逻辑矛盾排查", "audit-consistency", "chapter", None,
+                 "严格比对万相谱设定集与伏笔池，列出所有伤势、境界或道具状态冲突。", "medium", 1),
+                ("剧情心电图张弛诊断", "audit-pacing-rhythm", "chapter", None,
+                 "按松紧维度对正文进行节奏量化诊断，指出平淡尿点与高潮密度。", "medium", 0),
+            ],
+        },
+        {
+            "name": "全书核心设定推演流",
+            "description": "长篇小说骨架硬核设定推演：战力阶梯与代价平衡 → 阵营割据博弈动力学 → 草蛇灰线伏笔布网 → 主角命途心境轨迹。",
+            "icon": "military_tech",
+            "steps": [
+                ("战力法则与代价平衡", "novel-magic-system", "none", None,
+                 "设计修炼大境界阶梯、质变标志与严苛的反噬代价值，防御战力通胀。", "long", 1),
+                ("阵营割据与利益对抗", "novel-faction-graph", "prev_output", 0,
+                 "推演宗派与势力格局的利益分配、核威慑力量与敌友转换触发点。", "long", 1),
+                ("草蛇灰线暗线布网", "novel-foreshadow-matrix", "merge", 1,
+                 "围绕核心世界观秘密编织贯穿全书的伏笔暗线，规划三段式回收节拍。", "long", 1),
+                ("主角道心蜕变轨迹", "novel-lead-arc", "merge", 2,
+                 "梳理主角从初始信念到崩溃至暗时刻、再到道心重塑的成长弧光。", "long", 1),
             ],
         },
     ]

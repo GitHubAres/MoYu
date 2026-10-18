@@ -60,10 +60,12 @@ def test_workflow_summary_assets_and_auto_intake_flow(client):
     })
 
     # 2. 模拟创建工作流运行实例
+    valid_wf = db.execute("SELECT id FROM workflows LIMIT 1").fetchone()
+    wf_id = valid_wf[0] if valid_wf else 1
     cur = db.execute(
         """INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step)
-           VALUES (1, ?, ?, 'running', 0)""",
-        (work_id, chapter_id)
+           VALUES (?, ?, ?, 'running', 0)""",
+        (wf_id, work_id, chapter_id)
     )
     run_id = cur.lastrowid
 
@@ -263,10 +265,12 @@ def test_workflow_sync_assets_apply_to_chapter_and_versions(client):
     db = get_db()
 
     # 1. 模拟工作流运行实例（工作流本身可能无 chapter_id，通过请求 body 传入目标 chapter_id）
+    valid_wf = db.execute("SELECT id FROM workflows LIMIT 1").fetchone()
+    wf_id = valid_wf[0] if valid_wf else 1
     cur = db.execute(
         """INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step)
-           VALUES (1, ?, NULL, 'running', 0)""",
-        (work_id,)
+           VALUES (?, ?, NULL, 'running', 0)""",
+        (wf_id, work_id)
     )
     run_id = cur.lastrowid
 
@@ -329,10 +333,12 @@ def test_workflow_sync_assets_append_mode(client):
     db.commit()
 
     # 2. 模拟工作流步骤产出
+    valid_wf = db.execute("SELECT id FROM workflows LIMIT 1").fetchone()
+    wf_id = valid_wf[0] if valid_wf else 1
     cur = db.execute(
         """INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step)
-           VALUES (1, ?, ?, 'running', 0)""",
-        (work_id, chapter_id)
+           VALUES (?, ?, ?, 'running', 0)""",
+        (wf_id, work_id, chapter_id)
     )
     run_id = cur.lastrowid
 

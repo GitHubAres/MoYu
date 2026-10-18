@@ -29,24 +29,27 @@ def _wait_run_status(client, run_id: int, target_statuses=("awaiting_review", "d
 # ==================== 1. CRUD 测试 ====================
 
 def test_workflow_seed_builtins(client):
-    """测试系统内置的两个示例工作流自动播种就绪且不可删除。"""
+    """测试系统内置的 5 大全新工业级工作流自动播种就绪且不可删除。"""
     res = client.get("/api/workflows")
     assert res.status_code == 200
     wfs = res.json()
     builtins = [w for w in wfs if w["builtin"] == 1]
-    assert len(builtins) >= 2
+    assert len(builtins) >= 5
     names = {w["name"] for w in builtins}
-    assert "章节标准生产流" in names
-    assert "新书开坑五连流" in names
+    assert "单章极致研磨流" in names
+    assert "新书全景开炉孵化流" in names
+    assert "惊险博弈高潮戏精雕流" in names
+    assert "剧情时序与逻辑质检流" in names
+    assert "全书核心设定推演流" in names
 
-    # 内置工作流 steps 结构检查
-    std_wf = next(w for w in builtins if w["name"] == "章节标准生产流")
+    # 内置工作流 steps 结构检查：单章极致研磨流 包含 5 步
+    std_wf = next(w for w in builtins if w["name"] == "单章极致研磨流")
     detail = client.get(f"/api/workflows/{std_wf['id']}").json()
-    assert len(detail["steps"]) == 3
-    # 步骤0 开启确认闸，后续步骤不设确认闸
+    assert len(detail["steps"]) == 5
+    # 步骤0、1、3 开启确认闸
     assert detail["steps"][0]["requires_review"] == 1
-    assert detail["steps"][1]["requires_review"] == 0
-    assert detail["steps"][2]["requires_review"] == 0
+    assert detail["steps"][1]["requires_review"] == 1
+    assert detail["steps"][3]["requires_review"] == 1
 
 
 def test_workflow_create_and_validation(client):
@@ -139,15 +142,15 @@ def test_workflow_delete_custom_and_builtin_forbidden(client):
 def test_workflow_duplicate(client):
     """测试创建副本（自动追加副本后缀并完整拷贝步骤）。"""
     res = client.get("/api/workflows").json()
-    std = next(w for w in res if w["name"] == "章节标准生产流")
+    std = next(w for w in res if w["name"] == "单章极致研磨流")
 
     dup_res = client.post(f"/api/workflows/{std['id']}/duplicate")
     assert dup_res.status_code == 200
     dup = dup_res.json()
-    assert dup["name"] == "章节标准生产流（副本）"
+    assert dup["name"] == "单章极致研磨流（副本）"
     assert dup["builtin"] == 0
-    assert len(dup["steps"]) == 3
-    assert dup["steps"][0]["title"] == "生成本章草稿"
+    assert len(dup["steps"]) == 5
+    assert dup["steps"][0]["title"] == "分场节拍排布"
 
 
 # ==================== 2. 步骤编排测试 ====================
@@ -203,7 +206,8 @@ def test_start_run_preflight_checks(client):
 
     # 1. 未配置 AI 接口
     client.patch("/api/settings", json={"values": {"ai_api_key": "", "ai_model": ""}})
-    r1 = client.post("/api/workflows/1/runs", json={"work_id": work["id"], "chapter_id": chapter["id"]})
+    first_wf = client.get("/api/workflows").json()[0]
+    r1 = client.post(f"/api/workflows/{first_wf['id']}/runs", json={"work_id": work["id"], "chapter_id": chapter["id"]})
     assert r1.status_code == 400
     assert "未配置 AI" in r1.json()["detail"]
 
@@ -231,7 +235,7 @@ def test_start_run_preflight_checks(client):
 
     # 5. 章节不属于该作品
     other_work = make_work(client, "另一部作品")
-    r5 = client.post("/api/workflows/1/runs", json={"work_id": other_work["id"], "chapter_id": chapter["id"]})
+    r5 = client.post(f"/api/workflows/{first_wf['id']}/runs", json={"work_id": other_work["id"], "chapter_id": chapter["id"]})
     assert r5.status_code == 400
     assert "不属于" in r5.json()["detail"]
 
@@ -333,36 +337,42 @@ def test_run_context_truncation(client):
 # ==================== 4. 人工确认闸测试 ====================
 
 def test_review_gate_pauses_and_approve(client):
-    """步骤 requires_review=1 时暂停挂起（awaiting_review），approve 后继续推进。"""
+    """测试 requires_review=1 时暂停在 awaiting_review，approve 唤醒推进。"""
     work, volume, chapter = make_wvc(client, "确认闸作品")
     client.patch("/api/settings", json={"values": {"ai_api_key": "mock-key", "ai_model": "mock-model"}})
 
-    # 使用内置的「章节标准生产流」（步 0 requires_review=1，步 1、2 不设确认闸）
-    res = client.get("/api/workflows").json()
-    std_wf = next(w for w in res if w["name"] == "章节标准生产流")
+    # 构建一个步 0 设闸，后续步骤不设闸的 3 步工作流验证 review 推进语义
+    wf = client.post("/api/workflows", json={
+        "name": "测试确认闸工作流",
+        "steps": [
+            {"title": "第1步有闸", "input_mode": "chapter", "requires_review": 1},
+            {"title": "第2步无闸", "input_mode": "prev_output", "prev_step_seq": 0, "requires_review": 0},
+            {"title": "第3步无闸", "input_mode": "prev_output", "prev_step_seq": 1, "requires_review": 0},
+        ]
+    }).json()
 
     with patch("app.workflow_engine.chat", new_callable=AsyncMock) as m:
-        m.return_value = ("草稿第1版内容", 100)
-        start_res = client.post(f"/api/workflows/{std_wf['id']}/runs", json={"work_id": work["id"], "chapter_id": chapter["id"]})
+        m.return_value = ("草稿第1步产出", 100)
+        start_res = client.post(f"/api/workflows/{wf['id']}/runs", json={"work_id": work["id"], "chapter_id": chapter["id"]})
         run_id = start_res.json()["run_id"]
 
-        # 等待步 0 跑完进入 awaiting_review
+        # 等待步 0 运行完进入 awaiting_review
         d1 = _wait_run_status(client, run_id, target_statuses=("awaiting_review", "done"))
         assert d1["status"] == "awaiting_review"
         assert d1["steps"][0]["status"] == "awaiting_review"
         assert d1["steps"][1]["status"] == "pending"
 
-        # 触发 approve 采纳并继续
-        m.return_value = ("后续步骤产出", 80)
-        rev_res = client.post(f"/api/workflows/runs/{run_id}/steps/0/review", json={"action": "approve", "note": "满意"})
+        # 步骤 approve 触发下游推进
+        m.return_value = ("第二步成果文本", 80)
+        rev_res = client.post(f"/api/workflows/runs/{run_id}/steps/0/review", json={"action": "approve", "note": "通过"})
         assert rev_res.status_code == 200
         assert rev_res.json()["status"] == "running"
 
-        # 等待全流程跑完
+        # 等待全部步骤完成
         d2 = _wait_run_status(client, run_id, target_statuses=("done",))
         assert d2["status"] == "done"
         assert d2["steps"][0]["status"] == "approved"
-        assert d2["steps"][0]["review_note"] == "满意"
+        assert d2["steps"][0]["review_note"] == "通过"
         assert d2["steps"][1]["status"] == "approved"
         assert d2["steps"][2]["status"] == "approved"
         time.sleep(0.05)
@@ -862,9 +872,11 @@ def test_sync_workflow_assets_apply_to_chapter(client):
     db = get_db()
 
     # 创建一个绑定 chapter_id 的 workflow_run
+    valid_wf = db.execute("SELECT id FROM workflows LIMIT 1").fetchone()
+    wf_id = valid_wf[0] if valid_wf else 1
     cur = db.execute(
-        "INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step) VALUES (1, ?, ?, 'running', 0)",
-        (work_id, chapter_id),
+        "INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step) VALUES (?, ?, ?, 'running', 0)",
+        (wf_id, work_id, chapter_id),
     )
     run_id = cur.lastrowid
     db.commit()
@@ -904,9 +916,11 @@ def test_sync_workflow_assets_chapter_synopses(client):
     db.commit()
 
     # 创建 run
+    valid_wf = db.execute("SELECT id FROM workflows LIMIT 1").fetchone()
+    wf_id = valid_wf[0] if valid_wf else 1
     cur_run = db.execute(
-        "INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step) VALUES (1, ?, ?, 'running', 0)",
-        (work_id, chapter["id"]),
+        "INSERT INTO workflow_runs (workflow_id, work_id, chapter_id, status, current_step) VALUES (?, ?, ?, 'running', 0)",
+        (wf_id, work_id, chapter["id"]),
     )
     run_id = cur_run.lastrowid
     db.commit()
