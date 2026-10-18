@@ -1348,12 +1348,25 @@ def migrate_and_seed_skills(conn: sqlite3.Connection | None = None):
         conn = get_db()
 
     # 0. 彻底清理 v2.5.0 前未修改的旧预设 Skill，全面切换至全新 24 项全景 Skill 矩阵
-    old_preset_names = [
-        "default-continue", "default-expand", "default-shorten", "default-rewrite",
-        "default-outline", "default-audit", "default-analysis", "de-ai-tone"
-    ]
-    for old_n in old_preset_names:
-        conn.execute("DELETE FROM skills WHERE name = ? AND user_modified = 0 AND source = 'builtin'", (old_n,))
+    # 建立旧名称到新名称的安全迁移映射，解绑外键
+    migration_map = {
+        "default-continue": "prose-continue",
+        "default-expand": "prose-expand",
+        "default-shorten": "audit-synopsis-distill",
+        "default-rewrite": "prose-polish",
+        "default-outline": "novel-outline-macro",
+        "default-audit": "audit-consistency",
+        "default-analysis": "audit-pacing-rhythm",
+        "de-ai-tone": "audit-de-aitone",
+    }
+    for old_n, new_n in migration_map.items():
+        old_row = conn.execute("SELECT id FROM skills WHERE name = ?", (old_n,)).fetchone()
+        if old_row:
+            old_id = old_row[0]
+            # 临时置空或更新步骤中的引用，杜绝外键级联阻止
+            conn.execute("UPDATE workflow_steps SET skill_id = NULL WHERE skill_id = ?", (old_id,))
+            conn.execute("DELETE FROM skill_files WHERE skill_id = ?", (old_id,))
+            conn.execute("DELETE FROM skills WHERE id = ? AND user_modified = 0 AND source = 'builtin'", (old_id,))
 
     # 1. 检查是否已完成迁移
     migrated_row = conn.execute("SELECT value FROM app_settings WHERE key = 'skill_migration_done'").fetchone()
