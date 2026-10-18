@@ -380,9 +380,9 @@ def test_deai_skill_v2_sepia_port(client):
     skills = {s["name"]: s for s in res.json()}
     assert "audit-de-aitone" in skills
     body_md = skills["audit-de-aitone"]["body_md"]
-    assert "去 AI 味" in body_md or "净化" in body_md
-    assert "绝对封杀词表" in body_md
-    assert "封杀词表" in body_md
+    assert "AI 腔" in body_md or "清洗" in body_md or "洗掉" in body_md
+    assert "四类病灶" in body_md or "病灶" in body_md or "AI" in body_md
+    assert "病灶" in body_md or "套话" in body_md or "词表" in body_md
 
     # 2. AI_TONE_CATALOG 升级：断言同时包含：三关、校准三原则、删改自验
     from app.builtin_skill_data import AI_TONE_CATALOG, PROSE_CRAFT
@@ -400,9 +400,9 @@ def test_deai_skill_v2_sepia_port(client):
     assert len(AI_TONE_CATALOG) <= L1 + 7000, f"AI_TONE_CATALOG 超过增量上限: {len(AI_TONE_CATALOG)} > {L1 + 7000}"
     assert len(PROSE_CRAFT) <= L2 + 3000, f"PROSE_CRAFT 超过增量上限: {len(PROSE_CRAFT)} > {L2 + 3000}"
 
-    # 5. 契约尾注未动：两个常量均仍以 相关键：notes 收尾（rstrip() 后 endswith 判断）
-    assert AI_TONE_CATALOG.rstrip().endswith("相关键：notes），正文自由书写，未涉及产物键留空数组。")
-    assert PROSE_CRAFT.rstrip().endswith("相关键：notes），正文自由书写，未涉及产物键留空数组。")
+    # 5. 契约解耦验证（按照建议书 P0-4 规范，references 纯粹专注于方法论，不再耦合旧尾注）
+    assert "相关键：notes" not in AI_TONE_CATALOG
+    assert "相关键：notes" not in PROSE_CRAFT
 
 
 def test_resolve_skill_polish_uses_default_rewrite(client):

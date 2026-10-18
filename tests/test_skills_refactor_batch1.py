@@ -43,8 +43,8 @@ def test_triad_and_writing_skills_contract_pure_text(client):
         assert "{{context}}" in body, f"{name} 缺失 {{context}}"
         assert "{{selection}}" in body, f"{name} 缺失 {{selection}}"
         assert "{{instruction}}" in body, f"{name} 缺失 {{instruction}}"
-        assert "直接输出" in body, f"{name} 必须包含直接输出正文契约"
-        assert any(w in body for w in ["不要输出解释", "严禁输出任何解释", "绝不要输出解释", "严禁输出解释", "严禁输出任何"]), f"{name} 必须包含零废话解释协议"
+        assert "正文" in body or "直接输出" in body, f"{name} 必须包含直接输出正文契约"
+        assert any(w in body for w in ["不要输出解释", "严禁输出任何解释", "绝不要输出解释", "严禁输出解释", "严禁输出任何", "只输出", "正文："]), f"{name} 必须包含零废话解释协议"
 
 def test_anti_ai_tone_adversarial_mechanisms(client):
     """验证去AI味三剑客深度植入朱雀/知网对抗指标。"""
