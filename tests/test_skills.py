@@ -28,9 +28,9 @@ def test_skills_seed_and_builtin_protection(client):
 
     names = {s["name"] for s in builtins}
     expected = {
-        "default-continue", "default-expand", "default-shorten",
-        "default-rewrite", "default-outline", "default-audit"
-    }
+            "prose-continue", "prose-expand", "audit-synopsis-distill",
+            "prose-polish", "novel-outline-macro", "audit-consistency"
+        }
     assert expected.issubset(names)
 
     # 尝试删除内置 Skill 必须被 403 拦截
@@ -282,7 +282,7 @@ def test_build_skill_fallback_and_disabled_error(client):
     """测试缺省兜底内置 Skill 与禁用 Skill 400 拦截。"""
     # 1. 不传 skill_id，默认走 continue 对应的 default-continue 内置 Skill
     prompt_text, _ = build_skill_system_prompt(skill_id=None, task="continue")
-    assert "default-continue" in prompt_text
+    assert "prose-continue" in prompt_text
 
     # 2. 创建并禁用一个 Skill
     c = client.post("/api/skills", json={
@@ -339,15 +339,15 @@ def test_builtin_skills_v1710(client):
     """v1.7.10：新增 default-analysis / de-ai-tone 内置技能，大纲与设定检查覆盖为方法论参考版。"""
     db = get_db()
     rows = {r["name"]: r for r in db.execute("SELECT * FROM skills WHERE source='builtin'")}
-    assert "default-analysis" in rows
-    assert rows["default-analysis"]["applies_to"] == "analysis"
-    assert "de-ai-tone" in rows
-    assert rows["de-ai-tone"]["applies_to"] == "rewrite"
+    assert "audit-pacing-rhythm" in rows
+    assert rows["audit-pacing-rhythm"]["applies_to"] == "analysis"
+    assert "audit-de-aitone" in rows
+    assert rows["audit-de-aitone"]["applies_to"] == "de-ai-tone"
     for name, ref in [
-        ("default-outline", "references/structure-models.md"),
-        ("default-audit", "references/consistency-taxonomy.md"),
-        ("default-analysis", "references/analysis-rubric.md"),
-        ("de-ai-tone", "references/ai-tone-catalog.md"),
+        ("novel-outline-macro", "references/structure-models.md"),
+        ("audit-consistency", "references/consistency-taxonomy.md"),
+        ("audit-pacing-rhythm", "references/analysis-rubric.md"),
+        ("audit-de-aitone", "references/ai-tone-catalog.md"),
     ]:
         f = db.execute(
             "SELECT content FROM skill_files WHERE skill_id=? AND path=?",
@@ -360,8 +360,8 @@ def test_builtin_skills_v1710(client):
 def test_analyze_task_resolves_default_analysis(client):
     """analyze 任务不传 skill_id 时，经映射兜底命中 default-analysis 内置技能。"""
     prompt_text, _ = build_skill_system_prompt(skill_id=None, task="analyze")
-    assert "default-analysis" in prompt_text
-    assert "分析·十维体检" in prompt_text
+    assert "audit-pacing-rhythm" in prompt_text
+    assert "剧情心电图" in prompt_text
 
 
 def test_analysis_rubric_fully_inlined(client):
@@ -378,11 +378,11 @@ def test_deai_skill_v2_sepia_port(client):
     res = client.get("/api/skills")
     assert res.status_code == 200
     skills = {s["name"]: s for s in res.json()}
-    assert "de-ai-tone" in skills
-    body_md = skills["de-ai-tone"]["body_md"]
-    assert "校准三原则" in body_md
-    assert "操作模式" in body_md
-    assert "74/18/8" in body_md
+    assert "audit-de-aitone" in skills
+    body_md = skills["audit-de-aitone"]["body_md"]
+    assert "去 AI 味" in body_md or "净化" in body_md
+    assert "绝对封杀词表" in body_md
+    assert "封杀词表" in body_md
 
     # 2. AI_TONE_CATALOG 升级：断言同时包含：三关、校准三原则、删改自验
     from app.builtin_skill_data import AI_TONE_CATALOG, PROSE_CRAFT
@@ -410,8 +410,8 @@ def test_resolve_skill_polish_uses_default_rewrite(client):
     from app.features import resolve_skill
     skill = resolve_skill(None, "polish")
     assert skill is not None
-    assert skill["name"] == "default-rewrite"
-    assert "校准三原则" in skill["body_md"]
+    assert skill["name"] == "prose-polish"
+    assert "精修" in skill["body_md"]
 
 
 def test_resolve_skill_check_uses_default_audit(client):
@@ -419,14 +419,14 @@ def test_resolve_skill_check_uses_default_audit(client):
     from app.features import resolve_skill
     skill = resolve_skill(None, "check")
     assert skill is not None
-    assert skill["name"] == "default-audit"
+    assert skill["name"] == "audit-consistency"
 
 
 def test_default_rewrite_files_contain_ai_tone_catalog(client):
     """T-1a (3): default-rewrite 在 skill_files 中包含 references/ai-tone-catalog.md"""
     from app.db import get_db
     db = get_db()
-    row = db.execute("SELECT id FROM skills WHERE name = 'default-rewrite'").fetchone()
+    row = db.execute("SELECT id FROM skills WHERE name = 'prose-polish'").fetchone()
     assert row is not None
     skill_id = row[0]
     files = db.execute("SELECT path FROM skill_files WHERE skill_id = ?", (skill_id,)).fetchall()

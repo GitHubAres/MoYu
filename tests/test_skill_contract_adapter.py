@@ -16,10 +16,30 @@ from app.features import build_skill_system_prompt, get_alchemy_engine, _ImportL
 from app.services.output_normalizer import SKILL_ASSET_CONTRACTS, build_contract_clause
 
 EXPECTED_NAMES = {
-    "default-continue", "default-expand", "default-shorten", "default-rewrite",
-    "default-outline", "default-audit", "default-analysis", "novel-premise",
-    "novel-world", "novel-cast", "novel-scene", "novel-forge", "de-ai-tone",
-    "novel-timeline", "novel-foreshadow", "novel-magic-system", "prose-combat", "audit-timeline", "audit-foreshadow",
+    "audit-consistency",
+    "audit-de-aitone",
+    "audit-foreshadow",
+    "audit-pacing-rhythm",
+    "audit-synopsis-distill",
+    "audit-timeline",
+    "novel-cast",
+    "novel-faction-graph",
+    "novel-foreshadow-matrix",
+    "novel-forge",
+    "novel-hook-engineer",
+    "novel-lead-arc",
+    "novel-magic-system",
+    "novel-outline-macro",
+    "novel-premise",
+    "novel-scene",
+    "novel-timeline",
+    "novel-world",
+    "prose-combat",
+    "prose-continue",
+    "prose-dialogue",
+    "prose-expand",
+    "prose-polish",
+    "prose-sensory",
 }
 
 OLD_SOFT_CLAUSE = "请在回答末尾追加合法的"

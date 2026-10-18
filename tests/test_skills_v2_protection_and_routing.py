@@ -8,7 +8,7 @@ def test_user_modified_skill_protection(client):
     """验证当用户微调过某个内置技能后，系统重启/重新初始化种子不会覆盖用户修改。"""
     db = get_db()
     # 模拟用户微调了 default-continue
-    skill = db.execute("SELECT id, body_md FROM skills WHERE name = 'default-continue'").fetchone()
+    skill = db.execute("SELECT id, body_md FROM skills WHERE name = 'prose-continue'").fetchone()
     assert skill is not None
     skill_id = skill[0]
     
@@ -33,25 +33,25 @@ def test_user_modified_skill_protection(client):
 def test_alias_and_task_routing(client):
     """验证所有新老别名及 task 路由均能命中对应的技能，杜绝 None。"""
     test_cases = [
-        ("continue", "default-continue"),
-        ("expand", "default-expand"),
-        ("polish", "default-rewrite"),
-        ("rewrite", "default-rewrite"),
-        ("condense", "default-shorten"),
-        ("shorten", "default-shorten"),
-        ("outline", "default-outline"),
-        ("check", "default-audit"),
-        ("audit", "default-audit"),
-        ("analyze", "default-analysis"),
-        ("analysis", "default-analysis"),
-        ("prose-continue", "default-continue"),
-        ("prose-expand", "default-expand"),
-        ("prose-polish", "default-rewrite"),
-        ("audit-synopsis-distill", "default-shorten"),
-        ("novel-outline-macro", "default-outline"),
-        ("audit-consistency", "default-audit"),
-        ("audit-pacing-rhythm", "default-analysis"),
-        ("audit-de-aitone", "default-rewrite"),
+        ("continue", "prose-continue"),
+        ("expand", "prose-expand"),
+        ("polish", "prose-polish"),
+        ("rewrite", "prose-polish"),
+        ("condense", "audit-synopsis-distill"),
+        ("shorten", "audit-synopsis-distill"),
+        ("outline", "novel-outline-macro"),
+        ("check", "audit-consistency"),
+        ("audit", "audit-consistency"),
+        ("analyze", "audit-pacing-rhythm"),
+        ("analysis", "audit-pacing-rhythm"),
+        ("prose-continue", "prose-continue"),
+        ("prose-expand", "prose-expand"),
+        ("prose-polish", "prose-polish"),
+        ("audit-synopsis-distill", "audit-synopsis-distill"),
+        ("novel-outline-macro", "novel-outline-macro"),
+        ("audit-consistency", "audit-consistency"),
+        ("audit-pacing-rhythm", "audit-pacing-rhythm"),
+        ("audit-de-aitone", "audit-de-aitone"),
     ]
     for task_name, expected_skill_name in test_cases:
         resolved = resolve_skill(None, task_name)

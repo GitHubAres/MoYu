@@ -290,29 +290,38 @@ _CONTRACT_FORESHADOW_STATUS = ("planted", "pending", "recovered")
 # workflow_engine 共用，消除直接调用与 workflow 两条路径的契约口径分歧。
 # 键名严格取自 ASSET_CONTRACT_KEYS；空列表表示该技能不强制产出结构化资产。
 SKILL_ASSET_CONTRACTS: dict[str, list[str]] = {
-    # 正文类：以续写/扩写时"涌现资产"为主
-    "default-continue": ["entities", "foreshadows", "timeline_events"],
-    "default-expand":   ["entities", "foreshadows", "timeline_events"],
-    "default-shorten":  ["chapter_synopses", "notes"],
-    "default-rewrite":  ["notes"],
-    "prose-combat":     ["timeline_events", "notes"],
-    # 规划类
-    "default-outline":    ["work_info", "outline_nodes", "entities", "relations", "foreshadows"],
-    "novel-premise":      ["work_info", "entities", "notes"],
-    "novel-world":        ["entities", "relations", "timeline_events", "notes"],
-    "novel-cast":         ["entities", "relations"],
-    "novel-scene":        ["outline_nodes", "foreshadows", "entities", "timeline_events"],
-    "novel-timeline":     ["timeline_events"],
-    "novel-foreshadow":   ["foreshadows", "timeline_events"],
-    "novel-magic-system": ["entities", "notes"],
-    "novel-forge":        ["entities", "relations", "timeline_events",
-                           "foreshadows", "outline_nodes", "notes"],
-    # 审校类：以 notes（问题/评分/改动）沉淀为主
-    "default-audit":    ["notes"],
-    "default-analysis": ["work_info", "notes"],
-    "de-ai-tone":       ["notes"],
-    "audit-timeline":   ["timeline_events", "notes"],
-    "audit-foreshadow": ["foreshadows", "notes"],
+    # 一、立项与世界观体系 (Premise & Worldbuilding)
+    "novel-premise":        ["work_info", "entities", "notes"],
+    "novel-world":          ["entities", "relations", "timeline_events", "notes"],
+    "novel-magic-system":   ["entities", "notes"],
+    "novel-cast":           ["entities", "relations"],
+    "novel-faction-graph":  ["entities", "relations"],
+
+    # 二、大纲拓扑与剧情架构 (Plot Architecture)
+    "novel-outline-macro":    ["outline_nodes", "timeline_events", "foreshadows"],
+    "novel-scene":            ["outline_nodes", "foreshadows", "entities", "timeline_events"],
+    "novel-timeline":         ["timeline_events"],
+    "novel-foreshadow-matrix":["foreshadows", "timeline_events"],
+    "novel-hook-engineer":    ["notes", "foreshadows"],
+    "novel-lead-arc":         ["entities", "outline_nodes", "notes"],
+
+    # 三、正文撰写与文风修撰 (Drafting & Stylistic Craft)
+    "prose-continue":       ["entities", "foreshadows", "timeline_events"],
+    "prose-expand":         ["entities", "notes"],
+    "prose-polish":         ["notes"],
+    "prose-dialogue":       ["notes"],
+    "prose-combat":         ["timeline_events", "notes"],
+    "prose-sensory":        ["notes"],
+    "novel-forge":          ["entities", "relations", "timeline_events",
+                             "foreshadows", "outline_nodes", "notes"],
+
+    # 四、审校质检与回溯反馈 (Audit & Consistency Quality Gate)
+    "audit-consistency":     ["notes"],
+    "audit-foreshadow":      ["foreshadows", "notes"],
+    "audit-timeline":        ["timeline_events", "notes"],
+    "audit-de-aitone":       ["notes"],
+    "audit-pacing-rhythm":   ["notes", "work_info"],
+    "audit-synopsis-distill":["chapter_synopses", "notes"],
 }
 
 

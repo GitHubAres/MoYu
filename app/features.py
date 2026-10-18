@@ -118,27 +118,42 @@ def resolve_skill(skill_id: int | None, task: str):
         if not skill_row["enabled"]:
             raise HTTPException(status_code=400, detail=f"指定的 Skill「{skill_row['title']}」已被禁用")
     else:
-        # 兜底：根据 task 匹配默认 builtin Skill
-        # 支持 alias 映射、前端任务名与历史 applies_to 映射
+        # 兜底：根据 task 匹配默认 builtin Skill，全部直连新版本 24 项全景 Skill 矩阵
         TASK_SKILL_MAP = {
-            "condense": "shorten",
-            "polish": "rewrite",
-            "analyze": "analysis",
-            "check": "audit",
-            "prose-continue": "continue",
-            "prose-expand": "expand",
-            "prose-polish": "rewrite",
-            "audit-synopsis-distill": "shorten",
-            "novel-outline-macro": "outline",
-            "audit-consistency": "audit",
-            "audit-pacing-rhythm": "analysis",
-            "audit-de-aitone": "rewrite",
+            "continue": "prose-continue",
+            "expand": "prose-expand",
+            "condense": "audit-synopsis-distill",
+            "shorten": "audit-synopsis-distill",
+            "polish": "prose-polish",
+            "rewrite": "prose-polish",
+            "outline": "novel-outline-macro",
+            "check": "audit-consistency",
+            "audit": "audit-consistency",
+            "analyze": "audit-pacing-rhythm",
+            "analysis": "audit-pacing-rhythm",
+            "de-ai-tone": "audit-de-aitone",
+            "dialogue": "prose-dialogue",
+            "combat": "prose-combat",
+            "sensory": "prose-sensory",
+            "timeline": "novel-timeline",
+            "foreshadow": "novel-foreshadow-matrix",
+            "premise": "novel-premise",
+            "world": "novel-world",
+            "cast": "novel-cast",
+            "scene": "novel-scene",
+            "system": "novel-magic-system",
+            "faction": "novel-faction-graph",
+            "hook": "novel-hook-engineer",
+            "arc": "novel-lead-arc",
+            "forge": "novel-forge",
         }
-        skill_task = TASK_SKILL_MAP.get(task, task)
+        target_name = TASK_SKILL_MAP.get(task, task)
         cand_names = [
-            f"default-{skill_task}",
-            skill_task,
-            f"default-continue",
+            target_name,
+            f"prose-{task}",
+            f"audit-{task}",
+            f"novel-{task}",
+            "prose-continue",
         ]
         for cn in cand_names:
             skill_row = db.execute("SELECT * FROM skills WHERE name = ? AND enabled = 1", (cn,)).fetchone()
