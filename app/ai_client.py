@@ -63,78 +63,113 @@ def _client(cfg: dict, timeout: float | None = None) -> httpx.AsyncClient:
 
 
 async def chat(messages: list, cfg: dict, max_tokens: int | None = None, timeout: float | None = None, **kwargs):
-    """非流式调用，返回 (文本, total_tokens|None)。"""
+    """非流式调用，返回 (文本, total_tokens|None)。针对 502/503/504/连接重置自带指数退避重试 (最大3次)。"""
+    import asyncio
     payload = {"model": cfg["ai_model"], "messages": messages, "stream": False}
     if max_tokens:
         payload["max_tokens"] = max_tokens
-    try:
-        async with _client(cfg, timeout=timeout) as c:
-            resp = await c.post("/chat/completions", json=payload)
-            _check_status(resp)
-            raw_text = resp.text.strip()
-            if not raw_text:
-                raise AIError(f"AI 接口返回空内容（HTTP {resp.status_code}），请检查模型名 '{cfg.get('ai_model')}' 在网关/上游中是否有效，或确认配额与权限")
-            try:
-                data = resp.json()
-            except Exception:
-                raise AIError(f"AI 接口未返回有效 JSON（HTTP {resp.status_code}）：{raw_text[:200]}")
-    except AIError:
-        raise
-    except Exception as e:
-        raise _friendly(e)
-    text = "".join(ch.get("message", {}).get("content") or ""
-                   for ch in data.get("choices", []))
-    return text, (data.get("usage") or {}).get("total_tokens")
+    
+    max_retries = 3
+    last_err = None
+    for attempt in range(max_retries):
+        try:
+            async with _client(cfg, timeout=timeout) as c:
+                resp = await c.post("/chat/completions", json=payload)
+                if resp.status_code in (502, 503, 504) and attempt < max_retries - 1:
+                    await asyncio.sleep(1.5 * (2 ** attempt))
+                    continue
+                _check_status(resp)
+                raw_text = resp.text.strip()
+                if not raw_text:
+                    raise AIError(f"AI 接口返回空内容（HTTP {resp.status_code}），请检查模型名 '{cfg.get('ai_model')}' 在网关/上游中是否有效，或确认配额与权限")
+                try:
+                    data = resp.json()
+                except Exception:
+                    raise AIError(f"AI 接口未返回有效 JSON（HTTP {resp.status_code}）：{raw_text[:200]}")
+                text = "".join(ch.get("message", {}).get("content") or ""
+                               for ch in data.get("choices", []))
+                return text, (data.get("usage") or {}).get("total_tokens")
+        except AIError as ae:
+            if attempt < max_retries - 1 and any(code in str(ae) for code in ("502", "503", "504")):
+                await asyncio.sleep(1.5 * (2 ** attempt))
+                continue
+            raise
+        except (httpx.ConnectError, httpx.TimeoutException) as he:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1.5 * (2 ** attempt))
+                continue
+            raise _friendly(he)
+        except Exception as e:
+            raise _friendly(e)
 
 
 async def chat_stream(messages: list, cfg: dict, usage_box: dict, timeout: float | None = None):
-    """流式调用，异步产生 delta 文本；若有 total_tokens 写入 usage_box；兼容非流式返回兜底。"""
+    """流式调用，异步产生 delta 文本；若有 total_tokens 写入 usage_box；在未收到任何分块前遇到 502/503/504 自动重试。"""
+    import asyncio
     payload = {
         "model": cfg["ai_model"],
         "messages": messages,
         "stream": True,
         "stream_options": {"include_usage": True},
     }
-    try:
-        async with _client(cfg, timeout=timeout) as c:
-            async with c.stream("POST", "/chat/completions", json=payload) as resp:
-                if resp.status_code >= 400:
-                    await resp.aread()
-                    _check_status(resp)
-                # 部分兼容服务端不支持 stream 参数而直接返回 JSON，做兼容降级
-                if "text/event-stream" not in resp.headers.get("content-type", ""):
-                    data = (await resp.aread()).decode("utf-8", "ignore")
-                    try:
-                        obj = json.loads(data)
-                        if obj.get("usage"):
-                            usage_box["total_tokens"] = obj["usage"].get("total_tokens")
-                        text = "".join(ch.get("message", {}).get("content") or ""
-                                       for ch in obj.get("choices", []))
-                        if text:
-                            yield text
-                        return
-                    except json.JSONDecodeError:
-                        raise AIError("AI 接口返回了无法解析的内容（非 SSE 也非 JSON）。")
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with _client(cfg, timeout=timeout) as c:
+                async with c.stream("POST", "/chat/completions", json=payload) as resp:
+                    if resp.status_code in (502, 503, 504) and attempt < max_retries - 1:
+                        await resp.aread()
+                        await asyncio.sleep(1.5 * (2 ** attempt))
                         continue
-                    data = line[5:].strip()
-                    if not data or data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    if chunk.get("usage"):
-                        usage_box["total_tokens"] = chunk["usage"].get("total_tokens")
-                    for ch in chunk.get("choices", []):
-                        delta = (ch.get("delta") or {}).get("content")
-                        if delta:
-                            yield delta
-    except AIError:
-        raise
-    except Exception as e:
-        raise _friendly(e)
+                    if resp.status_code >= 400:
+                        await resp.aread()
+                        _check_status(resp)
+                    # 部分兼容服务端不支持 stream 参数而直接返回 JSON，做兼容降级
+                    if "text/event-stream" not in resp.headers.get("content-type", ""):
+                        data = (await resp.aread()).decode("utf-8", "ignore")
+                        try:
+                            obj = json.loads(data)
+                            if obj.get("usage"):
+                                usage_box["total_tokens"] = obj["usage"].get("total_tokens")
+                            text = "".join(ch.get("message", {}).get("content") or ""
+                                           for ch in obj.get("choices", []))
+                            if text:
+                                yield text
+                            return
+                        except json.JSONDecodeError:
+                            raise AIError("AI 接口返回了无法解析的内容（非 SSE 也非 JSON）。")
+                    
+                    yielded_any = False
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data or data == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data)
+                        except json.JSONDecodeError:
+                            continue
+                        if chunk.get("usage"):
+                            usage_box["total_tokens"] = chunk["usage"].get("total_tokens")
+                        for ch in chunk.get("choices", []):
+                            delta = (ch.get("delta") or {}).get("content")
+                            if delta:
+                                yielded_any = True
+                                yield delta
+                    return
+        except AIError as ae:
+            if attempt < max_retries - 1 and any(code in str(ae) for code in ("502", "503", "504")):
+                await asyncio.sleep(1.5 * (2 ** attempt))
+                continue
+            raise
+        except (httpx.ConnectError, httpx.TimeoutException) as he:
+            if attempt < max_retries - 1:
+                await asyncio.sleep(1.5 * (2 ** attempt))
+                continue
+            raise _friendly(he)
+        except Exception as e:
+            raise _friendly(e)
 
 
 MODELS_TIMEOUT = 15.0
